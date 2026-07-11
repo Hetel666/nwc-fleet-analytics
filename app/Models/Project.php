@@ -40,4 +40,9 @@ class Project extends Model
     {
         return $this->hasMany(ProjectWialonGroup::class);
     }
+
+    public function wialonGeofenceGroups(): HasMany
+    {
+        return $this->hasMany(ProjectWialonGeofenceGroup::class);
+    }
 }

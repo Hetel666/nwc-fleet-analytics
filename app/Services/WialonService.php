@@ -104,6 +104,33 @@ class WialonService
         return array_values(array_filter($items, fn (array $item): bool => isset($allowed[(string) ($item['id'] ?? '')])));
     }
 
+    public function getResource(int|string $resourceId): array
+    {
+        $response = $this->request('core/search_item', [
+            'id' => (int) $resourceId,
+            'flags' => -1,
+        ]);
+
+        return $response['item'] ?? $response;
+    }
+
+    public function getGeofenceGroupZones(int|string $resourceId, int|string $groupId): array
+    {
+        $resource = $this->getResource($resourceId);
+        $group = $resource['zg'][(string) $groupId] ?? $resource['zg'][(int) $groupId] ?? null;
+        $zoneIds = $group['zns'] ?? [];
+
+        if ($zoneIds === []) {
+            return [];
+        }
+
+        return $this->request('resource/get_zone_data', [
+            'itemId' => (int) $resourceId,
+            'col' => array_values($zoneIds),
+            'flags' => 1 | 2 | 4 | 8 | 16,
+        ]);
+    }
+
     public function getUnitLastPosition(int|string $unitId): ?array
     {
         $unit = $this->getUnit($unitId);
@@ -302,6 +329,23 @@ class WialonService
 
         if (array_key_exists('error', $data)) {
             Cache::forget($this->sessionCacheKey());
+
+            if ($sid === null) {
+                $payload['sid'] = $this->loginByToken();
+                $response = Http::timeout((int) config('fleet.wialon.timeout', 30))
+                    ->retry(2, 300)
+                    ->asForm()
+                    ->post($this->baseUrl.'/wialon/ajax.html', $payload);
+
+                if (! $response->failed()) {
+                    $data = $response->json();
+
+                    if (is_array($data) && ! array_key_exists('error', $data)) {
+                        return $data;
+                    }
+                }
+            }
+
             Log::warning('Wialon API error', [
                 'svc' => $svc,
                 'error' => $data['error'],

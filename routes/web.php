@@ -33,4 +33,5 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/settings', [SettingsController::class, 'edit'])->middleware('admin')->name('settings.edit');
     Route::put('/settings', [SettingsController::class, 'update'])->middleware('admin')->name('settings.update');
     Route::post('/settings/sync-units', [SettingsController::class, 'syncUnits'])->middleware('admin')->name('settings.sync-units');
+    Route::post('/settings/sync-geofences', [SettingsController::class, 'syncGeofences'])->middleware('admin')->name('settings.sync-geofences');
 });

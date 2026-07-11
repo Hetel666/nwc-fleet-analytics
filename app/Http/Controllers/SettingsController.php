@@ -39,4 +39,11 @@ class SettingsController extends Controller
 
         return back()->with('status', trim(Artisan::output()) ?: __('app.sync_started'));
     }
+
+    public function syncGeofences(): RedirectResponse
+    {
+        Artisan::call('fleet:sync-geofences');
+
+        return back()->with('status', trim(Artisan::output()) ?: __('app.sync_started'));
+    }
 }

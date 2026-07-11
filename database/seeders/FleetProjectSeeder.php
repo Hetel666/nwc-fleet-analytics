@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Equipment;
 use App\Models\Project;
+use App\Models\ProjectWialonGeofenceGroup;
 use App\Models\ProjectWialonGroup;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
@@ -31,6 +32,23 @@ class FleetProjectSeeder extends Seeder
                     'project_id' => $project->id,
                     'name' => $group['name'],
                     'ownership_type' => $group['ownership_type'],
+                ]
+            );
+        }
+
+        foreach ($this->geofenceGroups() as $group) {
+            $project = Project::where('name', $group['project'])->firstOrFail();
+
+            ProjectWialonGeofenceGroup::updateOrCreate(
+                [
+                    'wialon_resource_id' => (string) $group['wialon_resource_id'],
+                    'wialon_geofence_group_id' => (string) $group['wialon_geofence_group_id'],
+                ],
+                [
+                    'project_id' => $project->id,
+                    'wialon_resource_name' => $group['wialon_resource_name'],
+                    'name' => $group['name'],
+                    'zones_count' => $group['zones_count'],
                 ]
             );
         }
@@ -125,6 +143,20 @@ class FleetProjectSeeder extends Seeder
             ['wialon_group_id' => 601701930, 'project' => 'Yuxarı Şirvan LOT1', 'ownership_type' => Equipment::OWNERSHIP_NWC, 'name' => 'Yuxarı Şirvan LOT1 - NWC'],
             ['wialon_group_id' => 601701936, 'project' => 'Yuxarı Şirvan LOT3', 'ownership_type' => Equipment::OWNERSHIP_ICARE, 'name' => 'Yuxarı Şirvan LOT3 - İcarə'],
             ['wialon_group_id' => 601701935, 'project' => 'Yuxarı Şirvan LOT3', 'ownership_type' => Equipment::OWNERSHIP_NWC, 'name' => 'Yuxarı Şirvan LOT3 - NWC'],
+        ];
+    }
+
+    private function geofenceGroups(): array
+    {
+        return [
+            [
+                'project' => 'Yuxarı Şirvan LOT3',
+                'wialon_resource_id' => 601701680,
+                'wialon_resource_name' => 'NWCuser2',
+                'wialon_geofence_group_id' => 3,
+                'name' => 'M00 LOT-3',
+                'zones_count' => 4,
+            ],
         ];
     }
 }

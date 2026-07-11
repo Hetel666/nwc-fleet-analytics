@@ -31,6 +31,18 @@
                 <label class="form-label">Wialon İcarə qrup ID</label>
                 <input name="wialon_group_icare" value="{{ old('wialon_group_icare', $wialonGroups[\App\Models\Equipment::OWNERSHIP_ICARE] ?? '') }}" class="form-control">
             </div>
+            <div class="col-md-4">
+                <label class="form-label">Wialon geofence resource ID</label>
+                <input name="wialon_geofence_resource_id" value="{{ old('wialon_geofence_resource_id', $wialonGeofenceGroup['wialon_geofence_resource_id'] ?? '') }}" class="form-control">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Wialon geofence group ID</label>
+                <input name="wialon_geofence_group_id" value="{{ old('wialon_geofence_group_id', $wialonGeofenceGroup['wialon_geofence_group_id'] ?? '') }}" class="form-control">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Wialon geofence group name</label>
+                <input name="wialon_geofence_group_name" value="{{ old('wialon_geofence_group_name', $wialonGeofenceGroup['wialon_geofence_group_name'] ?? '') }}" class="form-control">
+            </div>
             <div class="col-12">
                 <label class="form-check">
                     <input type="checkbox" name="active" value="1" class="form-check-input" @checked(old('active', $project->exists ? $project->active : true))>

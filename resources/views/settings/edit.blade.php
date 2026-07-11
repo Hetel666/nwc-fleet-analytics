@@ -42,6 +42,12 @@
                         <i class="bi bi-arrow-repeat"></i><span>{{ __('app.sync_units') }}</span>
                     </button>
                 </form>
+                <form method="POST" action="{{ route('settings.sync-geofences') }}" class="mt-2">
+                    @csrf
+                    <button class="btn btn-outline-primary btn-icon">
+                        <i class="bi bi-bounding-box"></i><span>Geofence-lari sinxronlasdir</span>
+                    </button>
+                </form>
             </section>
         </div>
     </div>
