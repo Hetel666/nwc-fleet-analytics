@@ -25,6 +25,22 @@ services:
       traefik.http.routers.fleet-analytics.tls.certresolver: letsencrypt
       traefik.http.services.fleet-analytics.loadbalancer.server.port: "8080"
 
+  scheduler:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    entrypoint: ["php", "artisan", "schedule:work"]
+    healthcheck:
+      disable: true
+    networks:
+      - default
+
   mysql:
     image: mysql:8.0
     restart: unless-stopped
