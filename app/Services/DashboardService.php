@@ -570,7 +570,7 @@ class DashboardService
         $name = preg_replace('/[^A-Za-z0-9]+/', '-', $title) ?: 'dashboard';
         $name = trim($name, '-');
 
-        return strtolower($name).'-'.$filters['from'].'-'.$filters['to'].'.xls';
+        return strtolower($name).'-'.$filters['from'].'-'.$filters['to'].'.xlsx';
     }
 
     private function dashboardExportFilters(array $filters): array

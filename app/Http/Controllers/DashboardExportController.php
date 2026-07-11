@@ -3,13 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Services\DashboardService;
+use App\Services\XlsxExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class DashboardExportController extends Controller
 {
-    public function __invoke(Request $request, DashboardService $dashboard): Response
+    public function __invoke(Request $request, DashboardService $dashboard, XlsxExportService $xlsx): Response
     {
         $filters = $request->only([
             'date_from',
@@ -37,12 +38,13 @@ class DashboardExportController extends Controller
             'user_id' => $request->user()?->id,
         ]);
 
-        $content = "\xEF\xBB\xBF".view('dashboard.export-excel', ['export' => $export])->render();
+        $content = $xlsx->build($export);
 
         return response($content, 200, [
-            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => 'attachment; filename="'.$export['filename'].'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Content-Length' => (string) strlen($content),
         ]);
     }
 }
