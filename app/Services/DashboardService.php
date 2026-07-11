@@ -28,6 +28,29 @@ class DashboardService
         $previousHours = (float) (clone $previous)->sum('worked_hours');
         $previousDistance = (float) (clone $previous)->sum('distance_km');
         $previousUtilization = (float) (clone $previous)->avg('utilization_percent');
+        $ownership = (clone $query)
+            ->select('ownership_type', DB::raw('SUM(worked_hours) as hours'), DB::raw('SUM(distance_km) as distance'))
+            ->groupBy('ownership_type')
+            ->orderBy('ownership_type')
+            ->get()
+            ->map(fn ($row) => [
+                'label' => $row->ownership_type,
+                'hours' => round((float) $row->hours, 1),
+                'distance' => round((float) $row->distance, 1),
+            ])
+            ->values()
+            ->all();
+        $ownershipShare = $this->equipmentQuery($filters)
+            ->select('ownership_type', DB::raw('COUNT(*) as total'))
+            ->groupBy('ownership_type')
+            ->orderBy('ownership_type')
+            ->get()
+            ->map(fn ($row) => [
+                'label' => $row->ownership_type,
+                'count' => (int) $row->total,
+            ])
+            ->values()
+            ->all();
 
         return [
             'filters' => $filters,
@@ -50,18 +73,8 @@ class DashboardService
                 ),
                 'utilization' => $this->percentChange($utilization, $previousUtilization),
             ],
-            'ownership' => (clone $query)
-                ->select('ownership_type', DB::raw('SUM(worked_hours) as hours'), DB::raw('SUM(distance_km) as distance'))
-                ->groupBy('ownership_type')
-                ->orderBy('ownership_type')
-                ->get()
-                ->map(fn ($row) => [
-                    'label' => $row->ownership_type,
-                    'hours' => round((float) $row->hours, 1),
-                    'distance' => round((float) $row->distance, 1),
-                ])
-                ->values()
-                ->all(),
+            'ownership' => $ownership,
+            'ownership_share' => $ownershipShare,
         ];
     }
 

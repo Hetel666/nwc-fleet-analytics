@@ -7,6 +7,7 @@
 @php
     $overview = $data['overview'];
     $ownership = collect($overview['ownership']);
+    $ownershipShare = collect($overview['ownership_share']);
     $typeLabels = collect($data['equipmentTypes'])->pluck('name');
     $typeTotals = collect($data['equipmentTypes'])->pluck('total');
     $typeHours = collect($data['equipmentTypes'])->pluck('hours');
@@ -15,7 +16,9 @@
     $projectUtilization = collect($data['projects'])->pluck('utilization');
     $ownershipLabels = $ownership->pluck('label');
     $ownershipHours = $ownership->pluck('hours');
-    $totalOwnershipHours = max(1, (float) $ownership->sum('hours'));
+    $ownershipShareLabels = $ownershipShare->pluck('label');
+    $ownershipShareCounts = $ownershipShare->pluck('count');
+    $totalOwnershipCount = max(1, (int) $ownershipShare->sum('count'));
     $kpis = [
         ['label' => __('app.total_hours'), 'value' => number_format($overview['total_hours'], 1).' '.__('app.hours'), 'icon' => 'bi-clock', 'tone' => '#eaf2ff', 'color' => '#1f6feb', 'change' => $overview['changes']['total_hours']],
         ['label' => __('app.total_distance'), 'value' => number_format($overview['total_distance'], 1).' '.__('app.km'), 'icon' => 'bi-signpost-split', 'tone' => '#eaf8ef', 'color' => '#24b35b', 'change' => $overview['changes']['total_distance']],
@@ -162,10 +165,10 @@
                     <div class="col-md-7"><div class="chart-box"><canvas id="ownershipDonut"></canvas></div></div>
                     <div class="col-md-5">
                         <div class="vstack gap-2">
-                            @foreach ($ownership as $row)
+                            @foreach ($ownershipShare as $row)
                                 <div class="d-flex justify-content-between gap-2">
                                     <span class="fw-semibold">{{ $row['label'] }}</span>
-                                    <span>{{ round(($row['hours'] / $totalOwnershipHours) * 100, 1) }}%</span>
+                                    <span>{{ $row['count'] }} / {{ round(($row['count'] / $totalOwnershipCount) * 100, 1) }}%</span>
                                 </div>
                             @endforeach
                         </div>
@@ -231,6 +234,8 @@
 const chartColors = ['#1f6feb', '#24b35b', '#f6ad00', '#8b5cf6', '#0ea5b7', '#94a3b8', '#f97316'];
 const ownershipLabels = @json($ownershipLabels);
 const ownershipHours = @json($ownershipHours);
+const ownershipShareLabels = @json($ownershipShareLabels);
+const ownershipShareCounts = @json($ownershipShareCounts);
 const typeLabels = @json($typeLabels);
 const typeTotals = @json($typeTotals);
 const projectLabels = @json($projectLabels);
@@ -256,7 +261,7 @@ new Chart(document.getElementById('typeDonut'), {
 
 new Chart(document.getElementById('ownershipDonut'), {
     type: 'doughnut',
-    data: { labels: ownershipLabels, datasets: [{ data: ownershipHours, backgroundColor: ['#1f6feb', '#24b35b'] }] },
+    data: { labels: ownershipShareLabels, datasets: [{ data: ownershipShareCounts, backgroundColor: ['#1f6feb', '#24b35b'] }] },
     options: { responsive: true, maintainAspectRatio: false, cutout: '64%' }
 });
 
