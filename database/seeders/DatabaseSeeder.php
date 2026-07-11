@@ -21,6 +21,8 @@ class DatabaseSeeder extends Seeder
             );
         }
 
+        $this->call(FleetProjectSeeder::class);
+
         if (config('fleet.demo.seed')) {
             $this->call(DemoSeeder::class);
         }

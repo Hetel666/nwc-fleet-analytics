@@ -23,6 +23,14 @@
                 <label class="form-label">{{ __('app.description') }}</label>
                 <textarea name="description" rows="4" class="form-control">{{ old('description', $project->description) }}</textarea>
             </div>
+            <div class="col-md-6">
+                <label class="form-label">Wialon NWC qrup ID</label>
+                <input name="wialon_group_nwc" value="{{ old('wialon_group_nwc', $wialonGroups[\App\Models\Equipment::OWNERSHIP_NWC] ?? '') }}" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Wialon İcarə qrup ID</label>
+                <input name="wialon_group_icare" value="{{ old('wialon_group_icare', $wialonGroups[\App\Models\Equipment::OWNERSHIP_ICARE] ?? '') }}" class="form-control">
+            </div>
             <div class="col-12">
                 <label class="form-check">
                     <input type="checkbox" name="active" value="1" class="form-check-input" @checked(old('active', $project->exists ? $project->active : true))>

@@ -35,4 +35,9 @@ class Project extends Model
     {
         return $this->hasMany(EquipmentDailyStat::class);
     }
+
+    public function wialonGroups(): HasMany
+    {
+        return $this->hasMany(ProjectWialonGroup::class);
+    }
 }

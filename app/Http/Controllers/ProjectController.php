@@ -2,9 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Equipment;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Unique;
 use Illuminate\View\View;
 
 class ProjectController extends Controller
@@ -12,30 +16,41 @@ class ProjectController extends Controller
     public function index(): View
     {
         return view('projects.index', [
-            'projects' => Project::query()->withCount(['equipment', 'geofences'])->orderBy('name')->paginate(20),
+            'projects' => Project::query()->withCount(['equipment', 'geofences', 'wialonGroups'])->orderBy('name')->paginate(20),
         ]);
     }
 
     public function create(): View
     {
-        return view('projects.form', ['project' => new Project()]);
+        return view('projects.form', [
+            'project' => new Project(),
+            'wialonGroups' => [],
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        Project::create($this->validated($request));
+        $project = Project::create($this->validated($request));
+        $this->syncWialonGroups($project, $this->validatedWialonGroups($request));
 
         return redirect()->route('projects.index')->with('status', __('app.saved'));
     }
 
     public function edit(Project $project): View
     {
-        return view('projects.form', compact('project'));
+        $project->load('wialonGroups');
+
+        return view('projects.form', [
+            'project' => $project,
+            'wialonGroups' => $this->wialonGroupValues($project),
+        ]);
     }
 
     public function update(Request $request, Project $project): RedirectResponse
     {
+        $project->load('wialonGroups');
         $project->update($this->validated($request));
+        $this->syncWialonGroups($project, $this->validatedWialonGroups($request, $project));
 
         return redirect()->route('projects.index')->with('status', __('app.saved'));
     }
@@ -59,5 +74,56 @@ class ProjectController extends Controller
         $data['active'] = $request->boolean('active');
 
         return $data;
+    }
+
+    private function validatedWialonGroups(Request $request, ?Project $project = null): array
+    {
+        return $request->validate([
+            'wialon_group_nwc' => ['nullable', 'string', 'max:100', $this->uniqueGroupRule($project, Equipment::OWNERSHIP_NWC)],
+            'wialon_group_icare' => ['nullable', 'string', 'max:100', $this->uniqueGroupRule($project, Equipment::OWNERSHIP_ICARE)],
+        ]);
+    }
+
+    private function uniqueGroupRule(?Project $project, string $ownership): Unique
+    {
+        $currentGroupId = $project?->wialonGroups->firstWhere('ownership_type', $ownership)?->id;
+
+        return Rule::unique('project_wialon_groups', 'wialon_group_id')->ignore($currentGroupId);
+    }
+
+    private function syncWialonGroups(Project $project, array $groups): void
+    {
+        foreach ([Equipment::OWNERSHIP_NWC => 'wialon_group_nwc', Equipment::OWNERSHIP_ICARE => 'wialon_group_icare'] as $ownership => $field) {
+            $groupId = trim((string) ($groups[$field] ?? ''));
+
+            if ($groupId === '') {
+                ProjectWialonGroup::query()
+                    ->where('project_id', $project->id)
+                    ->where('ownership_type', $ownership)
+                    ->delete();
+
+                continue;
+            }
+
+            ProjectWialonGroup::updateOrCreate(
+                ['project_id' => $project->id, 'ownership_type' => $ownership],
+                [
+                    'wialon_group_id' => $groupId,
+                    'name' => $project->name.' - '.$this->ownershipLabel($ownership),
+                ]
+            );
+        }
+    }
+
+    private function wialonGroupValues(Project $project): array
+    {
+        return $project->wialonGroups
+            ->mapWithKeys(fn (ProjectWialonGroup $group): array => [$group->ownership_type => $group->wialon_group_id])
+            ->all();
+    }
+
+    private function ownershipLabel(string $ownership): string
+    {
+        return $ownership === Equipment::OWNERSHIP_ICARE ? 'İcarə' : 'NWC';
     }
 }

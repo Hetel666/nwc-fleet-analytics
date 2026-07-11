@@ -79,6 +79,31 @@ class WialonService
         ]);
     }
 
+    public function getUnitGroups(array $groupIds = []): array
+    {
+        $response = $this->request('core/search_items', [
+            'spec' => [
+                'itemsType' => 'avl_unit_group',
+                'propName' => 'sys_name',
+                'propValueMask' => '*',
+                'sortType' => 'sys_name',
+            ],
+            'force' => 1,
+            'flags' => -1,
+            'from' => 0,
+            'to' => 0,
+        ]);
+
+        $items = $response['items'] ?? [];
+        if ($groupIds === []) {
+            return $items;
+        }
+
+        $allowed = array_flip(array_map('strval', $groupIds));
+
+        return array_values(array_filter($items, fn (array $item): bool => isset($allowed[(string) ($item['id'] ?? '')])));
+    }
+
     public function getUnitLastPosition(int|string $unitId): ?array
     {
         $unit = $this->getUnit($unitId);

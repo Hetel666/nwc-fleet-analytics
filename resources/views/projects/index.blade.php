@@ -17,6 +17,7 @@
                     <tr>
                         <th>{{ __('app.name') }}</th>
                         <th>{{ __('app.code') }}</th>
+                        <th class="text-end">Wialon qrupları</th>
                         <th class="text-end">{{ __('app.equipment') }}</th>
                         <th class="text-end">{{ __('app.geofences') }}</th>
                         <th>{{ __('app.status') }}</th>
@@ -31,6 +32,7 @@
                                 <a href="{{ route('projects.dashboard', $project) }}" class="small text-decoration-none">{{ __('app.dashboard') }}</a>
                             </td>
                             <td>{{ $project->code }}</td>
+                            <td class="text-end">{{ $project->wialon_groups_count }}</td>
                             <td class="text-end">{{ $project->equipment_count }}</td>
                             <td class="text-end">{{ $project->geofences_count }}</td>
                             <td><span class="badge text-bg-{{ $project->active ? 'success' : 'secondary' }}">{{ $project->active ? __('app.active') : __('app.inactive') }}</span></td>
