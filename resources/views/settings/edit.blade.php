@@ -19,11 +19,77 @@
                     <input name="wialon_report_template_id" value="{{ old('wialon_report_template_id', $settings['wialon_report_template_id'] ?? '') }}" class="form-control">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Geofence minimum çıxış müddəti</label>
+                    <label class="form-label">Geofence minimum cixis muddati</label>
                     <input type="number" min="1" max="1440" name="geofence_min_exit_minutes" value="{{ old('geofence_min_exit_minutes', $settings['geofence_min_exit_minutes'] ?? config('fleet.geofence.min_exit_minutes')) }}" class="form-control">
                 </div>
 
-                <button class="btn btn-primary btn-icon">
+                <hr class="my-4">
+
+                <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+                    <div>
+                        <h2 class="h6 fw-bold mb-1">Avtomatik sinxronizasiya</h2>
+                        <div class="text-secondary small">Planlayici her 5 deqiqeden bir yoxlayir ve yalniz vaxti catmis tapsiriqlari ise salir.</div>
+                    </div>
+                    <label class="form-check form-switch m-0">
+                        <input type="checkbox" name="auto_sync_enabled" value="1" class="form-check-input" @checked(old('auto_sync_enabled', $settings['auto_sync_enabled'] ?? '1'))>
+                        <span class="form-check-label">Aktiv</span>
+                    </label>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="border rounded-3 p-3 h-100">
+                            <label class="form-check mb-3">
+                                <input type="checkbox" name="auto_sync_units_enabled" value="1" class="form-check-input" @checked(old('auto_sync_units_enabled', $settings['auto_sync_units_enabled'] ?? '1'))>
+                                <span class="form-check-label fw-semibold">Texnikalari avtomatik sinxronlasdir</span>
+                            </label>
+                            <label class="form-label">Interval</label>
+                            <select name="auto_sync_units_interval_minutes" class="form-select">
+                                @foreach ([30, 60, 180, 360, 720, 1440] as $minutes)
+                                    <option value="{{ $minutes }}" @selected((string) old('auto_sync_units_interval_minutes', $settings['auto_sync_units_interval_minutes'] ?? 60) === (string) $minutes)>
+                                        {{ $syncIntervalOptions[$minutes] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border rounded-3 p-3 h-100">
+                            <label class="form-check mb-3">
+                                <input type="checkbox" name="auto_sync_geofences_enabled" value="1" class="form-check-input" @checked(old('auto_sync_geofences_enabled', $settings['auto_sync_geofences_enabled'] ?? '1'))>
+                                <span class="form-check-label fw-semibold">Geofence-leri avtomatik sinxronlasdir</span>
+                            </label>
+                            <label class="form-label">Interval</label>
+                            <select name="auto_sync_geofences_interval_minutes" class="form-select">
+                                @foreach ([360, 720, 1440, 10080] as $minutes)
+                                    <option value="{{ $minutes }}" @selected((string) old('auto_sync_geofences_interval_minutes', $settings['auto_sync_geofences_interval_minutes'] ?? 1440) === (string) $minutes)>
+                                        {{ $syncIntervalOptions[$minutes] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="border rounded-3 p-3">
+                            <label class="form-check mb-3">
+                                <input type="checkbox" name="auto_sync_daily_enabled" value="1" class="form-check-input" @checked(old('auto_sync_daily_enabled', $settings['auto_sync_daily_enabled'] ?? '1'))>
+                                <span class="form-check-label fw-semibold">Gundelik statistikani avtomatik hesabla</span>
+                            </label>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Baslama vaxti</label>
+                                    <input type="time" name="auto_sync_daily_time" value="{{ old('auto_sync_daily_time', $settings['auto_sync_daily_time'] ?? '02:10') }}" class="form-control">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Son nece gun yenilensin</label>
+                                    <input type="number" min="1" max="7" name="auto_sync_daily_recent_days" value="{{ old('auto_sync_daily_recent_days', $settings['auto_sync_daily_recent_days'] ?? 1) }}" class="form-control">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-icon mt-4">
                     <i class="bi bi-check2"></i><span>{{ __('app.save') }}</span>
                 </button>
             </form>
@@ -48,6 +114,35 @@
                         <i class="bi bi-bounding-box"></i><span>Geofence-lari sinxronlasdir</span>
                     </button>
                 </form>
+            </section>
+
+            <section class="panel p-4">
+                <h2 class="h6 fw-bold">Avtomatik sinxronizasiya statusu</h2>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Tapsiriq</th>
+                                <th>Status</th>
+                                <th>Son icra</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($syncStatusRows as $row)
+                                @php
+                                    $status = $settings['auto_sync_'.$row['key'].'_last_status'] ?? '-';
+                                    $statusClass = $status === 'success' ? 'success' : ($status === 'failed' ? 'danger' : 'secondary');
+                                @endphp
+                                <tr>
+                                    <td>{{ $row['label'] }}</td>
+                                    <td><span class="badge text-bg-{{ $statusClass }}">{{ $status }}</span></td>
+                                    <td class="small text-secondary">{{ $settings['auto_sync_'.$row['key'].'_last_run_at'] ?? '-' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="small text-secondary mt-3">Server planlayicisi aktiv olduqda bu bolme avtomatik yenilenen neticeleri gosterir.</div>
             </section>
         </div>
     </div>
