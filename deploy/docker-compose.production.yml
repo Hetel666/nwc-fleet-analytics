@@ -1,0 +1,51 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - default
+      - coolify
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: coolify
+      traefik.http.routers.fleet-analytics-http.rule: Host(`${FLEET_DOMAIN}`)
+      traefik.http.routers.fleet-analytics-http.entrypoints: http
+      traefik.http.routers.fleet-analytics-http.middlewares: fleet-analytics-redirect
+      traefik.http.middlewares.fleet-analytics-redirect.redirectscheme.scheme: https
+      traefik.http.routers.fleet-analytics.rule: Host(`${FLEET_DOMAIN}`)
+      traefik.http.routers.fleet-analytics.entrypoints: https
+      traefik.http.routers.fleet-analytics.tls: "true"
+      traefik.http.routers.fleet-analytics.tls.certresolver: letsencrypt
+      traefik.http.services.fleet-analytics.loadbalancer.server.port: "8080"
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - default
+
+volumes:
+  mysql-data:
+
+networks:
+  coolify:
+    external: true
