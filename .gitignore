@@ -16,6 +16,12 @@ Homestead.yaml
 npm-debug.log
 yarn-error.log
 /auth.json
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+composer.phar
+ChatGPT Image*.png
 /.fleet
 /.idea
 /.nova
