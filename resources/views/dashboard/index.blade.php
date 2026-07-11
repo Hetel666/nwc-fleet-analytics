@@ -728,6 +728,13 @@ const dashboardLoadingMessages = {
     wialon: @json(__('app.loading_wialon')),
     dashboard: @json(__('app.loading_dashboard')),
 };
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+}[character]));
 let fleetMap = null;
 let draggedWidget = null;
 let dragOverWidget = null;
@@ -1087,7 +1094,7 @@ const bounds = [];
 mapData.geofences.forEach(zone => {
     if (!zone.geometry) return;
     const layer = L.geoJSON(zone.geometry, { style: { color: '#1f6feb', weight: 2, fillOpacity: .12 } }).addTo(map);
-    layer.bindPopup(zone.name);
+    layer.bindPopup(escapeHtml(zone.name));
     layer.getBounds && bounds.push(layer.getBounds());
 });
 mapData.equipment.forEach(item => {
@@ -1097,7 +1104,7 @@ mapData.equipment.forEach(item => {
         color: item.ownership === 'ICARE' ? '#24b35b' : '#1f6feb',
         fillOpacity: .9
     }).addTo(map);
-    marker.bindPopup(`<strong>${item.name}</strong><br>${item.type || ''}<br>${item.project || ''}`);
+    marker.bindPopup(`<strong>${escapeHtml(item.name)}</strong><br>${escapeHtml(item.type)}<br>${escapeHtml(item.project)}`);
     bounds.push(marker.getLatLng());
 });
 if (bounds.length > 0) {
