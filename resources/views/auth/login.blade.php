@@ -21,25 +21,22 @@
             border-radius: 8px;
             box-shadow: 0 16px 40px rgba(24, 39, 75, .08);
         }
-        .brand-mark {
-            width: 42px;
-            height: 42px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #16b9e8, #1f6feb);
-            display: grid;
-            place-items: center;
-            color: #fff;
-            font-weight: 800;
+        .brand-logo {
+            display: block;
+            width: 210px;
+            max-width: 100%;
+            height: auto;
+            margin-bottom: .75rem;
         }
     </style>
 </head>
 <body>
     <main class="login-panel p-4">
-        <div class="d-flex align-items-center gap-3 mb-4">
-            <div class="brand-mark">A</div>
+        <div class="mb-4">
+            <img src="{{ asset('assets/north-west-logo.png') }}" alt="North West" class="brand-logo">
             <div>
                 <div class="fw-bold fs-4">{{ __('app.app_name') }}</div>
-                <div class="text-secondary small">Ağıllı donanma idarəetməsi</div>
+                <div class="text-secondary small">{{ __('app.tagline') }}</div>
             </div>
         </div>
 

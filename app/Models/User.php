@@ -12,6 +12,9 @@ class User extends Authenticatable
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
+    public const ROLE_ADMIN = 'admin';
+    public const ROLE_VIEWER = 'viewer';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -22,6 +25,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'active',
     ];
 
     /**
@@ -42,6 +46,7 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
+            'active' => 'boolean',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
@@ -49,6 +54,11 @@ class User extends Authenticatable
 
     public function isAdmin(): bool
     {
-        return $this->role === 'admin';
+        return $this->role === self::ROLE_ADMIN;
+    }
+
+    public function isActive(): bool
+    {
+        return (bool) $this->active;
     }
 }

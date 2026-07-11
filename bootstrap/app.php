@@ -21,7 +21,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_AWS_ELB
         );
 
+        $middleware->web(append: [
+            App\Http\Middleware\SetLocale::class,
+        ]);
+
         $middleware->alias([
+            'active' => App\Http\Middleware\EnsureActiveUser::class,
             'admin' => App\Http\Middleware\EnsureAdmin::class,
         ]);
     })

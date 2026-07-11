@@ -33,15 +33,14 @@
             inset: 0 auto 0 0;
             z-index: 1030;
         }
-        .brand-mark {
-            width: 36px;
-            height: 36px;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #16b9e8, #1f6feb);
-            display: grid;
-            place-items: center;
-            color: #fff;
-            font-weight: 800;
+        .brand-logo {
+            display: block;
+            width: 168px;
+            max-width: 100%;
+            height: auto;
+        }
+        .brand-title {
+            line-height: 1.15;
         }
         .nav-link {
             color: #52607a;
@@ -144,11 +143,11 @@
 <body>
 <div class="app-shell">
     <aside class="sidebar p-3">
-        <div class="d-flex align-items-center gap-3 mb-4">
-            <div class="brand-mark">A</div>
-            <div>
+        <div class="mb-4">
+            <img src="{{ asset('assets/north-west-logo.png') }}" alt="North West" class="brand-logo mb-2">
+            <div class="brand-title">
                 <div class="fw-bold fs-5">{{ __('app.app_name') }}</div>
-                <div class="text-secondary small">Ağıllı donanma idarəetməsi</div>
+                <div class="text-secondary small">{{ __('app.tagline') }}</div>
             </div>
         </div>
 
@@ -168,6 +167,9 @@
                 </a>
                 <a class="nav-link {{ request()->routeIs('geofences.*') ? 'active' : '' }}" href="{{ route('geofences.index') }}">
                     <i class="bi bi-geo-alt"></i><span>{{ __('app.geofences') }}</span>
+                </a>
+                <a class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}" href="{{ route('users.index') }}">
+                    <i class="bi bi-people"></i><span>{{ __('app.users') }}</span>
                 </a>
                 <a class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}" href="{{ route('settings.edit') }}">
                     <i class="bi bi-gear"></i><span>{{ __('app.settings') }}</span>
@@ -195,6 +197,23 @@
                 @hasSection('page-subtitle')
                     <div class="text-secondary small mt-1">@yield('page-subtitle')</div>
                 @endif
+            </div>
+            <div class="dropdown me-2">
+                <button class="btn btn-outline-secondary btn-icon dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-translate"></i><span>{{ __('app.language') }}</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    @foreach (['az' => 'Azərbaycanca', 'ru' => 'Русский', 'en' => 'English'] as $locale => $label)
+                        <li>
+                            <a class="dropdown-item d-flex align-items-center justify-content-between gap-3 {{ app()->getLocale() === $locale ? 'active' : '' }}" href="{{ route('language.update', $locale) }}">
+                                <span>{{ $label }}</span>
+                                @if (app()->getLocale() === $locale)
+                                    <i class="bi bi-check2"></i>
+                                @endif
+                            </a>
+                        </li>
+                    @endforeach
+                </ul>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf

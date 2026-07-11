@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
+use App\Models\DailyUnitAggregate;
 use App\Services\WialonService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -29,7 +30,7 @@ class SyncDailyStats extends Command
                         ? min(100, ($stats['worked_hours'] / (float) $item->planned_daily_hours) * 100)
                         : 0;
 
-                    EquipmentDailyStat::updateOrCreate(
+                    $dailyStat = EquipmentDailyStat::updateOrCreate(
                         ['stat_date' => $date->toDateString(), 'equipment_id' => $item->id],
                         [
                             'project_id' => $item->project_id,
@@ -41,6 +42,22 @@ class SyncDailyStats extends Command
                             'last_message_at' => $stats['last_message_at'],
                             'calculation_source' => $stats['calculation_source'],
                             'calculation_status' => $stats['calculation_status'],
+                        ]
+                    );
+
+                    DailyUnitAggregate::updateOrCreate(
+                        [
+                            'date' => $dailyStat->stat_date->toDateString(),
+                            'unit_id' => $item->wialon_unit_id,
+                        ],
+                        [
+                            'equipment_id' => $item->id,
+                            'project_id' => $item->project_id,
+                            'equipment_type_id' => $item->equipment_type_id,
+                            'ownership_type' => $item->ownership_type,
+                            'engine_hours' => $dailyStat->worked_hours,
+                            'mileage' => $dailyStat->distance_km,
+                            'geofence_outside_hours' => round(((float) $dailyStat->outside_geofence_minutes) / 60, 2),
                         ]
                     );
 

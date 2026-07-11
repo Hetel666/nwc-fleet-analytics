@@ -7,10 +7,13 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
 class WialonService
 {
     private string $baseUrl;
+
+    private ?int $requestTimeoutOverride = null;
 
     public function __construct()
     {
@@ -53,7 +56,7 @@ class WialonService
         }
     }
 
-    public function getUnits(): array
+    public function getUnits(bool $full = false): array
     {
         $response = $this->request('core/search_items', [
             'spec' => [
@@ -63,7 +66,7 @@ class WialonService
                 'sortType' => 'sys_name',
             ],
             'force' => 1,
-            'flags' => 1 | 1024 | 4194304,
+            'flags' => $full ? -1 : 1 | 1024 | 4194304,
             'from' => 0,
             'to' => 0,
         ]);
@@ -208,6 +211,336 @@ class WialonService
         ]);
     }
 
+    public function getReportRows(
+        int|string $resourceId,
+        int|string $templateId,
+        int|string $objectId,
+        int $from,
+        int $to,
+        int $tableIndex = 0,
+        int $chunkSize = 500,
+        int $intervalFlags = 0,
+        bool $remoteExec = false,
+        ?int $requestTimeout = null
+    ): array {
+        $previousTimeout = $this->requestTimeoutOverride;
+        $this->requestTimeoutOverride = $requestTimeout;
+
+        try {
+        $sid = $this->loginByToken();
+        $this->cleanupReportResult($sid);
+
+        $payload = [
+            'reportResourceId' => (int) $resourceId,
+            'reportTemplateId' => (int) $templateId,
+            'reportTemplate' => null,
+            'reportObjectId' => (int) $objectId,
+            'reportObjectSecId' => 0,
+            'interval' => [
+                'from' => $from,
+                'to' => $to,
+                'flags' => $intervalFlags,
+            ],
+        ];
+
+        if ($remoteExec) {
+            $payload['remoteExec'] = 1;
+            $payload['reportObjectIdList'] = [];
+        }
+
+        $result = $this->request('report/exec_report', $payload, $sid);
+
+        if ($remoteExec) {
+            $result = $this->waitForRemoteReportResult($sid);
+        }
+
+        $table = $result['reportResult']['tables'][$tableIndex] ?? null;
+        $rowCount = (int) ($table['rows'] ?? 0);
+        $rows = [];
+
+        for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
+            $chunk = $this->getResultRowsChunk(
+                $sid,
+                $tableIndex,
+                $indexFrom,
+                min($rowCount - 1, $indexFrom + $chunkSize - 1)
+            );
+
+            if (is_array($chunk)) {
+                $rows = array_merge($rows, $chunk);
+            }
+        }
+
+        return [
+            'result' => $result,
+            'table' => $table,
+            'rows' => $rows,
+        ];
+        } finally {
+            $this->requestTimeoutOverride = $previousTimeout;
+        }
+    }
+
+    public function getReportTablesRows(
+        int|string $resourceId,
+        int|string $templateId,
+        int|string $objectId,
+        int $from,
+        int $to,
+        int $chunkSize = 500,
+        int $intervalFlags = 0,
+        bool $remoteExec = false,
+        ?int $requestTimeout = null
+    ): array {
+        $previousTimeout = $this->requestTimeoutOverride;
+        $this->requestTimeoutOverride = $requestTimeout;
+
+        try {
+        $sid = $this->loginByToken();
+        $this->cleanupReportResult($sid);
+
+        $payload = [
+            'reportResourceId' => (int) $resourceId,
+            'reportTemplateId' => (int) $templateId,
+            'reportTemplate' => null,
+            'reportObjectId' => (int) $objectId,
+            'reportObjectSecId' => 0,
+            'interval' => [
+                'from' => $from,
+                'to' => $to,
+                'flags' => $intervalFlags,
+            ],
+        ];
+
+        if ($remoteExec) {
+            $payload['remoteExec'] = 1;
+            $payload['reportObjectIdList'] = [];
+        }
+
+        $result = $this->request('report/exec_report', $payload, $sid);
+
+        if ($remoteExec) {
+            $result = $this->waitForRemoteReportResult($sid);
+        }
+
+        $reportTables = [];
+
+        foreach (($result['reportResult']['tables'] ?? []) as $tableIndex => $table) {
+            $rowCount = (int) ($table['rows'] ?? 0);
+            $rows = [];
+
+            if ($rowCount > 0) {
+                $rows = $this->getSelectedRowsForTable($sid, (int) $tableIndex, $table, $rowCount, $chunkSize);
+
+                if ($rows === []) {
+                    for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
+                        $chunk = $this->getResultRowsChunk(
+                            $sid,
+                            (int) $tableIndex,
+                            $indexFrom,
+                            min($rowCount - 1, $indexFrom + $chunkSize - 1)
+                        );
+
+                        if (is_array($chunk)) {
+                            $rows = array_merge($rows, $chunk);
+                        }
+                    }
+                }
+            }
+
+            $reportTables[] = [
+                'index' => (int) $tableIndex,
+                'table' => $table,
+                'rows' => $rows,
+            ];
+        }
+
+        return [
+            'result' => $result,
+            'tables' => $reportTables,
+        ];
+        } finally {
+            $this->requestTimeoutOverride = $previousTimeout;
+        }
+    }
+
+    public function findReportTemplateIdByName(int|string $resourceId, string $templateName): ?int
+    {
+        $resource = $this->getResource($resourceId);
+        $target = $this->normalizeReportTemplateName($templateName);
+
+        if ($target === '') {
+            return null;
+        }
+
+        $candidates = [];
+        $this->collectReportTemplateCandidates($resource, $candidates);
+
+        foreach ($candidates as $candidate) {
+            if ($this->normalizeReportTemplateName((string) ($candidate['name'] ?? '')) === $target) {
+                return (int) $candidate['id'];
+            }
+        }
+
+        return null;
+    }
+
+    private function getSelectedRowsForTable(string $sid, int $tableIndex, array $table, int $rowCount, int $chunkSize): array
+    {
+        $tableLevel = (int) ($table['level'] ?? 1);
+        $levels = array_values(array_unique([
+            max(1, $tableLevel - 1),
+            max(0, $tableLevel),
+            0,
+        ]));
+
+        foreach ($levels as $level) {
+            try {
+                $rows = $this->selectResultRowsPaged($sid, $tableIndex, $rowCount, $chunkSize, $level, true);
+
+                if ($rows !== []) {
+                    return $rows;
+                }
+            } catch (RuntimeException) {
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    private function selectResultRowsPaged(
+        string $sid,
+        int $tableIndex,
+        int $rowCount,
+        int $chunkSize,
+        int $level,
+        bool $unitInfo = false
+    ): array {
+        $rows = [];
+
+        for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
+            $data = [
+                'from' => $indexFrom,
+                'to' => min($rowCount - 1, $indexFrom + $chunkSize - 1),
+                'level' => $level,
+            ];
+
+            if ($unitInfo) {
+                $data['unitInfo'] = 1;
+            }
+
+            $chunk = $this->request('report/select_result_rows', [
+                'tableIndex' => $tableIndex,
+                'config' => [
+                    'type' => 'range',
+                    'data' => $data,
+                ],
+            ], $sid);
+
+            if (is_array($chunk)) {
+                $rows = array_merge($rows, $chunk);
+            }
+        }
+
+        return $rows;
+    }
+
+    private function collectReportTemplateCandidates(mixed $node, array &$candidates, int|string|null $nodeKey = null): void
+    {
+        if (! is_array($node)) {
+            return;
+        }
+
+        $name = $node['n'] ?? $node['name'] ?? $node['nm'] ?? null;
+        $id = $node['id'] ?? $node['i'] ?? (is_numeric($nodeKey) ? $nodeKey : null);
+
+        if ($name !== null && $id !== null && $this->looksLikeReportTemplate($node)) {
+            $candidates[] = [
+                'id' => (int) $id,
+                'name' => (string) $name,
+            ];
+        }
+
+        foreach ($node as $key => $value) {
+            $this->collectReportTemplateCandidates($value, $candidates, $key);
+        }
+    }
+
+    private function looksLikeReportTemplate(array $node): bool
+    {
+        foreach (['tbl', 'tables', 'ct', 'p', 'bind'] as $key) {
+            if (array_key_exists($key, $node)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeReportTemplateName(string $name): string
+    {
+        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $name) ?? $name));
+    }
+
+    private function getResultRowsChunk(string $sid, int $tableIndex, int $indexFrom, int $indexTo): array
+    {
+        $attempts = (int) config('fleet.wialon.report_rows_attempts', 6);
+        $delayMs = (int) config('fleet.wialon.report_rows_delay_ms', 1000);
+
+        for ($attempt = 0; $attempt < max(1, $attempts); $attempt++) {
+            try {
+                return $this->request('report/get_result_rows', [
+                    'tableIndex' => $tableIndex,
+                    'indexFrom' => $indexFrom,
+                    'indexTo' => $indexTo,
+                ], $sid);
+            } catch (RuntimeException $exception) {
+                $isTemporaryReportError = str_contains($exception->getMessage(), 'Wialon API error 5 for report/get_result_rows');
+
+                if (! $isTemporaryReportError || $attempt === max(1, $attempts) - 1) {
+                    throw $exception;
+                }
+
+                usleep(max(100, $delayMs) * 1000);
+            }
+        }
+
+        return [];
+    }
+
+    private function cleanupReportResult(string $sid): void
+    {
+        try {
+            $this->request('report/cleanup_result', [], $sid);
+        } catch (Throwable) {
+            // Wialon returns an error when there is no previous report result; it is safe to ignore.
+        }
+    }
+
+    private function waitForRemoteReportResult(string $sid): array
+    {
+        $attempts = (int) config('fleet.wialon.report_status_attempts', 90);
+        $delayMs = (int) config('fleet.wialon.report_status_delay_ms', 1000);
+
+        for ($attempt = 0; $attempt < max(1, $attempts); $attempt++) {
+            $status = $this->request('report/get_report_status', [], $sid);
+            $code = (int) ($status['status'] ?? 0);
+
+            if ($code === 4) {
+                return $this->request('report/apply_report_result', [], $sid);
+            }
+
+            if (in_array($code, [8, 16], true)) {
+                throw new RuntimeException("Wialon remote report failed with status {$code}.");
+            }
+
+            usleep(max(100, $delayMs) * 1000);
+        }
+
+        throw new RuntimeException('Wialon remote report did not finish in time.');
+    }
+
     public function calculateUnitDailyData(int|string $unitId, Carbon $date, string $mode = 'engine_hours'): array
     {
         $messages = $this->getMessages(
@@ -307,8 +640,15 @@ class WialonService
             $payload['sid'] = $sid;
         }
 
-        $response = Http::timeout((int) config('fleet.wialon.timeout', 30))
-            ->retry(2, 300)
+        $timeout = $this->requestTimeoutOverride ?? (int) config('fleet.wialon.timeout', 30);
+
+        $http = Http::timeout($timeout);
+
+        if ($this->requestTimeoutOverride === null) {
+            $http = $http->retry(2, 300);
+        }
+
+        $response = $http
             ->asForm()
             ->post($this->baseUrl.'/wialon/ajax.html', $payload);
 
@@ -327,20 +667,25 @@ class WialonService
             throw new RuntimeException("Wialon returned invalid JSON for {$svc}.");
         }
 
-        if (array_key_exists('error', $data)) {
+        if (array_key_exists('error', $data) && (int) $data['error'] !== 0) {
             Cache::forget($this->sessionCacheKey());
 
             if ($sid === null) {
                 $payload['sid'] = $this->loginByToken();
-                $response = Http::timeout((int) config('fleet.wialon.timeout', 30))
-                    ->retry(2, 300)
+                $http = Http::timeout($timeout);
+
+                if ($this->requestTimeoutOverride === null) {
+                    $http = $http->retry(2, 300);
+                }
+
+                $response = $http
                     ->asForm()
                     ->post($this->baseUrl.'/wialon/ajax.html', $payload);
 
                 if (! $response->failed()) {
                     $data = $response->json();
 
-                    if (is_array($data) && ! array_key_exists('error', $data)) {
+                    if (is_array($data) && (! array_key_exists('error', $data) || (int) $data['error'] === 0)) {
                         return $data;
                     }
                 }

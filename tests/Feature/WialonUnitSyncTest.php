@@ -30,10 +30,16 @@ class WialonUnitSyncTest extends TestCase
             {
             }
 
-            public function getUnits(): array
+            public function getUnits(bool $full = false): array
             {
                 return [
-                    ['id' => 25392569, 'nm' => 'Unit A'],
+                    [
+                        'id' => 25392569,
+                        'nm' => 'Unit A',
+                        'pflds' => [
+                            ['n' => 'vehicle_class', 'v' => 'excavator'],
+                        ],
+                    ],
                 ];
             }
 
@@ -54,6 +60,9 @@ class WialonUnitSyncTest extends TestCase
             'wialon_unit_id' => '25392569',
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->assertDatabaseHas('equipment_types', [
+            'name' => 'Excavator',
         ]);
     }
 }

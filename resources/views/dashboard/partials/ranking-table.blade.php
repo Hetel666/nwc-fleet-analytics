@@ -20,7 +20,7 @@
                     <td class="text-end">{{ $row['hours'] }}</td>
                 </tr>
             @empty
-                <tr><td colspan="4" class="text-secondary">Məlumat yoxdur</td></tr>
+                <tr><td colspan="4" class="text-secondary">{{ __('app.no_data') }}</td></tr>
             @endforelse
         </tbody>
     </table>
