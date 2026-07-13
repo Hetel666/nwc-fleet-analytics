@@ -1,9 +1,11 @@
-<div class="dashboard-card-body flex-grow-1">
+<div class="dashboard-card-body dashboard-type-card-body flex-grow-1">
     @if ($rows->isNotEmpty())
-        <div class="dashboard-donut-layout">
-            <div class="chart-box chart-box--donut"><canvas id="{{ $chartId }}"></canvas></div>
-            <div>
-                <div class="dashboard-scroll-table" data-expandable="{{ $expandId }}">
+        <div class="dashboard-type-layout">
+            <div class="dashboard-type-chart-panel">
+                <div class="chart-box chart-box--donut dashboard-type-chart-box"><canvas id="{{ $chartId }}"></canvas></div>
+            </div>
+            <div class="dashboard-type-table-panel">
+                <div class="dashboard-scroll-table dashboard-type-table" data-expandable="{{ $expandId }}">
                     <table class="table table-sm align-middle mb-0">
                         <thead>
                             <tr>

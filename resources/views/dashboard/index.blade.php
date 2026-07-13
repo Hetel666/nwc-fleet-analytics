@@ -136,7 +136,11 @@
         min-height: 0;
     }
     .chart-box--donut {
-        height: 220px;
+        width: 100%;
+        max-width: 220px;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        margin: 0 auto;
     }
     .dashboard-chart-scroll {
         max-height: 430px;
@@ -148,6 +152,44 @@
         grid-template-columns: minmax(180px, 230px) minmax(160px, 1fr);
         align-items: center;
         gap: 18px;
+    }
+    .dashboard-type-card-body {
+        overflow: hidden;
+    }
+    .dashboard-type-layout {
+        display: grid;
+        grid-template-columns: minmax(170px, 220px) minmax(0, 1fr);
+        align-items: stretch;
+        gap: 18px;
+        height: 100%;
+        min-height: 0;
+    }
+    .dashboard-type-chart-panel {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        min-height: 0;
+    }
+    .dashboard-type-chart-box {
+        flex: 0 0 auto;
+        max-width: 100%;
+    }
+    .dashboard-type-table-panel {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+    }
+    .dashboard-type-table,
+    .dashboard-type-table.is-expanded {
+        flex: 1 1 auto;
+        max-height: 252px;
+    }
+    .dashboard-type-table th:first-child,
+    .dashboard-type-table td:first-child {
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
     .dashboard-share-row {
         display: grid;
@@ -167,6 +209,10 @@
     }
     .dashboard-scroll-table.is-expanded {
         max-height: 420px;
+    }
+    .dashboard-scroll-table.dashboard-type-table,
+    .dashboard-scroll-table.dashboard-type-table.is-expanded {
+        max-height: 252px;
     }
     .dashboard-expand-toggle {
         font-size: .82rem;
@@ -266,11 +312,15 @@
     }
     @media (max-width: 767px) {
         .dashboard-donut-layout,
+        .dashboard-type-layout,
         .dashboard-kpi-grid {
             grid-template-columns: 1fr;
         }
         .chart-box--donut {
-            height: 210px;
+            max-width: 210px;
+        }
+        .dashboard-type-chart-box {
+            flex-basis: auto;
         }
     }
 </style>
@@ -663,6 +713,7 @@ const doughnutOptions = {
     responsive: true,
     maintainAspectRatio: false,
     cutout: '64%',
+    layout: { padding: 2 },
     plugins: {
         legend: {
             position: 'bottom',
@@ -672,17 +723,29 @@ const doughnutOptions = {
     }
 };
 
-const createDoughnutChart = (id, chartLabels, values, colors) => {
+const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => {
     const canvas = document.getElementById(id);
 
     if (!canvas || !hasChartData(values)) {
         return null;
     }
 
+    const showLegend = settings.showLegend ?? true;
+    const options = {
+        ...doughnutOptions,
+        plugins: {
+            ...doughnutOptions.plugins,
+            legend: {
+                ...doughnutOptions.plugins.legend,
+                display: showLegend,
+            },
+        },
+    };
+
     return new Chart(canvas, {
         type: 'doughnut',
         data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
-        options: doughnutOptions
+        options
     });
 };
 
@@ -870,6 +933,7 @@ document.querySelectorAll('[data-expand-toggle]').forEach(button => {
         container.classList.toggle('is-expanded', !expanded);
         container.querySelectorAll('.expandable-extra').forEach(row => row.classList.toggle('d-none', expanded));
         button.textContent = expanded ? button.dataset.showLabel : button.dataset.hideLabel;
+        requestAnimationFrame(refreshDashboardVisuals);
     });
 });
 
@@ -1023,9 +1087,9 @@ dashboardResetButton?.addEventListener('click', () => {
     window.location.reload();
 });
 
-createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE]);
-createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette);
-createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette);
+createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], { showLegend: false });
+createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false });
+createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false });
 createHorizontalOwnershipChart('projectActualHoursChart', projectActualLabels, projectActualNwc, projectActualIcare, labels.hours);
 createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
