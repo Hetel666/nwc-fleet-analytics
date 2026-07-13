@@ -29,9 +29,9 @@
     $projectWorkCategoryChartHeightNwc = min(max($projectWorkCategoryRowsNwc->count() * 34 + 80, 260), 620);
     $projectWorkCategoryChartHeightIcare = min(max($projectWorkCategoryRowsIcare->count() * 34 + 80, 260), 620);
     $actualWorkCategoryLabels = collect([
+        'overtime' => __('app.worked_overtime_hours'),
         'from_7_to_10' => __('app.worked_7_to_10_hours'),
         'from_1_to_7' => __('app.worked_less_than_7_hours'),
-        'overtime' => __('app.worked_overtime_hours'),
         'less_than_1' => __('app.worked_less_than_1_hour'),
     ]);
     $projectWorkCategoryNwcSeries = $actualWorkCategoryLabels->keys()->mapWithKeys(fn (string $key) => [$key => $projectWorkCategoryRowsNwc->pluck($key)->values()]);
