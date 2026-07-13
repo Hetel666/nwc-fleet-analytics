@@ -21,6 +21,8 @@ class DashboardService
 {
     private array $wialonEngineHoursReportData = [];
 
+    private array $wialonActualWorkReportData = [];
+
     private array $wialonGeofenceOutsideRows = [];
 
     public function __construct(private WialonService $wialon)
@@ -280,7 +282,7 @@ class DashboardService
         $filters = $this->normalizeFilters($filters);
 
         if ($filters['project_id']) {
-            $reportData = $this->getWialonEngineHoursReportData($filters);
+            $reportData = $this->getWialonActualWorkReportData($filters);
 
             if ($reportData !== null) {
                 $project = Project::query()->find($filters['project_id']);
@@ -327,7 +329,7 @@ class DashboardService
         ];
 
         if ($filters['project_id']) {
-            $reportData = $this->getWialonEngineHoursReportData($filters);
+            $reportData = $this->getWialonActualWorkReportData($filters);
 
             if ($reportData !== null) {
                 $project = Project::query()->find($filters['project_id']);
@@ -641,7 +643,7 @@ class DashboardService
     private function dashboardCacheKey(array $filters): string
     {
         return 'dashboard:aggregate:'.md5(json_encode([
-            'version' => 6,
+            'version' => 7,
             'filters' => $filters,
         ]));
     }
@@ -862,9 +864,9 @@ class DashboardService
             'actual-work-hour-categories' => collect($this->getProjectActualWorkHourCategoriesByOwnership($filters)[$filters['ownership_type'] ?? Equipment::OWNERSHIP_NWC] ?? [])
                 ->map(fn (array $row): array => [
                     $row['name'],
+                    $row['overtime'],
                     $row['from_7_to_10'],
                     $row['from_1_to_7'],
-                    $row['overtime'],
                     $row['less_than_1'],
                     $row['total'],
                 ])
@@ -1442,7 +1444,16 @@ class DashboardService
 
             $cells = $record['_cells'] ?? [];
             $engineHours = $this->parseReportHours(
-                $this->reportRecordValue($record, ['Engine hours'])
+                $this->reportRecordValue($record, [
+                    'Engine hours',
+                    'Motor saatı',
+                    'Moto hours',
+                    'M/h',
+                    'Worked hours',
+                    'İşləmə saatı',
+                    'Duration',
+                    'Saat',
+                ])
                     ?? ($cells[$engineIndex] ?? null)
             );
             $date = (string) ($record['_date'] ?? '');
@@ -1840,6 +1851,51 @@ class DashboardService
         ]));
     }
 
+    private function wialonActualWorkReportSettings(): ?array
+    {
+        $resourceId = (int) config('fleet.wialon.actual_work_report_resource_id');
+        $templateId = (int) config('fleet.wialon.actual_work_report_template_id');
+
+        if ($resourceId <= 0) {
+            return null;
+        }
+
+        if ($templateId <= 0) {
+            $templateName = (string) config('fleet.wialon.actual_work_report_template_name', '');
+
+            if ($templateName === '') {
+                return null;
+            }
+
+            $templateId = (int) Cache::remember(
+                'dashboard:wialon-actual-work-template:'.md5($resourceId.'|'.$templateName),
+                now()->addHours(6),
+                fn (): int => (int) ($this->wialon->findReportTemplateIdByName($resourceId, $templateName) ?? 0)
+            );
+        }
+
+        if ($templateId <= 0) {
+            return null;
+        }
+
+        return [
+            'resource_id' => $resourceId,
+            'template_id' => $templateId,
+        ];
+    }
+
+    private function wialonActualWorkReportCacheKey(array $filters, array $settings, array $groupIds): string
+    {
+        ksort($groupIds);
+
+        return 'dashboard:wialon-actual-work:'.md5(json_encode([
+            'version' => 1,
+            'filters' => $filters,
+            'settings' => $settings,
+            'groups' => $groupIds,
+        ]));
+    }
+
     private function applyDailyStatFilters(Builder $query, array $filters): Builder
     {
         return $query
@@ -1853,7 +1909,7 @@ class DashboardService
 
     private function getActualWorkHourCategoriesFromWialonReport(array $filters): ?array
     {
-        $reportData = $this->getWialonEngineHoursReportData($filters);
+        $reportData = $this->getWialonActualWorkReportData($filters);
 
         if ($reportData === null) {
             return null;
@@ -1872,6 +1928,176 @@ class DashboardService
         }
 
         return $buckets;
+    }
+
+    private function getWialonActualWorkReportData(array $filters): ?array
+    {
+        $filters = $this->normalizeFilters($filters);
+
+        if (! $filters['project_id']) {
+            return null;
+        }
+
+        $cacheKey = md5(json_encode($filters));
+
+        if (array_key_exists($cacheKey, $this->wialonActualWorkReportData)) {
+            return $this->wialonActualWorkReportData[$cacheKey];
+        }
+
+        $settings = $this->wialonActualWorkReportSettings();
+
+        if ($settings === null) {
+            return $this->wialonActualWorkReportData[$cacheKey] = null;
+        }
+
+        $groups = ProjectWialonGroup::query()
+            ->where('project_id', $filters['project_id'])
+            ->whereIn('ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
+            ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('ownership_type', $ownershipType))
+            ->get()
+            ->keyBy('ownership_type');
+
+        if ($groups->isEmpty()) {
+            return $this->wialonActualWorkReportData[$cacheKey] = null;
+        }
+
+        $equipment = $this->equipmentQuery($filters)
+            ->with(['type:id,name', 'project:id,name,code'])
+            ->get();
+
+        $periodStart = Carbon::parse($filters['from'], config('app.timezone'))->startOfDay();
+        $periodEnd = Carbon::parse($filters['to'], config('app.timezone'))->endOfDay();
+        $periodDays = max(1, (int) $periodStart->diffInDays($periodEnd) + 1);
+
+        if ($equipment->isEmpty()) {
+            return $this->wialonActualWorkReportData[$cacheKey] = [
+                'equipment' => $equipment,
+                'hours' => [],
+                'stat_days' => [],
+                'period_days' => $periodDays,
+                'source' => 'empty',
+            ];
+        }
+
+        $hoursByEquipmentId = [];
+        $statDatesByEquipmentId = [];
+        $equipmentIdByReportKey = [];
+
+        foreach ($equipment as $item) {
+            $hoursByEquipmentId[$item->id] = 0.0;
+            $equipmentIdByReportKey[$this->reportUnitKey($item->ownership_type, $item->name)] = $item->id;
+        }
+
+        $persistentCacheKey = $this->wialonActualWorkReportCacheKey(
+            $filters,
+            $settings,
+            $groups->pluck('wialon_group_id', 'ownership_type')->all()
+        );
+        $cachedReportData = Cache::get($persistentCacheKey);
+
+        if (is_array($cachedReportData) && isset($cachedReportData['hours'], $cachedReportData['stat_days'])) {
+            return $this->wialonActualWorkReportData[$cacheKey] = [
+                'equipment' => $equipment,
+                'hours' => $cachedReportData['hours'],
+                'stat_days' => $cachedReportData['stat_days'],
+                'period_days' => $periodDays,
+                'source' => $cachedReportData['source'] ?? 'cache',
+            ];
+        }
+
+        $successfulReports = 0;
+        $failedReports = 0;
+
+        foreach ([Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE] as $ownershipType) {
+            $group = $groups->get($ownershipType);
+
+            if (! $group) {
+                continue;
+            }
+
+            try {
+                $report = $this->wialon->getReportTablesRows(
+                    $settings['resource_id'],
+                    $settings['template_id'],
+                    $group->wialon_group_id,
+                    $periodStart->timestamp,
+                    $periodEnd->timestamp,
+                    500,
+                    16777216,
+                    true,
+                    max(30, (int) config('fleet.wialon.actual_work_report_timeout', 120))
+                );
+                $successfulReports++;
+            } catch (Throwable $exception) {
+                $failedReports++;
+                Log::warning('Wialon actual work report failed', [
+                    'project_id' => $filters['project_id'],
+                    'ownership_type' => $ownershipType,
+                    'from' => $filters['from'],
+                    'to' => $filters['to'],
+                    'message' => $exception->getMessage(),
+                ]);
+                continue;
+            }
+
+            $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine');
+
+            if ($engineTable === null) {
+                Log::warning('Wialon actual work report table missing', [
+                    'project_id' => $filters['project_id'],
+                    'ownership_type' => $ownershipType,
+                    'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
+                ]);
+                continue;
+            }
+
+            foreach ($this->engineRowsByReportKey($engineTable, $ownershipType, $equipmentIdByReportKey) as $engineRow) {
+                $equipmentKey = $engineRow['equipment_key'];
+                $equipmentId = $equipmentIdByReportKey[$equipmentKey] ?? null;
+
+                if (! $equipmentId) {
+                    continue;
+                }
+
+                $hoursByEquipmentId[$equipmentId] += (float) $engineRow['engine_hours'];
+
+                if (($engineRow['date'] ?? '') !== '') {
+                    $statDatesByEquipmentId[$equipmentId][$engineRow['date']] = true;
+                }
+            }
+        }
+
+        if ($successfulReports === 0) {
+            return $this->wialonActualWorkReportData[$cacheKey] = null;
+        }
+
+        $statDaysByEquipmentId = [];
+
+        foreach ($hoursByEquipmentId as $equipmentId => $hours) {
+            $statDaysByEquipmentId[$equipmentId] = isset($statDatesByEquipmentId[$equipmentId])
+                ? max(1, count($statDatesByEquipmentId[$equipmentId]))
+                : $periodDays;
+        }
+
+        $reportData = [
+            'hours' => $hoursByEquipmentId,
+            'stat_days' => $statDaysByEquipmentId,
+            'source' => 'actual_work_report',
+        ];
+
+        if ($failedReports === 0) {
+            Cache::put(
+                $persistentCacheKey,
+                $reportData,
+                now()->addMinutes(max(1, (int) config('fleet.wialon.actual_work_report_cache_minutes', 30)))
+            );
+        }
+
+        return $this->wialonActualWorkReportData[$cacheKey] = [
+            'equipment' => $equipment,
+            ...$reportData,
+            'period_days' => $periodDays,
+        ];
     }
 
     private function getWialonEngineHoursReportData(array $filters): ?array
@@ -2251,7 +2477,16 @@ class DashboardService
 
     private function engineHoursColumnIndex(?array $table): int
     {
-        return $this->reportColumnIndex($table, ['engine hours'], ['duration'], 3);
+        return $this->reportColumnIndex($table, [
+            'engine hours',
+            'motor saatı',
+            'moto hours',
+            'm/h',
+            'worked hours',
+            'işləmə saatı',
+            'duration',
+            'saat',
+        ], ['duration'], 3);
     }
 
     private function mileageColumnIndex(?array $table): int
@@ -2392,9 +2627,9 @@ class DashboardService
     private function actualWorkHourDashboardBucketLabels(): array
     {
         return [
+            'overtime' => __('app.worked_overtime_hours'),
             'from_7_to_10' => __('app.worked_7_to_10_hours'),
             'from_1_to_7' => __('app.worked_less_than_7_hours'),
-            'overtime' => __('app.worked_overtime_hours'),
             'less_than_1' => __('app.worked_less_than_1_hour'),
         ];
     }

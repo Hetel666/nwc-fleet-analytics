@@ -123,38 +123,44 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
+        config(['fleet.wialon.actual_work_report_template_id' => 9]);
+
         $this->app->instance(WialonService::class, new class extends WialonService
         {
             public function __construct()
             {
             }
 
-            public function getReportRows(
+            public function getReportTablesRows(
                 int|string $resourceId,
                 int|string $templateId,
                 int|string $objectId,
                 int $from,
                 int $to,
-                int $tableIndex = 0,
                 int $chunkSize = 500,
                 int $intervalFlags = 0,
                 bool $remoteExec = false,
                 ?int $requestTimeout = null
             ): array {
                 return [
-                    'table' => [
-                        'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
-                        'header_type' => ['', 'user_column', 'user_column', 'duration'],
-                    ],
-                    'rows' => (string) $objectId === '601701935'
-                        ? [
-                            ['c' => ['NWC middle', '', '', '5.25']],
-                            ['c' => ['NWC regular', '', '', '8.50']],
-                            ['c' => ['NWC overtime', '', '', '11.00']],
-                        ]
-                        : [
-                            ['c' => ['ICARE less', '', '', '0.50']],
+                    'tables' => [
+                        [
+                            'table' => [
+                                'label' => 'Engine hours',
+                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
+                                'header_type' => ['', 'user_column', 'user_column', 'duration'],
+                            ],
+                            'rows' => (string) $objectId === '601701935'
+                                ? [
+                                    ['c' => ['NWC middle', '', '', '5.25']],
+                                    ['c' => ['NWC regular', '', '', '8.50']],
+                                    ['c' => ['NWC overtime', '', '', '11.00']],
+                                ]
+                                : [
+                                    ['c' => ['ICARE less', '', '', '0.50']],
+                                ],
                         ],
+                    ],
                 ];
             }
         });
@@ -206,6 +212,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
+        config(['fleet.wialon.actual_work_report_template_id' => 9]);
+
         $wialon = new class extends WialonService
         {
             public array $calls = [];
@@ -214,13 +222,12 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             {
             }
 
-            public function getReportRows(
+            public function getReportTablesRows(
                 int|string $resourceId,
                 int|string $templateId,
                 int|string $objectId,
                 int $from,
                 int $to,
-                int $tableIndex = 0,
                 int $chunkSize = 500,
                 int $intervalFlags = 0,
                 bool $remoteExec = false,
@@ -229,20 +236,25 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 $this->calls[] = compact('objectId', 'from', 'to', 'intervalFlags', 'remoteExec');
 
                 return [
-                    'table' => [
-                        'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
-                        'header_type' => ['', 'user_column', 'user_column', 'duration'],
-                    ],
-                    'rows' => (string) $objectId === '601701935'
-                        ? [
-                            ['c' => ['NWC middle', '', '', '10.00']],
-                            ['c' => ['NWC regular', '', '', '20.00']],
-                            ['c' => ['NWC overtime', '', '', '22.00']],
-                        ]
-                        : [
-                            ['c' => ['ICARE less', '', '', '1.50']],
-                            ['c' => ['ICARE regular', '', '', '14.00']],
+                    'tables' => [
+                        [
+                            'table' => [
+                                'label' => 'Engine hours',
+                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
+                                'header_type' => ['', 'user_column', 'user_column', 'duration'],
+                            ],
+                            'rows' => (string) $objectId === '601701935'
+                                ? [
+                                    ['c' => ['NWC middle', '', '', '10.00']],
+                                    ['c' => ['NWC regular', '', '', '20.00']],
+                                    ['c' => ['NWC overtime', '', '', '22.00']],
+                                ]
+                                : [
+                                    ['c' => ['ICARE less', '', '', '1.50']],
+                                    ['c' => ['ICARE regular', '', '', '14.00']],
+                                ],
                         ],
+                    ],
                 ];
             }
         };
