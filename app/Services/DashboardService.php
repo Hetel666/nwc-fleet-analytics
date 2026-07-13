@@ -275,6 +275,67 @@ class DashboardService
             ->all();
     }
 
+    public function getProjectActualHoursByOwnership(array $filters): array
+    {
+        $filters = $this->normalizeFilters($filters);
+
+        if ($filters['project_id']) {
+            $reportData = $this->getWialonEngineHoursReportData($filters);
+
+            if ($reportData !== null) {
+                $project = Project::query()->find($filters['project_id']);
+                $row = $this->emptyProjectOwnershipRow((int) $filters['project_id'], $project?->name ?? '');
+
+                foreach ($reportData['equipment'] as $equipment) {
+                    $ownershipType = $equipment->ownership_type;
+
+                    if (! in_array($ownershipType, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
+                        continue;
+                    }
+
+                    $row[$ownershipType] += (float) ($reportData['hours'][$equipment->id] ?? 0.0);
+                }
+
+                $row[Equipment::OWNERSHIP_NWC] = round((float) $row[Equipment::OWNERSHIP_NWC], 1);
+                $row[Equipment::OWNERSHIP_ICARE] = round((float) $row[Equipment::OWNERSHIP_ICARE], 1);
+                $row['total'] = round((float) $row[Equipment::OWNERSHIP_NWC] + (float) $row[Equipment::OWNERSHIP_ICARE], 1);
+
+                return $row['total'] > 0 ? [$row] : [];
+            }
+        }
+
+        $rows = $this->statsQuery($filters)
+            ->join('projects', 'projects.id', '=', 'equipment_daily_stats.project_id')
+            ->select(
+                'projects.id',
+                'projects.name',
+                'equipment_daily_stats.ownership_type',
+                DB::raw('SUM(equipment_daily_stats.worked_hours) as hours')
+            )
+            ->groupBy('projects.id', 'projects.name', 'equipment_daily_stats.ownership_type')
+            ->get();
+
+        return $this->buildProjectOwnershipRows($rows, 'hours');
+    }
+
+    public function getProjectOwnershipComparison(array $filters): array
+    {
+        $filters = $this->normalizeFilters($filters);
+
+        $rows = $this->equipmentQuery($filters)
+            ->join('projects', 'projects.id', '=', 'equipments.project_id')
+            ->select(
+                'projects.id',
+                'projects.name',
+                'equipments.ownership_type',
+                DB::raw('COUNT(*) as count_value')
+            )
+            ->groupBy('projects.id', 'projects.name', 'equipments.ownership_type')
+            ->get();
+
+        return $this->buildProjectOwnershipRows($rows, 'count_value');
+    }
+
     public function getActualWorkHourCategories(array $filters): array
     {
         $filters = $this->normalizeFilters($filters);
@@ -382,9 +443,49 @@ class DashboardService
         return compact('labels', 'data');
     }
 
+    public function getUtilizationTrendByOwnership(array $filters): array
+    {
+        $filters = $this->normalizeFilters($filters);
+        $rows = $this->statsQuery($filters)
+            ->select('stat_date', 'ownership_type', DB::raw('AVG(utilization_percent) as utilization'))
+            ->groupBy('stat_date', 'ownership_type')
+            ->orderBy('stat_date')
+            ->get();
+
+        $byDateAndOwnership = [];
+
+        foreach ($rows as $row) {
+            $date = Carbon::parse($row->stat_date)->toDateString();
+            $byDateAndOwnership[$date][$row->ownership_type] = round((float) $row->utilization, 1);
+        }
+
+        $labels = [];
+        $dates = [];
+        $series = [
+            Equipment::OWNERSHIP_NWC => [],
+            Equipment::OWNERSHIP_ICARE => [],
+        ];
+
+        foreach (CarbonPeriod::create($filters['from'], $filters['to']) as $date) {
+            $key = $date->toDateString();
+            $dates[] = $key;
+            $labels[] = $date->format('d M');
+            $series[Equipment::OWNERSHIP_NWC][] = (float) ($byDateAndOwnership[$key][Equipment::OWNERSHIP_NWC] ?? 0.0);
+            $series[Equipment::OWNERSHIP_ICARE][] = (float) ($byDateAndOwnership[$key][Equipment::OWNERSHIP_ICARE] ?? 0.0);
+        }
+
+        return [
+            'labels' => $labels,
+            'dates' => $dates,
+            'series' => $series,
+            'has_data' => $rows->isNotEmpty(),
+        ];
+    }
+
     public function getMapData(array $filters): array
     {
         $filters = $this->normalizeFilters($filters);
+        $events = $this->getGeofenceEvents($filters);
 
         return [
             'geofences' => Geofence::query()
@@ -400,17 +501,16 @@ class DashboardService
                 ])
                 ->values()
                 ->all(),
-            'equipment' => $this->equipmentQuery($filters)
-                ->with(['project', 'type'])
-                ->whereNotNull('last_position_json')
-                ->get()
-                ->map(fn (Equipment $equipment) => [
-                    'id' => $equipment->id,
-                    'name' => $equipment->name,
-                    'type' => $equipment->type?->name,
-                    'project' => $equipment->project?->name,
-                    'ownership' => $equipment->ownership_type,
-                    'position' => $equipment->last_position_json,
+            'equipment' => $events
+                ->filter(fn (GeofenceEvent $event): bool => filled($event->equipment?->last_position_json))
+                ->unique(fn (GeofenceEvent $event): mixed => $event->equipment_id)
+                ->map(fn (GeofenceEvent $event) => [
+                    'id' => $event->equipment?->id,
+                    'name' => $event->equipment?->name,
+                    'type' => $event->equipment?->type?->name,
+                    'project' => $event->project?->name,
+                    'ownership' => $event->equipment?->ownership_type,
+                    'position' => $event->equipment?->last_position_json,
                 ])
                 ->values()
                 ->all(),
@@ -445,17 +545,19 @@ class DashboardService
             'leastWorking' => $this->getLeastWorking($filters),
             'mostWorking' => $this->getMostWorking($filters),
             'projects' => $this->getProjectDistribution($filters),
+            'projectActualHoursByOwnership' => $this->getProjectActualHoursByOwnership($filters),
+            'projectOwnershipComparison' => $this->getProjectOwnershipComparison($filters),
             'geofenceOutsideRows' => $this->getGeofenceOutsideRows($filters),
             'utilizationTrend' => $this->getUtilizationTrend($filters),
+            'utilizationTrendByOwnership' => $this->getUtilizationTrendByOwnership($filters),
             'mapData' => $this->getMapData($filters),
-            'actualWorkHourCategories' => $this->getActualWorkHourCategories($filters),
         ];
     }
 
     private function dashboardCacheKey(array $filters): string
     {
         return 'dashboard:aggregate:'.md5(json_encode([
-            'version' => 4,
+            'version' => 5,
             'filters' => $filters,
         ]));
     }
@@ -560,7 +662,7 @@ class DashboardService
             'geofence-analysis' => __('app.geofence_analysis'),
             'utilization-trend' => __('app.utilization_trend'),
             'actual-work-hours' => __('app.actual_work_hours_title'),
-            'project-comparison' => __('app.projects'),
+            'project-comparison' => __('app.work_hours_by_ownership'),
             default => __('app.dashboard'),
         };
     }
@@ -599,9 +701,9 @@ class DashboardService
             'project-averages' => ['Tip', 'Say', __('app.avg_engine_hours'), __('app.avg_mileage'), 'Mənbə'],
             'ownership-share' => [__('app.ownership'), 'Say'],
             'geofence-analysis' => ['#', 'Grouping', 'Vendor', 'outside the geofence hours'],
-            'utilization-trend' => ['Tarix', __('app.utilization').' (%)'],
-            'actual-work-hours' => [__('app.ownership'), __('app.status'), 'Say'],
-            'project-comparison' => [__('app.project'), __('app.hours'), __('app.utilization').' (%)'],
+            'utilization-trend' => ['Tarix', 'NWC (%)', __('app.ownership_icare').' (%)'],
+            'actual-work-hours' => [__('app.project'), 'NWC '.__('app.hours'), __('app.ownership_icare').' '.__('app.hours'), 'Cəmi'],
+            'project-comparison' => [__('app.project'), 'NWC', __('app.ownership_icare'), 'Cəmi'],
             default => ['Göstərici', 'Dəyər'],
         };
     }
@@ -660,24 +762,22 @@ class DashboardService
                     $row['outside_hours'] ?? 0,
                 ])
                 ->all(),
-            'utilization-trend' => collect($this->getUtilizationTrend($filters)['labels'])
-                ->map(fn (string $label, int $index): array => [
-                    $label,
-                    $this->getUtilizationTrend($filters)['data'][$index] ?? 0,
+            'utilization-trend' => $this->dashboardExportUtilizationTrendRows($filters),
+            'actual-work-hours' => collect($this->getProjectActualHoursByOwnership($filters))
+                ->map(fn (array $row): array => [
+                    $row['name'],
+                    $row[Equipment::OWNERSHIP_NWC],
+                    $row[Equipment::OWNERSHIP_ICARE],
+                    $row['total'],
                 ])
                 ->all(),
-            'actual-work-hours' => collect($this->getActualWorkHourCategories($filters))
-                ->flatMap(fn (array $rows, string $ownership): array => collect($rows)
-                    ->map(fn (int $count, string $bucket): array => [
-                        $this->ownershipLabel($ownership),
-                        $this->actualWorkHourBucketLabel($bucket),
-                        $count,
-                    ])
-                    ->all())
-                ->values()
-                ->all(),
-            'project-comparison' => collect($this->getProjectDistribution($filters))
-                ->map(fn (array $row): array => [$row['name'], $row['hours'], $row['utilization']])
+            'project-comparison' => collect($this->getProjectOwnershipComparison($filters))
+                ->map(fn (array $row): array => [
+                    $row['name'],
+                    $row[Equipment::OWNERSHIP_NWC],
+                    $row[Equipment::OWNERSHIP_ICARE],
+                    $row['total'],
+                ])
                 ->all(),
             default => [
                 ['Ümumi işləmə saatı', $this->getOverview($filters)['total_hours']],
@@ -772,6 +872,19 @@ class DashboardService
             ->all();
     }
 
+    private function dashboardExportUtilizationTrendRows(array $filters): array
+    {
+        $trend = $this->getUtilizationTrendByOwnership($filters);
+
+        return collect($trend['labels'])
+            ->map(fn (string $label, int $index): array => [
+                $label,
+                $trend['series'][Equipment::OWNERSHIP_NWC][$index] ?? 0,
+                $trend['series'][Equipment::OWNERSHIP_ICARE][$index] ?? 0,
+            ])
+            ->all();
+    }
+
     private function buildOwnershipAverageMetrics($equipment, array $hoursByEquipmentId, array $mileageByEquipmentId, string $source): array
     {
         $rows = [
@@ -817,6 +930,49 @@ class DashboardService
         unset($row);
 
         return $rows;
+    }
+
+    private function emptyProjectOwnershipRow(int $id, string $name): array
+    {
+        return [
+            'id' => $id,
+            'name' => $name,
+            Equipment::OWNERSHIP_NWC => 0.0,
+            Equipment::OWNERSHIP_ICARE => 0.0,
+            'total' => 0.0,
+        ];
+    }
+
+    private function buildProjectOwnershipRows($rows, string $valueColumn): array
+    {
+        $result = [];
+
+        foreach ($rows as $row) {
+            $projectId = (int) $row->id;
+            $ownershipType = $row->ownership_type;
+
+            if (! in_array($ownershipType, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
+                continue;
+            }
+
+            $result[$projectId] ??= $this->emptyProjectOwnershipRow($projectId, (string) $row->name);
+            $result[$projectId][$ownershipType] += (float) ($row->{$valueColumn} ?? 0.0);
+        }
+
+        foreach ($result as &$row) {
+            $row[Equipment::OWNERSHIP_NWC] = round((float) $row[Equipment::OWNERSHIP_NWC], 1);
+            $row[Equipment::OWNERSHIP_ICARE] = round((float) $row[Equipment::OWNERSHIP_ICARE], 1);
+            $row['total'] = round((float) $row[Equipment::OWNERSHIP_NWC] + (float) $row[Equipment::OWNERSHIP_ICARE], 1);
+        }
+        unset($row);
+
+        return collect($result)
+            ->sortBy([
+                ['total', 'desc'],
+                ['name', 'asc'],
+            ])
+            ->values()
+            ->all();
     }
 
     private function equipmentExportStats(array $filters): array
