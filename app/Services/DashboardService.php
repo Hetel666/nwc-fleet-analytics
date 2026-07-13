@@ -318,6 +318,90 @@ class DashboardService
         return $this->buildProjectOwnershipRows($rows, 'hours');
     }
 
+    public function getProjectActualWorkHourCategoriesByOwnership(array $filters): array
+    {
+        $filters = $this->normalizeFilters($filters);
+        $result = [
+            Equipment::OWNERSHIP_NWC => [],
+            Equipment::OWNERSHIP_ICARE => [],
+        ];
+
+        if ($filters['project_id']) {
+            $reportData = $this->getWialonEngineHoursReportData($filters);
+
+            if ($reportData !== null) {
+                $project = Project::query()->find($filters['project_id']);
+
+                foreach ($reportData['equipment'] as $item) {
+                    $ownershipType = $item->ownership_type;
+
+                    if (! array_key_exists($ownershipType, $result)) {
+                        continue;
+                    }
+
+                    $result[$ownershipType][$filters['project_id']] ??= $this->emptyProjectActualWorkHourCategoryRow(
+                        (int) $filters['project_id'],
+                        $project?->name ?? ''
+                    );
+
+                    $statDays = (int) ($reportData['stat_days'][$item->id] ?? $reportData['period_days']);
+                    $averageDailyHours = $statDays > 0 ? ((float) ($reportData['hours'][$item->id] ?? 0.0) / $statDays) : 0.0;
+                    $bucket = $this->actualWorkHourBucket($averageDailyHours);
+
+                    $result[$ownershipType][$filters['project_id']][$bucket]++;
+                    $result[$ownershipType][$filters['project_id']]['total']++;
+                }
+
+                return $this->sortProjectActualWorkHourCategoryRows($result);
+            }
+        }
+
+        $rows = $this->equipmentQuery($filters)
+            ->join('projects', 'projects.id', '=', 'equipments.project_id')
+            ->leftJoin('equipment_daily_stats', function ($join) use ($filters): void {
+                $join->on('equipment_daily_stats.equipment_id', '=', 'equipments.id')
+                    ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']]);
+
+                if ($filters['project_id']) {
+                    $join->where('equipment_daily_stats.project_id', $filters['project_id']);
+                }
+
+                if ($filters['ownership_type']) {
+                    $join->where('equipment_daily_stats.ownership_type', $filters['ownership_type']);
+                }
+            })
+            ->select(
+                'projects.id as project_id',
+                'projects.name as project_name',
+                'equipments.id as equipment_id',
+                'equipments.ownership_type',
+                DB::raw('COALESCE(SUM(equipment_daily_stats.worked_hours), 0) as hours'),
+                DB::raw('COUNT(DISTINCT equipment_daily_stats.stat_date) as stat_days')
+            )
+            ->groupBy('projects.id', 'projects.name', 'equipments.id', 'equipments.ownership_type')
+            ->get();
+
+        foreach ($rows as $row) {
+            $ownershipType = $row->ownership_type;
+
+            if (! array_key_exists($ownershipType, $result)) {
+                continue;
+            }
+
+            $projectId = (int) $row->project_id;
+            $result[$ownershipType][$projectId] ??= $this->emptyProjectActualWorkHourCategoryRow($projectId, (string) $row->project_name);
+
+            $statDays = (int) $row->stat_days;
+            $averageDailyHours = $statDays > 0 ? (float) $row->hours / $statDays : 0.0;
+            $bucket = $this->actualWorkHourBucket($averageDailyHours);
+
+            $result[$ownershipType][$projectId][$bucket]++;
+            $result[$ownershipType][$projectId]['total']++;
+        }
+
+        return $this->sortProjectActualWorkHourCategoryRows($result);
+    }
+
     public function getProjectOwnershipComparison(array $filters): array
     {
         $filters = $this->normalizeFilters($filters);
@@ -545,7 +629,7 @@ class DashboardService
             'leastWorking' => $this->getLeastWorking($filters),
             'mostWorking' => $this->getMostWorking($filters),
             'projects' => $this->getProjectDistribution($filters),
-            'projectActualHoursByOwnership' => $this->getProjectActualHoursByOwnership($filters),
+            'projectActualWorkHourCategoriesByOwnership' => $this->getProjectActualWorkHourCategoriesByOwnership($filters),
             'projectOwnershipComparison' => $this->getProjectOwnershipComparison($filters),
             'geofenceOutsideRows' => $this->getGeofenceOutsideRows($filters),
             'utilizationTrend' => $this->getUtilizationTrend($filters),
@@ -557,7 +641,7 @@ class DashboardService
     private function dashboardCacheKey(array $filters): string
     {
         return 'dashboard:aggregate:'.md5(json_encode([
-            'version' => 5,
+            'version' => 6,
             'filters' => $filters,
         ]));
     }
@@ -645,6 +729,16 @@ class DashboardService
             $block = 'equipment-types';
         }
 
+        if ($block === 'actual-work-hours-nwc') {
+            $filters['ownership_type'] = Equipment::OWNERSHIP_NWC;
+            $block = 'actual-work-hour-categories';
+        }
+
+        if ($block === 'actual-work-hours-icare') {
+            $filters['ownership_type'] = Equipment::OWNERSHIP_ICARE;
+            $block = 'actual-work-hour-categories';
+        }
+
         return [$this->normalizeFilters($filters), $block];
     }
 
@@ -661,6 +755,7 @@ class DashboardService
             'ownership-share' => __('app.ownership_share'),
             'geofence-analysis' => __('app.geofence_analysis'),
             'utilization-trend' => __('app.utilization_trend'),
+            'actual-work-hour-categories' => __('app.project_work_hour_categories').': '.$this->ownershipLabel($filters['ownership_type'] ?? null),
             'actual-work-hours' => __('app.actual_work_hours_title'),
             'project-comparison' => __('app.work_hours_by_ownership'),
             default => __('app.dashboard'),
@@ -702,6 +797,7 @@ class DashboardService
             'ownership-share' => [__('app.ownership'), 'Say'],
             'geofence-analysis' => ['#', 'Grouping', 'Vendor', 'outside the geofence hours'],
             'utilization-trend' => ['Tarix', 'NWC (%)', __('app.ownership_icare').' (%)'],
+            'actual-work-hour-categories' => array_merge([__('app.project')], array_values($this->actualWorkHourDashboardBucketLabels()), ['Cəmi']),
             'actual-work-hours' => [__('app.project'), 'NWC '.__('app.hours'), __('app.ownership_icare').' '.__('app.hours'), 'Cəmi'],
             'project-comparison' => [__('app.project'), 'NWC', __('app.ownership_icare'), 'Cəmi'],
             default => ['Göstərici', 'Dəyər'],
@@ -763,6 +859,16 @@ class DashboardService
                 ])
                 ->all(),
             'utilization-trend' => $this->dashboardExportUtilizationTrendRows($filters),
+            'actual-work-hour-categories' => collect($this->getProjectActualWorkHourCategoriesByOwnership($filters)[$filters['ownership_type'] ?? Equipment::OWNERSHIP_NWC] ?? [])
+                ->map(fn (array $row): array => [
+                    $row['name'],
+                    $row['from_7_to_10'],
+                    $row['from_1_to_7'],
+                    $row['overtime'],
+                    $row['less_than_1'],
+                    $row['total'],
+                ])
+                ->all(),
             'actual-work-hours' => collect($this->getProjectActualHoursByOwnership($filters))
                 ->map(fn (array $row): array => [
                     $row['name'],
@@ -941,6 +1047,35 @@ class DashboardService
             Equipment::OWNERSHIP_ICARE => 0.0,
             'total' => 0.0,
         ];
+    }
+
+    private function emptyProjectActualWorkHourCategoryRow(int $id, string $name): array
+    {
+        return [
+            'id' => $id,
+            'name' => $name,
+            'less_than_1' => 0,
+            'from_1_to_7' => 0,
+            'from_7_to_10' => 0,
+            'overtime' => 0,
+            'total' => 0,
+        ];
+    }
+
+    private function sortProjectActualWorkHourCategoryRows(array $rows): array
+    {
+        foreach ($rows as &$ownershipRows) {
+            $ownershipRows = collect($ownershipRows)
+                ->sortBy([
+                    ['total', 'desc'],
+                    ['name', 'asc'],
+                ])
+                ->values()
+                ->all();
+        }
+        unset($ownershipRows);
+
+        return $rows;
     }
 
     private function buildProjectOwnershipRows($rows, string $valueColumn): array
@@ -2252,6 +2387,16 @@ class DashboardService
             'overtime' => '10 saatdan çox - Overtime',
             default => $bucket,
         };
+    }
+
+    private function actualWorkHourDashboardBucketLabels(): array
+    {
+        return [
+            'from_7_to_10' => __('app.worked_7_to_10_hours'),
+            'from_1_to_7' => __('app.worked_less_than_7_hours'),
+            'overtime' => __('app.worked_overtime_hours'),
+            'less_than_1' => __('app.worked_less_than_1_hour'),
+        ];
     }
 
     private function actualWorkHourBucket(float $hours): string
