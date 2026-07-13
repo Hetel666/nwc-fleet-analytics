@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DailyUnitAggregate;
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\Geofence;
@@ -27,6 +28,128 @@ class DashboardService
 
     public function __construct(private WialonService $wialon)
     {
+    }
+
+    public function syncDailyEngineHoursReport(array $filters, bool $force = false): array
+    {
+        $filters = $this->normalizeFilters($filters);
+
+        if (! $filters['project_id'] || ! $filters['ownership_type'] || $filters['from'] !== $filters['to']) {
+            throw new \InvalidArgumentException('Daily report sync requires one project, one ownership type and one date.');
+        }
+
+        $ownershipType = $filters['ownership_type'];
+        $group = ProjectWialonGroup::query()
+            ->where('project_id', $filters['project_id'])
+            ->where('ownership_type', $ownershipType)
+            ->first();
+
+        if (! $group) {
+            throw new \RuntimeException('Wialon group is not configured for the selected project and ownership type.');
+        }
+
+        $settings = $this->wialonReportSettings();
+        $syncKey = $this->wialonDailyEngineHoursSyncKey($filters, $settings, $group);
+        $previousSync = json_decode((string) Setting::query()->where('key', $syncKey)->value('value'), true);
+
+        if (! $force && ($previousSync['status'] ?? null) === 'success') {
+            return [
+                'status' => 'skipped',
+                'date' => $filters['from'],
+                'project_id' => $filters['project_id'],
+                'ownership_type' => $ownershipType,
+                'equipment_count' => (int) ($previousSync['equipment_count'] ?? 0),
+            ];
+        }
+
+        $equipment = $this->equipmentQuery($filters)->get();
+        $hoursByEquipmentId = $equipment->pluck('id')->mapWithKeys(fn (int $id): array => [$id => 0.0])->all();
+        $mileageByEquipmentId = $equipment->pluck('id')->mapWithKeys(fn (int $id): array => [$id => 0.0])->all();
+        $equipmentIdByReportKey = $equipment->mapWithKeys(fn (Equipment $item): array => [
+            $this->reportUnitKey($item->ownership_type, $item->name) => $item->id,
+        ])->all();
+
+        $reportData = $this->getDailyWialonEngineHours(
+            $filters,
+            collect([$ownershipType => $group]),
+            $settings,
+            $hoursByEquipmentId,
+            $mileageByEquipmentId,
+            $equipmentIdByReportKey,
+            [$ownershipType],
+            max(5, (int) config('fleet.wialon.report_stats_sync_timeout', 90))
+        );
+
+        if ($reportData === null) {
+            throw new \RuntimeException('Wialon daily engine hours report could not be generated.');
+        }
+
+        $reportedEquipmentIds = array_map('intval', $reportData['reported_equipment_ids'] ?? []);
+        $equipmentById = $equipment->keyBy('id');
+        $date = $filters['from'];
+
+        DB::transaction(function () use ($reportedEquipmentIds, $equipmentById, $reportData, $date): void {
+            foreach ($reportedEquipmentIds as $equipmentId) {
+                $item = $equipmentById->get($equipmentId);
+
+                if (! $item || ! $item->wialon_unit_id) {
+                    continue;
+                }
+
+                $workedHours = round((float) ($reportData['hours'][$equipmentId] ?? 0.0), 2);
+                $distanceKm = round((float) ($reportData['mileage'][$equipmentId] ?? 0.0), 2);
+                $utilization = $item->planned_daily_hours > 0
+                    ? min(100, ($workedHours / (float) $item->planned_daily_hours) * 100)
+                    : 0;
+                $dailyStat = EquipmentDailyStat::updateOrCreate(
+                    ['stat_date' => $date, 'equipment_id' => $equipmentId],
+                    [
+                        'project_id' => $item->project_id,
+                        'ownership_type' => $item->ownership_type,
+                        'worked_hours' => $workedHours,
+                        'distance_km' => $distanceKm,
+                        'utilization_percent' => round($utilization, 2),
+                        'calculation_source' => 'wialon_engine_hours_report',
+                        'calculation_status' => 'success',
+                    ]
+                );
+
+                DailyUnitAggregate::updateOrCreate(
+                    ['date' => $date, 'unit_id' => $item->wialon_unit_id],
+                    [
+                        'equipment_id' => $equipmentId,
+                        'project_id' => $item->project_id,
+                        'equipment_type_id' => $item->equipment_type_id,
+                        'ownership_type' => $item->ownership_type,
+                        'engine_hours' => $workedHours,
+                        'mileage' => $distanceKm,
+                        'geofence_outside_hours' => round(((float) $dailyStat->outside_geofence_minutes) / 60, 2),
+                    ]
+                );
+            }
+        });
+
+        Setting::updateOrCreate(
+            ['key' => $syncKey],
+            [
+                'value' => json_encode([
+                    'status' => 'success',
+                    'equipment_count' => count($reportedEquipmentIds),
+                    'synced_at' => now(config('app.timezone'))->toIso8601String(),
+                ], JSON_UNESCAPED_SLASHES),
+                'is_secret' => false,
+            ]
+        );
+
+        Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+
+        return [
+            'status' => 'synced',
+            'date' => $date,
+            'project_id' => $filters['project_id'],
+            'ownership_type' => $ownershipType,
+            'equipment_count' => count($reportedEquipmentIds),
+        ];
     }
 
     public function getOverview(array $filters): array
@@ -354,8 +477,9 @@ class DashboardService
                     continue;
                 }
 
-                $engineSeconds = (int) round(((float) ($reportData['hours'][$item->id] ?? 0.0)) * 3600);
-                $bucket = $this->actualWorkHourBucketFromSeconds($engineSeconds);
+                $statDays = max(1, (int) ($reportData['stat_days'][$item->id] ?? $reportData['period_days'] ?? 1));
+                $averageDailyHours = (float) ($reportData['hours'][$item->id] ?? 0.0) / $statDays;
+                $bucket = $this->actualWorkHourBucket($averageDailyHours);
 
                 $result[$ownershipType][$projectId][$bucket]++;
                 $result[$ownershipType][$projectId]['total']++;
@@ -653,7 +777,8 @@ class DashboardService
     private function dashboardCacheKey(array $filters): string
     {
         return 'dashboard:aggregate:'.md5(json_encode([
-            'version' => 10,
+            'version' => 12,
+            'data_version' => (int) Cache::get('dashboard:data-version', 1),
             'filters' => $filters,
         ]));
     }
@@ -2180,6 +2305,23 @@ class DashboardService
         }
 
         $settings = $this->wialonReportSettings();
+        $storedReportData = $this->getStoredWialonEngineHoursReportData(
+            $filters,
+            $groups,
+            $settings,
+            $equipment,
+            $periodDays
+        );
+
+        if ($storedReportData !== null) {
+            return $this->wialonEngineHoursReportData[$cacheKey] = [
+                'equipment' => $equipment,
+                ...$storedReportData,
+                'period_days' => $periodDays,
+                'source' => 'stored_daily_reports',
+            ];
+        }
+
         $persistentCacheKey = $this->wialonEngineHoursReportCacheKey(
             $filters,
             $settings,
@@ -2314,10 +2456,93 @@ class DashboardService
         ksort($groupIds);
 
         return 'dashboard:wialon-engine-hours:'.md5(json_encode([
-            'version' => 4,
+            'version' => 5,
             'filters' => $filters,
             'settings' => $settings,
             'groups' => $groupIds,
+        ]));
+    }
+
+    private function getStoredWialonEngineHoursReportData(
+        array $filters,
+        $groups,
+        array $settings,
+        $equipment,
+        int $periodDays
+    ): ?array {
+        $expectedSyncKeys = [];
+
+        foreach ($groups as $group) {
+            foreach (CarbonPeriod::create($filters['from'], $filters['to']) as $date) {
+                $dailyFilters = $filters;
+                $dailyFilters['from'] = $date->toDateString();
+                $dailyFilters['to'] = $date->toDateString();
+                $dailyFilters['ownership_type'] = $group->ownership_type;
+                $expectedSyncKeys[] = $this->wialonDailyEngineHoursSyncKey($dailyFilters, $settings, $group);
+            }
+        }
+
+        if ($expectedSyncKeys === []) {
+            return null;
+        }
+
+        $syncValues = Setting::query()->whereIn('key', $expectedSyncKeys)->pluck('value', 'key');
+
+        foreach ($expectedSyncKeys as $syncKey) {
+            $syncData = json_decode((string) $syncValues->get($syncKey), true);
+
+            if (($syncData['status'] ?? null) !== 'success') {
+                return null;
+            }
+        }
+
+        $hoursByEquipmentId = $equipment->pluck('id')->mapWithKeys(fn (int $id): array => [$id => 0.0])->all();
+        $mileageByEquipmentId = $equipment->pluck('id')->mapWithKeys(fn (int $id): array => [$id => 0.0])->all();
+        $statDaysByEquipmentId = [];
+        $equipmentIds = array_keys($hoursByEquipmentId);
+
+        $rows = EquipmentDailyStat::query()
+            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
+            ->where('project_id', $filters['project_id'])
+            ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('ownership_type', $ownershipType))
+            ->whereIn('equipment_id', $equipmentIds)
+            ->select(
+                'equipment_id',
+                DB::raw('SUM(worked_hours) as hours'),
+                DB::raw('SUM(distance_km) as mileage'),
+                DB::raw('COUNT(DISTINCT stat_date) as stat_days')
+            )
+            ->groupBy('equipment_id')
+            ->get();
+
+        foreach ($rows as $row) {
+            $equipmentId = (int) $row->equipment_id;
+            $hoursByEquipmentId[$equipmentId] = (float) $row->hours;
+            $mileageByEquipmentId[$equipmentId] = (float) $row->mileage;
+            $statDaysByEquipmentId[$equipmentId] = min($periodDays, (int) $row->stat_days);
+        }
+
+        return [
+            'hours' => $hoursByEquipmentId,
+            'mileage' => $mileageByEquipmentId,
+            'stat_days' => $statDaysByEquipmentId,
+            'reported_equipment_ids' => $rows->pluck('equipment_id')->map(fn ($id): int => (int) $id)->all(),
+        ];
+    }
+
+    private function wialonDailyEngineHoursSyncKey(
+        array $filters,
+        array $settings,
+        ProjectWialonGroup $group
+    ): string {
+        return 'wialon_daily_engine_sync:'.sha1(json_encode([
+            'version' => 1,
+            'resource_id' => $settings['resource_id'],
+            'template_id' => $settings['template_id'],
+            'project_id' => $filters['project_id'],
+            'ownership_type' => $group->ownership_type,
+            'group_id' => $group->wialon_group_id,
+            'date' => $filters['from'],
         ]));
     }
 
@@ -2445,7 +2670,8 @@ class DashboardService
         array $hoursByEquipmentId,
         array $mileageByEquipmentId,
         array $equipmentIdByReportKey,
-        ?array $ownershipTypes = null
+        ?array $ownershipTypes = null,
+        ?int $requestTimeout = null
     ): ?array {
         $reportDaysByEquipmentId = [];
         $reportedEquipmentIds = [];
@@ -2473,7 +2699,7 @@ class DashboardService
                         500,
                         16777216,
                         false,
-                        max(5, (int) config('fleet.wialon.engine_hours_report_timeout', 10))
+                        max(5, $requestTimeout ?? (int) config('fleet.wialon.daily_engine_hours_report_timeout', 30))
                     );
                 } catch (Throwable $exception) {
                     $failedReport = true;

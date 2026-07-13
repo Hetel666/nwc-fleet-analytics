@@ -106,8 +106,9 @@ class AutoSyncFleetData extends Command
             $date = now(config('app.timezone'))->subDays($offset)->toDateString();
             $dailyOk = $this->runArtisanCommand('fleet:sync-daily', ['--date' => $date]);
             $aggregateOk = $this->runArtisanCommand('fleet:aggregate-daily', ['--date' => $date]);
-            $success = $success && $dailyOk['ok'] && $aggregateOk['ok'];
-            $messages[] = $date.': '.trim($dailyOk['output'].' '.$aggregateOk['output']);
+            $reportOk = $this->runArtisanCommand('fleet:sync-report-stats', ['--date' => $date]);
+            $success = $success && $dailyOk['ok'] && $aggregateOk['ok'] && $reportOk['ok'];
+            $messages[] = $date.': '.trim($dailyOk['output'].' '.$aggregateOk['output'].' '.$reportOk['output']);
         }
 
         $this->storeTaskResult('daily', $success, implode(' | ', array_filter($messages)));

@@ -375,7 +375,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         $result = app(DashboardService::class)->getProjectActualWorkHourCategoriesByOwnership([
             'project_id' => $project->id,
             'date_from' => '2026-07-01',
-            'date_to' => '2026-07-13',
+            'date_to' => '2026-07-01',
         ]);
 
         $this->assertSame([
