@@ -5,38 +5,32 @@
 @section('page-subtitle', __('app.period').': '.$filters['from'].' - '.$filters['to'])
 
 @php
+    $nwc = \App\Models\Equipment::OWNERSHIP_NWC;
+    $icare = \App\Models\Equipment::OWNERSHIP_ICARE;
     $overview = $data['overview'];
-    $ownership = collect($overview['ownership']);
-    $ownershipShare = collect($overview['ownership_share']);
-    $ownershipLabelFor = fn (?string $value): string => $value === 'ICARE' ? __('app.ownership_icare') : __('app.ownership_nwc');
+    $ownershipLabelFor = fn (?string $value): string => $value === $icare ? __('app.ownership_icare') : __('app.ownership_nwc');
     $typeGroups = $data['equipmentTypesByOwnership'];
-    $typeNwc = collect($typeGroups['NWC'] ?? []);
-    $typeIcare = collect($typeGroups['ICARE'] ?? []);
-    $typeNwcLabels = $typeNwc->pluck('name');
-    $typeNwcTotals = $typeNwc->pluck('total');
-    $typeIcareLabels = $typeIcare->pluck('name');
-    $typeIcareTotals = $typeIcare->pluck('total');
+    $typeNwc = collect($typeGroups[$nwc] ?? [])->sortByDesc('total')->values();
+    $typeIcare = collect($typeGroups[$icare] ?? [])->sortByDesc('total')->values();
+    $typeNwcTop = $typeNwc->take(10)->values();
+    $typeIcareTop = $typeIcare->take(10)->values();
+    $typeNwcHasMore = $typeNwc->count() > 10;
+    $typeIcareHasMore = $typeIcare->count() > 10;
+    $ownershipShareRaw = collect($overview['ownership_share'])->keyBy('label');
+    $ownershipShare = collect([
+        ['label' => $nwc, 'count' => (int) ($ownershipShareRaw[$nwc]['count'] ?? 0)],
+        ['label' => $icare, 'count' => (int) ($ownershipShareRaw[$icare]['count'] ?? 0)],
+    ]);
+    $totalOwnershipCount = (int) $ownershipShare->sum('count');
     $ownershipAverages = collect($data['averageMetricsByOwnership'] ?? []);
-    $projectLabels = collect($data['projects'])->pluck('name');
-    $projectHours = collect($data['projects'])->pluck('hours');
-    $projectUtilization = collect($data['projects'])->pluck('utilization');
-    $ownershipLabels = $ownership->pluck('label')->map($ownershipLabelFor);
-    $ownershipHours = $ownership->pluck('hours');
-    $ownershipShareLabels = $ownershipShare->pluck('label')->map($ownershipLabelFor);
-    $ownershipShareCounts = $ownershipShare->pluck('count');
-    $totalOwnershipCount = max(1, (int) $ownershipShare->sum('count'));
-    $actualWorkLabels = [
-        'less_than_1' => __('app.less_than_1_hour'),
-        'from_1_to_7' => __('app.from_1_to_7_hours'),
-        'from_7_to_10' => __('app.from_7_to_10_hours'),
-        'overtime' => __('app.overtime_hours'),
-    ];
-    $actualWorkCategories = $data['actualWorkHourCategories'];
-    $actualWorkKeys = array_keys($actualWorkLabels);
-    $actualWorkNwc = collect($actualWorkKeys)->map(fn ($key) => $actualWorkCategories['NWC'][$key] ?? 0);
-    $actualWorkIcare = collect($actualWorkKeys)->map(fn ($key) => $actualWorkCategories['ICARE'][$key] ?? 0);
-    $actualWorkNwcTotal = (int) $actualWorkNwc->sum();
-    $actualWorkIcareTotal = (int) $actualWorkIcare->sum();
+    $projectActualRows = collect($data['projectActualHoursByOwnership'] ?? []);
+    $projectActualVisibleRows = $projectActualRows->take(18)->values();
+    $projectActualChartHeight = min(max($projectActualVisibleRows->count() * 36 + 80, 260), 640);
+    $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
+    $projectComparisonTop = $projectComparisonRows->take(10)->values();
+    $projectComparisonHasMore = $projectComparisonRows->count() > 10;
+    $projectComparisonChartHeight = min(max($projectComparisonTop->count() * 34 + 80, 260), 520);
+    $utilizationTrendByOwnership = $data['utilizationTrendByOwnership'] ?? ['labels' => [], 'series' => [$nwc => [], $icare => []], 'has_data' => false];
     $actualWorkModeText = $filters['from'] === $filters['to']
         ? __('app.actual_work_single_day_mode')
         : __('app.actual_work_average_daily_mode');
@@ -75,6 +69,10 @@
 
 @push('styles')
 <style>
+    .dashboard-page {
+        width: min(100%, 1540px);
+        margin: 0 auto;
+    }
     .dashboard-layout-actions {
         min-height: 34px;
     }
@@ -120,6 +118,91 @@
     }
     .dashboard-widget.dragging .dashboard-drag-handle {
         cursor: grabbing;
+    }
+    .dashboard-card {
+        min-height: 100%;
+    }
+    .dashboard-card--compact {
+        height: 360px;
+    }
+    .dashboard-card--medium {
+        min-height: 390px;
+    }
+    .dashboard-card-body {
+        min-height: 0;
+    }
+    .chart-box {
+        height: 260px;
+        min-height: 0;
+    }
+    .chart-box--donut {
+        height: 220px;
+    }
+    .dashboard-chart-scroll {
+        max-height: 430px;
+        overflow: auto;
+        padding-right: 4px;
+    }
+    .dashboard-donut-layout {
+        display: grid;
+        grid-template-columns: minmax(180px, 230px) minmax(160px, 1fr);
+        align-items: center;
+        gap: 18px;
+    }
+    .dashboard-share-row {
+        display: grid;
+        grid-template-columns: 14px minmax(70px, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+    }
+    .dashboard-color-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+    }
+    .dashboard-scroll-table {
+        max-height: 252px;
+        overflow: auto;
+    }
+    .dashboard-scroll-table.is-expanded {
+        max-height: 420px;
+    }
+    .dashboard-expand-toggle {
+        font-size: .82rem;
+        padding: .2rem .45rem;
+    }
+    .dashboard-empty {
+        min-height: 180px;
+        border: 1px dashed #d8e0ec;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: var(--fleet-muted);
+        background: #fbfcff;
+        text-align: center;
+        padding: 18px;
+    }
+    .dashboard-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .dashboard-mini-kpi {
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        padding: 12px;
+        background: #fff;
+    }
+    .dashboard-mini-kpi-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+    .map-box {
+        height: 300px;
+        border-radius: 8px;
+        overflow: hidden;
     }
     .dashboard-loading-overlay {
         position: fixed;
@@ -175,541 +258,359 @@
     body.dashboard-is-loading {
         cursor: progress;
     }
+    @media (max-width: 1199px) {
+        .dashboard-card--compact {
+            height: auto;
+            min-height: 330px;
+        }
+    }
+    @media (max-width: 767px) {
+        .dashboard-donut-layout,
+        .dashboard-kpi-grid {
+            grid-template-columns: 1fr;
+        }
+        .chart-box--donut {
+            height: 210px;
+        }
+    }
 </style>
 @endpush
 
 @section('content')
-    <div class="dashboard-loading-overlay" id="dashboardLoadingOverlay" aria-hidden="true">
-        <div class="dashboard-loading-card" role="status" aria-live="polite">
-            <div class="d-flex align-items-center gap-3 mb-4">
-                <div class="dashboard-loading-icon">
-                    <i class="bi bi-cloud-arrow-down"></i>
+    <div class="dashboard-page">
+        <div class="dashboard-loading-overlay" id="dashboardLoadingOverlay" aria-hidden="true">
+            <div class="dashboard-loading-card" role="status" aria-live="polite">
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    <div class="dashboard-loading-icon">
+                        <i class="bi bi-cloud-arrow-down"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="fw-bold fs-5">{{ __('app.loading_title') }}</div>
+                        <div class="small text-secondary" id="dashboardLoadingText">{{ __('app.loading_filters') }}</div>
+                    </div>
+                    <div class="dashboard-loading-percent ms-auto" id="dashboardLoadingPercent">0%</div>
                 </div>
-                <div class="min-w-0">
-                    <div class="fw-bold fs-5">{{ __('app.loading_title') }}</div>
-                    <div class="small text-secondary" id="dashboardLoadingText">{{ __('app.loading_filters') }}</div>
+                <div class="dashboard-loading-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="dashboardLoadingProgress">
+                    <div class="dashboard-loading-bar-value" id="dashboardLoadingProgressBar"></div>
                 </div>
-                <div class="dashboard-loading-percent ms-auto" id="dashboardLoadingPercent">0%</div>
+                <div class="small text-secondary mt-3">{{ __('app.loading_note') }}</div>
             </div>
-            <div class="dashboard-loading-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="dashboardLoadingProgress">
-                <div class="dashboard-loading-bar-value" id="dashboardLoadingProgressBar"></div>
-            </div>
-            <div class="small text-secondary mt-3">{{ __('app.loading_note') }}</div>
         </div>
-    </div>
 
-    <form method="GET" action="{{ $selectedProject ? route('projects.dashboard', $selectedProject) : route('dashboard') }}" class="panel p-3 mb-4" id="dashboardFilterForm">
-        <input type="hidden" name="period" id="dashboardPeriodInput" value="{{ $selectedPeriod }}">
-        <div class="row g-3 align-items-end">
-            @unless($selectedProject)
-                <div class="col-12 col-lg-3">
-                    <label class="form-label">{{ __('app.project') }}</label>
-                    <select name="project_id" class="form-select">
-                        <option value="">{{ __('app.all_projects') }}</option>
-                        @foreach ($projects as $project)
-                            <option value="{{ $project->id }}" @selected((string) $filters['project_id'] === (string) $project->id)>{{ $project->name }}</option>
+        <form method="GET" action="{{ $selectedProject ? route('projects.dashboard', $selectedProject) : route('dashboard') }}" class="panel p-3 mb-4" id="dashboardFilterForm">
+            <input type="hidden" name="period" id="dashboardPeriodInput" value="{{ $selectedPeriod }}">
+            <div class="row g-3 align-items-end">
+                @unless($selectedProject)
+                    <div class="col-12 col-xl-3 col-lg-4">
+                        <label class="form-label">{{ __('app.project') }}</label>
+                        <select name="project_id" class="form-select">
+                            <option value="">{{ __('app.all_projects') }}</option>
+                            @foreach ($projects as $project)
+                                <option value="{{ $project->id }}" @selected((string) $filters['project_id'] === (string) $project->id)>{{ $project->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endunless
+                <div class="col-6 col-lg-2">
+                    <label class="form-label">{{ __('app.from') }}</label>
+                    <input type="date" name="date_from" value="{{ $filters['from'] }}" class="form-control" id="dashboardDateFrom">
+                </div>
+                <div class="col-6 col-lg-2">
+                    <label class="form-label">{{ __('app.to') }}</label>
+                    <input type="date" name="date_to" value="{{ $filters['to'] }}" class="form-control" id="dashboardDateTo">
+                </div>
+                <div class="col-12 col-lg-2">
+                    <label class="form-label">{{ __('app.type') }}</label>
+                    <select name="equipment_type_id" class="form-select">
+                        <option value="">{{ __('app.all_types') }}</option>
+                        @foreach ($equipmentTypeOptions as $type)
+                            <option value="{{ $type->id }}" @selected((string) $filters['equipment_type_id'] === (string) $type->id)>{{ $type->name }}</option>
                         @endforeach
                     </select>
                 </div>
-            @endunless
-            <div class="col-6 col-lg-2">
-                <label class="form-label">{{ __('app.from') }}</label>
-                <input type="date" name="date_from" value="{{ $filters['from'] }}" class="form-control" id="dashboardDateFrom">
+                <div class="col-12 col-lg-2">
+                    <label class="form-label">{{ __('app.ownership') }}</label>
+                    <select name="ownership_type" class="form-select">
+                        <option value="">{{ __('app.ownership_all') }}</option>
+                        <option value="{{ $nwc }}" @selected($filters['ownership_type'] === $nwc)>{{ __('app.ownership_nwc') }}</option>
+                        <option value="{{ $icare }}" @selected($filters['ownership_type'] === $icare)>{{ __('app.ownership_icare') }}</option>
+                    </select>
+                </div>
+                <div class="col-12 col-lg-auto">
+                    <button class="btn btn-primary btn-icon" id="dashboardFilterButton">
+                        <i class="bi bi-funnel"></i><span>{{ __('app.filter') }}</span>
+                    </button>
+                </div>
             </div>
-            <div class="col-6 col-lg-2">
-                <label class="form-label">{{ __('app.to') }}</label>
-                <input type="date" name="date_to" value="{{ $filters['to'] }}" class="form-control" id="dashboardDateTo">
+            <div class="d-flex flex-wrap gap-2 mt-3" aria-label="{{ __('app.period') }}">
+                @foreach ($periodPresets as $key => $preset)
+                    <button
+                        type="button"
+                        class="btn btn-sm {{ $selectedPeriod === $key ? 'btn-primary' : 'btn-outline-secondary' }} dashboard-period-button"
+                        data-period="{{ $key }}"
+                        data-from="{{ $preset['from'] }}"
+                        data-to="{{ $preset['to'] }}"
+                    >
+                        {{ $preset['label'] }}
+                    </button>
+                @endforeach
             </div>
-            <div class="col-12 col-lg-2">
-                <label class="form-label">{{ __('app.type') }}</label>
-                <select name="equipment_type_id" class="form-select">
-                    <option value="">{{ __('app.all_types') }}</option>
-                    @foreach ($equipmentTypeOptions as $type)
-                        <option value="{{ $type->id }}" @selected((string) $filters['equipment_type_id'] === (string) $type->id)>{{ $type->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-12 col-lg-2">
-                <label class="form-label">{{ __('app.ownership') }}</label>
-                <select name="ownership_type" class="form-select">
-                    <option value="">{{ __('app.ownership_all') }}</option>
-                    <option value="NWC" @selected($filters['ownership_type'] === 'NWC')>{{ __('app.ownership_nwc') }}</option>
-                    <option value="ICARE" @selected($filters['ownership_type'] === 'ICARE')>{{ __('app.ownership_icare') }}</option>
-                </select>
-            </div>
-            <div class="col-12 col-lg-auto">
-                <button class="btn btn-primary btn-icon" id="dashboardFilterButton">
-                    <i class="bi bi-funnel"></i><span>{{ __('app.filter') }}</span>
-                </button>
-            </div>
-        </div>
-        <div class="d-flex flex-wrap gap-2 mt-3" aria-label="{{ __('app.period') }}">
-            @foreach ($periodPresets as $key => $preset)
-                <button
-                    type="button"
-                    class="btn btn-sm {{ $selectedPeriod === $key ? 'btn-primary' : 'btn-outline-secondary' }} dashboard-period-button"
-                    data-period="{{ $key }}"
-                    data-from="{{ $preset['from'] }}"
-                    data-to="{{ $preset['to'] }}"
-                >
-                    {{ $preset['label'] }}
-                </button>
+        </form>
+
+        <div class="row g-3 mb-4">
+            @foreach ($kpis as $kpi)
+                <div class="col-12 col-md-6 col-xxl">
+                    <section class="metric-card p-3 h-100">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="metric-icon" style="background: {{ $kpi['tone'] }}; color: {{ $kpi['color'] }};">
+                                <i class="bi {{ $kpi['icon'] }}"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="metric-title">{{ $kpi['label'] }}</div>
+                                <div class="metric-value">{{ $kpi['value'] }}</div>
+                                <div class="small text-secondary">
+                                    <span class="{{ $kpi['change'] >= 0 ? 'change-up' : 'change-down' }}">
+                                        <i class="bi {{ $kpi['change'] >= 0 ? 'bi-arrow-up' : 'bi-arrow-down' }}"></i>
+                                        {{ abs($kpi['change']) }}%
+                                    </span>
+                                    {{ __('app.previous_period') }}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
             @endforeach
         </div>
-    </form>
 
-    <div class="row g-3 mb-4">
-        @foreach ($kpis as $kpi)
-            <div class="col-12 col-md-6 col-xl">
-                <section class="metric-card p-3 h-100">
-                    <div class="d-flex align-items-center gap-3">
-                        <div class="metric-icon" style="background: {{ $kpi['tone'] }}; color: {{ $kpi['color'] }};">
-                            <i class="bi {{ $kpi['icon'] }}"></i>
+        <div class="dashboard-layout-actions d-flex justify-content-end gap-2 mb-2">
+            <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
+                <i class="bi bi-download"></i><span>Excel</span>
+            </a>
+            <button type="button" class="btn btn-outline-secondary btn-sm dashboard-reset-order" id="resetDashboardLayout" title="Sıralamanı sıfırla" aria-label="Sıralamanı sıfırla">
+                <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+        </div>
+
+        <div class="row g-3 dashboard-grid" id="dashboardGrid">
+            <div class="col-12 col-lg-6 col-xxl-4 dashboard-widget" data-dashboard-widget="ownership-share" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
+                    <x-dashboard-card-header title="{{ __('app.ownership_share') }}" :export-url="$exportUrl('ownership-share')" />
+                    <div class="dashboard-card-body flex-grow-1">
+                        @if ($totalOwnershipCount > 0)
+                            <div class="dashboard-donut-layout h-100">
+                                <div class="chart-box chart-box--donut"><canvas id="ownershipDonut"></canvas></div>
+                                <div class="vstack gap-3">
+                                    @foreach ($ownershipShare as $row)
+                                        @php
+                                            $code = $row['label'];
+                                            $percent = $totalOwnershipCount > 0 ? round(($row['count'] / $totalOwnershipCount) * 100, 1) : 0;
+                                            $dotColor = $code === $nwc ? '#24b35b' : '#1f6feb';
+                                        @endphp
+                                        <div class="dashboard-share-row">
+                                            <span class="dashboard-color-dot" style="background: {{ $dotColor }}"></span>
+                                            <span class="fw-semibold">{{ $ownershipLabelFor($code) }}</span>
+                                            <span>{{ $row['count'] }} / {{ $percent }}%</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @else
+                            <div class="dashboard-empty">{{ __('app.no_data') }}</div>
+                        @endif
+                    </div>
+                </section>
+            </div>
+
+            <div class="col-12 col-lg-6 col-xxl-4 dashboard-widget" data-dashboard-widget="equipment-types-nwc" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
+                    <x-dashboard-card-header title="{{ __('app.equipment_type_distribution') }}: {{ __('app.ownership_nwc') }}" :export-url="$exportUrl('equipment-types-nwc')" />
+                    @include('dashboard.partials.type-distribution-card', [
+                        'chartId' => 'typeDonutNwc',
+                        'rows' => $typeNwc,
+                        'topRows' => $typeNwcTop,
+                        'hasMore' => $typeNwcHasMore,
+                        'expandId' => 'types-nwc',
+                    ])
+                </section>
+            </div>
+
+            <div class="col-12 col-lg-6 col-xxl-4 dashboard-widget" data-dashboard-widget="equipment-types-icare" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
+                    <x-dashboard-card-header title="{{ __('app.equipment_type_distribution') }}: {{ __('app.ownership_icare') }}" :export-url="$exportUrl('equipment-types-icare')" />
+                    @include('dashboard.partials.type-distribution-card', [
+                        'chartId' => 'typeDonutIcare',
+                        'rows' => $typeIcare,
+                        'topRows' => $typeIcareTop,
+                        'hasMore' => $typeIcareHasMore,
+                        'expandId' => 'types-icare',
+                    ])
+                </section>
+            </div>
+
+            <div class="col-12 col-xl-8 dashboard-widget" data-dashboard-widget="actual-work-hours" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-card--medium">
+                    <x-dashboard-card-header title="{{ __('app.actual_work_hours_title') }}" :export-url="$exportUrl('actual-work-hours')" subtitle="{{ $actualWorkModeText }}" />
+                    @if ($projectActualRows->isNotEmpty())
+                        <div class="dashboard-chart-scroll">
+                            <div style="height: {{ $projectActualChartHeight }}px; min-width: 720px;">
+                                <canvas id="projectActualHoursChart"></canvas>
+                            </div>
                         </div>
-                        <div class="min-w-0">
-                            <div class="metric-title">{{ $kpi['label'] }}</div>
-                            <div class="metric-value">{{ $kpi['value'] }}</div>
-                            <div class="small text-secondary">
-                                <span class="{{ $kpi['change'] >= 0 ? 'change-up' : 'change-down' }}">
-                                    <i class="bi {{ $kpi['change'] >= 0 ? 'bi-arrow-up' : 'bi-arrow-down' }}"></i>
-                                    {{ abs($kpi['change']) }}%
-                                </span>
-                                {{ __('app.previous_period') }}
+                    @else
+                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
+                    @endif
+                </section>
+            </div>
+
+            <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="project-averages" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-card--medium">
+                    <x-dashboard-card-header title="{{ __('app.project_averages') }}: {{ __('app.ownership_nwc') }} vs {{ __('app.ownership_icare') }}" :export-url="$exportUrl('project-averages')" />
+                    @if ($ownershipAverages->sum('count') > 0)
+                        <div class="dashboard-kpi-grid">
+                            @foreach ($ownershipAverages as $row)
+                                <div class="dashboard-mini-kpi">
+                                    <div class="text-secondary small fw-semibold">{{ $ownershipLabelFor($row['ownership'] ?? null) }}</div>
+                                    <div class="dashboard-mini-kpi-value mt-1">{{ number_format($row['avg_hours'], 1) }}</div>
+                                    <div class="small text-secondary">{{ __('app.engine_hours') }} / {{ __('app.hours') }}</div>
+                                </div>
+                                <div class="dashboard-mini-kpi">
+                                    <div class="text-secondary small fw-semibold">{{ $ownershipLabelFor($row['ownership'] ?? null) }}</div>
+                                    <div class="dashboard-mini-kpi-value mt-1">{{ number_format($row['avg_mileage'], 1) }}</div>
+                                    <div class="small text-secondary">{{ __('app.mileage') }} / {{ __('app.km') }}</div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
+                    @endif
+                </section>
+            </div>
+
+            <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="least-working" draggable="false">
+                <section class="panel p-3 dashboard-card">
+                    <x-dashboard-card-header title="{{ __('app.least_working') }}" :export-url="$exportUrl('least-working')" />
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking']])
+                </section>
+            </div>
+
+            <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="most-working" draggable="false">
+                <section class="panel p-3 dashboard-card">
+                    <x-dashboard-card-header title="{{ __('app.most_working') }}" :export-url="$exportUrl('most-working')" />
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking']])
+                </section>
+            </div>
+
+            <div class="col-12 col-xl-7 dashboard-widget" data-dashboard-widget="geofence-analysis" draggable="false">
+                <section class="panel p-3 dashboard-card">
+                    <x-dashboard-card-header title="{{ __('app.geofence_analysis') }}" :export-url="$exportUrl('geofence-analysis')" />
+                    <div class="row g-3">
+                        <div class="col-lg-7"><div id="fleetMap" class="map-box"></div></div>
+                        <div class="col-lg-5">
+                            <div class="dashboard-scroll-table">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Texnika</th>
+                                            <th>Vendor</th>
+                                            <th class="text-end">Saat</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @forelse ($data['geofenceOutsideRows'] as $row)
+                                            <tr>
+                                                <td class="fw-semibold">{{ $row['grouping'] }}</td>
+                                                <td>{{ $row['vendor'] }}</td>
+                                                <td class="text-end">{{ number_format((float) $row['outside_hours'], 2, '.', '') }}</td>
+                                            </tr>
+                                        @empty
+                                            <tr><td colspan="3" class="text-secondary">{{ __('app.no_data') }}</td></tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
                 </section>
             </div>
-        @endforeach
-    </div>
 
-    <div class="dashboard-layout-actions d-flex justify-content-end gap-2 mb-2">
-        <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
-            <i class="bi bi-download"></i><span>Excel</span>
-        </a>
-        <button type="button" class="btn btn-outline-secondary btn-sm dashboard-reset-order" id="resetDashboardLayout" title="Sıralamanı sıfırla" aria-label="Sıralamanı sıfırla">
-            <i class="bi bi-arrow-counterclockwise"></i>
-        </button>
-    </div>
-
-    <div class="row g-4 dashboard-grid" id="dashboardGrid">
-        <div class="col-12 col-xl-5 dashboard-widget" data-dashboard-widget="work-hours" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.work_hours_by_ownership') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('work-hours') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="chart-box"><canvas id="ownershipBar"></canvas></div>
-            </section>
-        </div>
-
-        <div class="col-12 col-xl-7 dashboard-widget" data-dashboard-widget="equipment-types" draggable="false">
-            <div class="row g-4 h-100">
-                <div class="col-12 col-lg-6">
-                    <section class="panel p-3 h-100">
-                        <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                            <h2 class="h6 fw-bold mb-0">{{ __('app.equipment_type_distribution') }}: {{ __('app.ownership_nwc') }}</h2>
-                            <div class="d-flex align-items-center gap-1">
-                                <a href="{{ $exportUrl('equipment-types-nwc') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                                    <i class="bi bi-download"></i>
-                                </a>
-                                <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                                    <i class="bi bi-grip-vertical"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="row g-3 align-items-center">
-                            <div class="col-md-5"><div class="chart-box"><canvas id="typeDonutNwc"></canvas></div></div>
-                            <div class="col-md-7">
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Növ</th>
-                                                <th class="text-end">Say</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @forelse ($typeNwc as $type)
-                                                <tr>
-                                                    <td>{{ $type['name'] }}</td>
-                                                    <td class="text-end">{{ $type['total'] }}</td>
-                                                </tr>
-                                            @empty
-                                                <tr><td colspan="2" class="text-secondary">{{ __('app.no_data') }}</td></tr>
-                                            @endforelse
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                </div>
-
-                <div class="col-12 col-lg-6">
-                    <section class="panel p-3 h-100">
-                        <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                            <h2 class="h6 fw-bold mb-0">{{ __('app.equipment_type_distribution') }}: {{ __('app.ownership_icare') }}</h2>
-                            <div class="d-flex align-items-center gap-1">
-                                <a href="{{ $exportUrl('equipment-types-icare') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                                    <i class="bi bi-download"></i>
-                                </a>
-                                <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                                    <i class="bi bi-grip-vertical"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="row g-3 align-items-center">
-                            <div class="col-md-5"><div class="chart-box"><canvas id="typeDonutIcare"></canvas></div></div>
-                            <div class="col-md-7">
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Növ</th>
-                                                <th class="text-end">Say</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @forelse ($typeIcare as $type)
-                                                <tr>
-                                                    <td>{{ $type['name'] }}</td>
-                                                    <td class="text-end">{{ $type['total'] }}</td>
-                                                </tr>
-                                            @empty
-                                                <tr><td colspan="2" class="text-secondary">{{ __('app.no_data') }}</td></tr>
-                                            @endforelse
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                </div>
+            <div class="col-12 col-xl-5 dashboard-widget" data-dashboard-widget="utilization-trend" draggable="false">
+                <section class="panel p-3 dashboard-card">
+                    <x-dashboard-card-header title="{{ __('app.utilization_trend') }}" :export-url="$exportUrl('utilization-trend')" />
+                    @if ($utilizationTrendByOwnership['has_data'] ?? false)
+                        <div class="chart-box"><canvas id="utilizationLine"></canvas></div>
+                    @else
+                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
+                    @endif
+                </section>
             </div>
-        </div>
 
-        <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="project-averages" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.project_averages') }}: {{ __('app.ownership_nwc') }} vs {{ __('app.ownership_icare') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('project-averages') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="vstack gap-3">
-                    <div class="p-3 rounded border">
-                        <div class="text-secondary small fw-semibold mb-2">{{ __('app.engine_hours') }}</div>
-                        <div class="table-responsive">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Tip</th>
-                                        <th class="text-end">Say</th>
-                                        <th class="text-end">{{ __('app.avg_engine_hours') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach ($ownershipAverages as $row)
-                                        <tr>
-                                            <td>{{ $ownershipLabelFor($row['ownership'] ?? null) }}</td>
-                                            <td class="text-end">{{ $row['count'] }}</td>
-                                            <td class="text-end fw-semibold">{{ number_format($row['avg_hours'], 1) }}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="p-3 rounded border">
-                        <div class="text-secondary small fw-semibold mb-2">{{ __('app.mileage') }}</div>
-                        <div class="table-responsive">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Tip</th>
-                                        <th class="text-end">Say</th>
-                                        <th class="text-end">{{ __('app.avg_mileage') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach ($ownershipAverages as $row)
-                                        <tr>
-                                            <td>{{ $ownershipLabelFor($row['ownership'] ?? null) }}</td>
-                                            <td class="text-end">{{ $row['count'] }}</td>
-                                            <td class="text-end fw-semibold">{{ number_format($row['avg_mileage'], 1) }}</td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="least-working" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.least_working') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('least-working') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking']])
-            </section>
-        </div>
-
-        <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="most-working" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.most_working') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('most-working') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking']])
-            </section>
-        </div>
-
-        <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="ownership-share" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.ownership_share') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('ownership-share') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="row align-items-center g-3">
-                    <div class="col-md-7"><div class="chart-box"><canvas id="ownershipDonut"></canvas></div></div>
-                    <div class="col-md-5">
-                        <div class="vstack gap-2">
-                            @foreach ($ownershipShare as $row)
-                                <div class="d-flex justify-content-between gap-2">
-                                    <span class="fw-semibold">{{ $ownershipLabelFor($row['label']) }}</span>
-                                    <span>{{ $row['count'] }} / {{ round(($row['count'] / $totalOwnershipCount) * 100, 1) }}%</span>
+            <div class="col-12 dashboard-widget" data-dashboard-widget="project-comparison" draggable="false">
+                <section class="panel p-3 dashboard-card">
+                    <x-dashboard-card-header title="{{ __('app.work_hours_by_ownership') }}" :export-url="$exportUrl('project-comparison')" />
+                    @if ($projectComparisonRows->isNotEmpty())
+                        <div class="row g-3 align-items-start">
+                            <div class="col-lg-7">
+                                <div class="dashboard-chart-scroll">
+                                    <div style="height: {{ $projectComparisonChartHeight }}px; min-width: 680px;">
+                                        <canvas id="projectComparison"></canvas>
+                                    </div>
                                 </div>
-                            @endforeach
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <div class="col-12 col-xl-7 dashboard-widget" data-dashboard-widget="geofence-analysis" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.geofence_analysis') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('geofence-analysis') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-lg-7"><div id="fleetMap" class="map-box"></div></div>
-                    <div class="col-lg-5">
-                        <div class="table-responsive">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>Grouping</th>
-                                        <th>Vendor</th>
-                                        <th class="text-end">outside the geofence hours</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @forelse ($data['geofenceOutsideRows'] as $row)
-                                        <tr>
-                                            <td class="fw-semibold">{{ $row['grouping'] }}</td>
-                                            <td>{{ $row['vendor'] }}</td>
-                                            <td class="text-end">{{ number_format((float) $row['outside_hours'], 2, '.', '') }}</td>
-                                        </tr>
-                                    @empty
-                                        <tr><td colspan="3" class="text-secondary">{{ __('app.no_data') }}</td></tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <div class="col-12 col-xl-5 dashboard-widget" data-dashboard-widget="utilization-trend" draggable="false">
-            <section class="panel p-3 h-100">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.utilization_trend') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('utilization-trend') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="chart-box"><canvas id="utilizationLine"></canvas></div>
-            </section>
-        </div>
-
-        <div class="col-12 dashboard-widget" data-dashboard-widget="actual-work-hours" draggable="false">
-            <section class="panel p-3">
-                <div class="dashboard-panel-header d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-                    <div>
-                        <h2 class="h6 fw-bold mb-1">{{ __('app.actual_work_hours_title') }}</h2>
-                        <div class="small text-secondary">{{ $actualWorkModeText }}</div>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <div class="small text-secondary">{{ $filters['from'] }} - {{ $filters['to'] }}</div>
-                        <a href="{{ $exportUrl('actual-work-hours') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="row g-4">
-                    <div class="col-12 col-xl-6">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <h3 class="h6 fw-semibold mb-0">NWC</h3>
-                            <span class="small text-secondary">{{ $actualWorkNwcTotal }} ədəd</span>
-                        </div>
-                        <div class="row g-3 align-items-center">
-                            <div class="col-md-6">
-                                <div class="chart-box"><canvas id="actualWorkNwc"></canvas></div>
                             </div>
-                            <div class="col-md-6">
-                                <div class="table-responsive">
+                            <div class="col-lg-5">
+                                <div class="dashboard-scroll-table" data-expandable="project-comparison">
                                     <table class="table table-sm align-middle mb-0">
                                         <thead>
                                             <tr>
-                                                <th>Status</th>
-                                                <th class="text-end">Say</th>
+                                                <th>{{ __('app.project') }}</th>
+                                                <th class="text-end">NWC</th>
+                                                <th class="text-end">{{ __('app.ownership_icare') }}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            @foreach ($actualWorkLabels as $key => $label)
-                                                <tr>
-                                                    <td>{{ $label }}</td>
-                                                    <td class="text-end">{{ $actualWorkCategories['NWC'][$key] ?? 0 }}</td>
+                                            @foreach ($projectComparisonRows as $row)
+                                                <tr class="{{ $loop->iteration > 10 ? 'expandable-extra d-none' : '' }}">
+                                                    <td class="fw-semibold">{{ $row['name'] }}</td>
+                                                    <td class="text-end">{{ number_format($row[$nwc], 0) }}</td>
+                                                    <td class="text-end">{{ number_format($row[$icare], 0) }}</td>
                                                 </tr>
                                             @endforeach
                                         </tbody>
                                     </table>
                                 </div>
+                                @if ($projectComparisonHasMore)
+                                    <button type="button" class="btn btn-link dashboard-expand-toggle mt-2" data-expand-toggle="project-comparison" data-show-label="Hamısını göstər" data-hide-label="Gizlət">Hamısını göstər</button>
+                                @endif
                             </div>
                         </div>
-                    </div>
-
-                    <div class="col-12 col-xl-6">
-                        <div class="d-flex align-items-center justify-content-between mb-2">
-                            <h3 class="h6 fw-semibold mb-0">{{ __('app.ownership_icare') }}</h3>
-                            <span class="small text-secondary">{{ $actualWorkIcareTotal }} ədəd</span>
-                        </div>
-                        <div class="row g-3 align-items-center">
-                            <div class="col-md-6">
-                                <div class="chart-box"><canvas id="actualWorkIcare"></canvas></div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="table-responsive">
-                                    <table class="table table-sm align-middle mb-0">
-                                        <thead>
-                                            <tr>
-                                                <th>Status</th>
-                                                <th class="text-end">Say</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach ($actualWorkLabels as $key => $label)
-                                                <tr>
-                                                    <td>{{ $label }}</td>
-                                                    <td class="text-end">{{ $actualWorkCategories['ICARE'][$key] ?? 0 }}</td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </div>
-
-        <div class="col-12 dashboard-widget" data-dashboard-widget="project-comparison" draggable="false">
-            <section class="panel p-3">
-                <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
-                    <h2 class="h6 fw-bold mb-0">{{ __('app.projects') }}</h2>
-                    <div class="d-flex align-items-center gap-1">
-                        <a href="{{ $exportUrl('project-comparison') }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
-                            <i class="bi bi-grip-vertical"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="chart-box"><canvas id="projectComparison"></canvas></div>
-            </section>
+                    @else
+                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
+                    @endif
+                </section>
+            </div>
         </div>
     </div>
 @endsection
 
 @push('scripts')
 <script>
-const chartColors = ['#1f6feb', '#24b35b', '#f6ad00', '#8b5cf6', '#0ea5b7', '#94a3b8', '#f97316'];
-const ownershipLabels = @json($ownershipLabels);
-const ownershipHours = @json($ownershipHours);
-const ownershipShareLabels = @json($ownershipShareLabels);
-const ownershipShareCounts = @json($ownershipShareCounts);
-const typeNwcLabels = @json($typeNwcLabels);
-const typeNwcTotals = @json($typeNwcTotals);
-const typeIcareLabels = @json($typeIcareLabels);
-const typeIcareTotals = @json($typeIcareTotals);
-const projectLabels = @json($projectLabels);
-const projectHours = @json($projectHours);
-const projectUtilization = @json($projectUtilization);
-const utilizationTrend = @json($data['utilizationTrend']);
+const ownershipColor = { NWC: '#24b35b', ICARE: '#1f6feb' };
+const typePalette = ['#1f6feb', '#24b35b', '#f6ad00', '#8b5cf6', '#0ea5b7', '#94a3b8', '#f97316', '#14b8a6', '#6366f1', '#ef4444'];
+const ownershipShareLabels = @json($ownershipShare->pluck('label')->map($ownershipLabelFor)->values());
+const ownershipShareCounts = @json($ownershipShare->pluck('count')->values());
+const typeNwcLabels = @json($typeNwcTop->pluck('name')->values());
+const typeNwcTotals = @json($typeNwcTop->pluck('total')->values());
+const typeIcareLabels = @json($typeIcareTop->pluck('name')->values());
+const typeIcareTotals = @json($typeIcareTop->pluck('total')->values());
+const projectActualLabels = @json($projectActualVisibleRows->pluck('name')->values());
+const projectActualNwc = @json($projectActualVisibleRows->pluck($nwc)->values());
+const projectActualIcare = @json($projectActualVisibleRows->pluck($icare)->values());
+const utilizationTrend = @json($utilizationTrendByOwnership);
+const projectComparisonLabels = @json($projectComparisonTop->pluck('name')->values());
+const projectComparisonNwc = @json($projectComparisonTop->pluck($nwc)->values());
+const projectComparisonIcare = @json($projectComparisonTop->pluck($icare)->values());
 const mapData = @json($data['mapData']);
-const actualWorkLabels = @json(array_values($actualWorkLabels));
-const actualWorkNwc = @json($actualWorkNwc);
-const actualWorkIcare = @json($actualWorkIcare);
-const actualWorkColors = ['#94a3b8', '#1f6feb', '#24b35b', '#ef4444'];
 const dashboardLayoutScope = @json($selectedProject ? 'project-'.$selectedProject->id : 'dashboard');
-const dashboardLayoutKey = `fleet.analytics.dashboard.order.${dashboardLayoutScope}`;
+const dashboardLayoutKey = `fleet.analytics.dashboard.order.v3.${dashboardLayoutScope}`;
 const dashboardGrid = document.getElementById('dashboardGrid');
 const dashboardResetButton = document.getElementById('resetDashboardLayout');
 const dashboardFilterForm = document.getElementById('dashboardFilterForm');
@@ -728,6 +629,13 @@ const dashboardLoadingMessages = {
     wialon: @json(__('app.loading_wialon')),
     dashboard: @json(__('app.loading_dashboard')),
 };
+const labels = {
+    noData: @json(__('app.no_data')),
+    nwc: @json(__('app.ownership_nwc')),
+    icare: @json(__('app.ownership_icare')),
+    hours: @json(__('app.hours')),
+    utilization: @json(__('app.utilization')),
+};
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;',
     '<': '&lt;',
@@ -735,10 +643,88 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character =>
     '"': '&quot;',
     "'": '&#039;',
 }[character]));
+const hasChartData = values => Array.isArray(values) && values.some(value => Number(value) > 0);
+const truncateLabel = value => String(value ?? '').length > 28 ? `${String(value).slice(0, 27)}…` : String(value ?? '');
 let fleetMap = null;
 let draggedWidget = null;
 let dragOverWidget = null;
 let dashboardLoadingTimer = null;
+
+const commonTooltip = {
+    callbacks: {
+        label: context => {
+            const value = Number(context.parsed?.x ?? context.parsed ?? context.raw ?? 0);
+            return `${context.dataset.label || context.label}: ${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
+        }
+    }
+};
+
+const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '64%',
+    plugins: {
+        legend: {
+            position: 'bottom',
+            labels: { boxWidth: 14, boxHeight: 8, usePointStyle: false, font: { size: 11 } }
+        },
+        tooltip: commonTooltip
+    }
+};
+
+const createDoughnutChart = (id, chartLabels, values, colors) => {
+    const canvas = document.getElementById(id);
+
+    if (!canvas || !hasChartData(values)) {
+        return null;
+    }
+
+    return new Chart(canvas, {
+        type: 'doughnut',
+        data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+        options: doughnutOptions
+    });
+};
+
+const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues, unit = '') => {
+    const canvas = document.getElementById(id);
+
+    if (!canvas || (!hasChartData(nwcValues) && !hasChartData(icareValues))) {
+        return null;
+    }
+
+    const shortLabels = chartLabels.map(truncateLabel);
+
+    return new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: shortLabels,
+            datasets: [
+                { label: labels.nwc, data: nwcValues, backgroundColor: ownershipColor.NWC, borderRadius: 4 },
+                { label: labels.icare, data: icareValues, backgroundColor: ownershipColor.ICARE, borderRadius: 4 },
+            ],
+            originalLabels: chartLabels,
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { beginAtZero: true, ticks: { precision: 0 } },
+                y: { ticks: { autoSkip: false, font: { size: 11 } } }
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        title: items => chartLabels[items[0]?.dataIndex] || '',
+                        label: context => `${context.dataset.label}: ${Number(context.raw || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}${unit ? ` ${unit}` : ''}`,
+                    }
+                }
+            }
+        }
+    });
+};
 
 const setDashboardLoadingProgress = value => {
     const progress = Math.max(0, Math.min(99, Math.round(value)));
@@ -868,6 +854,23 @@ window.addEventListener('pageshow', () => {
     }
 
     hideDashboardLoading();
+});
+
+document.querySelectorAll('[data-expand-toggle]').forEach(button => {
+    button.addEventListener('click', () => {
+        const targetId = button.dataset.expandToggle;
+        const container = document.querySelector(`[data-expandable="${targetId}"]`);
+
+        if (!container) {
+            return;
+        }
+
+        const expanded = container.dataset.expanded === '1';
+        container.dataset.expanded = expanded ? '0' : '1';
+        container.classList.toggle('is-expanded', !expanded);
+        container.querySelectorAll('.expandable-extra').forEach(row => row.classList.toggle('d-none', expanded));
+        button.textContent = expanded ? button.dataset.showLabel : button.dataset.hideLabel;
+    });
 });
 
 const dashboardWidgets = () => dashboardGrid
@@ -1020,97 +1023,70 @@ dashboardResetButton?.addEventListener('click', () => {
     window.location.reload();
 });
 
-new Chart(document.getElementById('ownershipBar'), {
-    type: 'bar',
-    data: {
-        labels: ownershipLabels,
-        datasets: [{ label: '{{ __('app.hours') }}', data: ownershipHours, backgroundColor: ['#1f6feb', '#24b35b'] }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-});
+createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE]);
+createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette);
+createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette);
+createHorizontalOwnershipChart('projectActualHoursChart', projectActualLabels, projectActualNwc, projectActualIcare, labels.hours);
+createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
-new Chart(document.getElementById('typeDonutNwc'), {
-    type: 'doughnut',
-    data: { labels: typeNwcLabels, datasets: [{ data: typeNwcTotals, backgroundColor: chartColors }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '62%' }
-});
-
-new Chart(document.getElementById('typeDonutIcare'), {
-    type: 'doughnut',
-    data: { labels: typeIcareLabels, datasets: [{ data: typeIcareTotals, backgroundColor: chartColors }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '62%' }
-});
-
-new Chart(document.getElementById('ownershipDonut'), {
-    type: 'doughnut',
-    data: { labels: ownershipShareLabels, datasets: [{ data: ownershipShareCounts, backgroundColor: ['#1f6feb', '#24b35b'] }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '64%' }
-});
-
-new Chart(document.getElementById('actualWorkNwc'), {
-    type: 'doughnut',
-    data: { labels: actualWorkLabels, datasets: [{ data: actualWorkNwc, backgroundColor: actualWorkColors }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right' } } }
-});
-
-new Chart(document.getElementById('actualWorkIcare'), {
-    type: 'doughnut',
-    data: { labels: actualWorkLabels, datasets: [{ data: actualWorkIcare, backgroundColor: actualWorkColors }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right' } } }
-});
-
-new Chart(document.getElementById('utilizationLine'), {
-    type: 'line',
-    data: {
-        labels: utilizationTrend.labels,
-        datasets: [{ label: '{{ __('app.utilization') }} %', data: utilizationTrend.data, borderColor: '#1f6feb', backgroundColor: 'rgba(31,111,235,.12)', tension: .35, fill: true }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
-});
-
-new Chart(document.getElementById('projectComparison'), {
-    data: {
-        labels: projectLabels,
-        datasets: [
-            { type: 'bar', label: '{{ __('app.hours') }}', data: projectHours, backgroundColor: '#1f6feb' },
-            { type: 'line', label: '{{ __('app.utilization') }} %', data: projectUtilization, borderColor: '#24b35b', yAxisID: 'percent', tension: .35 }
-        ]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: { percent: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } } }
-    }
-});
-
-const map = L.map('fleetMap', { scrollWheelZoom: false }).setView([40.39, 49.86], 10);
-fleetMap = map;
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-}).addTo(map);
-
-const bounds = [];
-mapData.geofences.forEach(zone => {
-    if (!zone.geometry) return;
-    const layer = L.geoJSON(zone.geometry, { style: { color: '#1f6feb', weight: 2, fillOpacity: .12 } }).addTo(map);
-    layer.bindPopup(escapeHtml(zone.name));
-    layer.getBounds && bounds.push(layer.getBounds());
-});
-mapData.equipment.forEach(item => {
-    if (!item.position || !item.position.lat || !item.position.lng) return;
-    const marker = L.circleMarker([item.position.lat, item.position.lng], {
-        radius: 7,
-        color: item.ownership === 'ICARE' ? '#24b35b' : '#1f6feb',
-        fillOpacity: .9
-    }).addTo(map);
-    marker.bindPopup(`<strong>${escapeHtml(item.name)}</strong><br>${escapeHtml(item.type)}<br>${escapeHtml(item.project)}`);
-    bounds.push(marker.getLatLng());
-});
-if (bounds.length > 0) {
-    const group = L.featureGroup(bounds.map(item => item instanceof L.LatLng ? L.marker(item) : L.rectangle(item)));
-    map.fitBounds(group.getBounds().pad(.18));
+if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
+    new Chart(document.getElementById('utilizationLine'), {
+        type: 'line',
+        data: {
+            labels: utilizationTrend.labels,
+            datasets: [
+                { label: labels.nwc, data: utilizationTrend.series.NWC || [], borderColor: ownershipColor.NWC, backgroundColor: 'rgba(36,179,91,.12)', tension: .35, fill: false },
+                { label: labels.icare, data: utilizationTrend.series.ICARE || [], borderColor: ownershipColor.ICARE, backgroundColor: 'rgba(31,111,235,.12)', tension: .35, fill: false },
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { y: { min: 0, max: 100, ticks: { callback: value => `${value}%` } } },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        title: items => utilizationTrend.dates?.[items[0]?.dataIndex] || items[0]?.label || '',
+                        label: context => `${context.dataset.label}: ${Number(context.raw || 0).toFixed(1)}%`,
+                    }
+                }
+            }
+        }
+    });
 }
-setTimeout(() => map.invalidateSize(), 80);
+
+const mapContainer = document.getElementById('fleetMap');
+if (mapContainer) {
+    const map = L.map('fleetMap', { scrollWheelZoom: false }).setView([40.39, 49.86], 10);
+    fleetMap = map;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const bounds = [];
+    mapData.geofences.forEach(zone => {
+        if (!zone.geometry) return;
+        const layer = L.geoJSON(zone.geometry, { style: { color: '#1f6feb', weight: 2, fillOpacity: .12 } }).addTo(map);
+        layer.bindPopup(escapeHtml(zone.name));
+        layer.getBounds && bounds.push(layer.getBounds());
+    });
+    mapData.equipment.forEach(item => {
+        if (!item.position || !item.position.lat || !item.position.lng) return;
+        const marker = L.circleMarker([item.position.lat, item.position.lng], {
+            radius: 7,
+            color: item.ownership === 'ICARE' ? ownershipColor.ICARE : ownershipColor.NWC,
+            fillOpacity: .9
+        }).addTo(map);
+        marker.bindPopup(`<strong>${escapeHtml(item.name)}</strong><br>${escapeHtml(item.type)}<br>${escapeHtml(item.project)}`);
+        bounds.push(marker.getLatLng());
+    });
+    if (bounds.length > 0) {
+        const group = L.featureGroup(bounds.map(item => item instanceof L.LatLng ? L.marker(item) : L.rectangle(item)));
+        map.fitBounds(group.getBounds().pad(.18));
+    }
+    setTimeout(() => map.invalidateSize(), 80);
+}
 </script>
 @endpush
