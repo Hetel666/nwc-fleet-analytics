@@ -327,35 +327,45 @@ class DashboardService
             Equipment::OWNERSHIP_NWC => [],
             Equipment::OWNERSHIP_ICARE => [],
         ];
+        $reportData = $this->getWialonEngineHoursReportData($filters);
 
-        if ($filters['project_id']) {
-            $reportData = $this->getWialonActualWorkReportData($filters);
+        if ($reportData !== null) {
+            $projectNames = collect($reportData['equipment'])
+                ->pluck('project.name', 'project_id')
+                ->filter()
+                ->all();
+            $reportedEquipmentIds = array_flip(array_map('intval', $reportData['reported_equipment_ids'] ?? []));
 
-            if ($reportData !== null) {
-                $project = Project::query()->find($filters['project_id']);
+            foreach ($reportData['equipment'] as $item) {
+                $ownershipType = $item->ownership_type;
 
-                foreach ($reportData['equipment'] as $item) {
-                    $ownershipType = $item->ownership_type;
-
-                    if (! array_key_exists($ownershipType, $result)) {
-                        continue;
-                    }
-
-                    $result[$ownershipType][$filters['project_id']] ??= $this->emptyProjectActualWorkHourCategoryRow(
-                        (int) $filters['project_id'],
-                        $project?->name ?? ''
-                    );
-
-                    $statDays = (int) ($reportData['stat_days'][$item->id] ?? $reportData['period_days']);
-                    $averageDailyHours = $statDays > 0 ? ((float) ($reportData['hours'][$item->id] ?? 0.0) / $statDays) : 0.0;
-                    $bucket = $this->actualWorkHourBucket($averageDailyHours);
-
-                    $result[$ownershipType][$filters['project_id']][$bucket]++;
-                    $result[$ownershipType][$filters['project_id']]['total']++;
+                if (! array_key_exists($ownershipType, $result)) {
+                    continue;
                 }
 
-                return $this->sortProjectActualWorkHourCategoryRows($result);
+                $projectId = (int) $item->project_id;
+                $result[$ownershipType][$projectId] ??= $this->emptyProjectActualWorkHourCategoryRow(
+                    $projectId,
+                    (string) ($projectNames[$projectId] ?? $item->project?->name ?? '')
+                );
+
+                if (! isset($reportedEquipmentIds[(int) $item->id])) {
+                    $result[$ownershipType][$projectId]['missing_data']++;
+                    continue;
+                }
+
+                $engineSeconds = (int) round(((float) ($reportData['hours'][$item->id] ?? 0.0)) * 3600);
+                $bucket = $this->actualWorkHourBucketFromSeconds($engineSeconds);
+
+                $result[$ownershipType][$projectId][$bucket]++;
+                $result[$ownershipType][$projectId]['total']++;
             }
+
+            return $this->sortProjectActualWorkHourCategoryRows($result);
+        }
+
+        if ($filters['project_id']) {
+            return $result;
         }
 
         $rows = $this->equipmentQuery($filters)
@@ -643,7 +653,7 @@ class DashboardService
     private function dashboardCacheKey(array $filters): string
     {
         return 'dashboard:aggregate:'.md5(json_encode([
-            'version' => 7,
+            'version' => 10,
             'filters' => $filters,
         ]));
     }
@@ -799,7 +809,7 @@ class DashboardService
             'ownership-share' => [__('app.ownership'), 'Say'],
             'geofence-analysis' => ['#', 'Grouping', 'Vendor', 'outside the geofence hours'],
             'utilization-trend' => ['Tarix', 'NWC (%)', __('app.ownership_icare').' (%)'],
-            'actual-work-hour-categories' => array_merge([__('app.project')], array_values($this->actualWorkHourDashboardBucketLabels()), ['Cəmi']),
+            'actual-work-hour-categories' => array_merge([__('app.project')], array_values($this->actualWorkHourDashboardBucketLabels()), ['Cəmi', 'Məlumatı olmayan texnika']),
             'actual-work-hours' => [__('app.project'), 'NWC '.__('app.hours'), __('app.ownership_icare').' '.__('app.hours'), 'Cəmi'],
             'project-comparison' => [__('app.project'), 'NWC', __('app.ownership_icare'), 'Cəmi'],
             default => ['Göstərici', 'Dəyər'],
@@ -864,11 +874,12 @@ class DashboardService
             'actual-work-hour-categories' => collect($this->getProjectActualWorkHourCategoriesByOwnership($filters)[$filters['ownership_type'] ?? Equipment::OWNERSHIP_NWC] ?? [])
                 ->map(fn (array $row): array => [
                     $row['name'],
-                    $row['overtime'],
-                    $row['from_7_to_10'],
-                    $row['from_1_to_7'],
                     $row['less_than_1'],
+                    $row['from_1_to_7'],
+                    $row['from_7_to_10'],
+                    $row['overtime'],
                     $row['total'],
+                    $row['missing_data'] ?? 0,
                 ])
                 ->all(),
             'actual-work-hours' => collect($this->getProjectActualHoursByOwnership($filters))
@@ -1061,6 +1072,7 @@ class DashboardService
             'from_7_to_10' => 0,
             'overtime' => 0,
             'total' => 0,
+            'missing_data' => 0,
         ];
     }
 
@@ -1339,9 +1351,8 @@ class DashboardService
                     500,
                     16777216,
                     false,
-                    max(30, (int) config('fleet.wialon.geofence_outside_report_timeout', 120))
+                    max(5, (int) config('fleet.wialon.geofence_outside_report_timeout', 10))
                 );
-                $successfulReports++;
             } catch (Throwable $exception) {
                 $failedReports++;
                 Log::warning('Wialon geofence outside report failed', [
@@ -1354,7 +1365,7 @@ class DashboardService
                 continue;
             }
 
-            $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine');
+            $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine', true);
             $geofenceTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'geofence');
 
             if ($engineTable === null || $geofenceTable === null) {
@@ -1365,6 +1376,8 @@ class DashboardService
                 ]);
                 continue;
             }
+
+            $successfulReports++;
 
             $engineRows = $this->engineRowsByReportKey($engineTable, $ownershipType, $equipmentIdByReportKey);
             $geofenceHours = $this->geofenceHoursByReportKey($geofenceTable, $ownershipType, $equipmentIdByReportKey);
@@ -1443,7 +1456,7 @@ class DashboardService
             }
 
             $cells = $record['_cells'] ?? [];
-            $engineHours = $this->parseReportHours(
+            $engineSeconds = $this->parseWialonEngineHoursToSeconds(
                 $this->reportRecordValue($record, [
                     'Engine hours',
                     'Motor saatı',
@@ -1456,6 +1469,11 @@ class DashboardService
                 ])
                     ?? ($cells[$engineIndex] ?? null)
             );
+
+            if ($engineSeconds === null) {
+                continue;
+            }
+
             $date = (string) ($record['_date'] ?? '');
             $rowKey = $date.'|'.$equipmentKey;
 
@@ -1465,8 +1483,10 @@ class DashboardService
                 'vendor' => (string) ($this->reportRecordValue($record, ['Vendor', 'Mülkiyyət', 'Mulkiyyet']) ?? ''),
                 'date' => $date,
                 'engine_hours' => 0.0,
+                'engine_seconds' => 0,
             ];
-            $rows[$rowKey]['engine_hours'] += $engineHours;
+            $rows[$rowKey]['engine_hours'] += $engineSeconds / 3600;
+            $rows[$rowKey]['engine_seconds'] += $engineSeconds;
         }
 
         return $rows;
@@ -1620,7 +1640,7 @@ class DashboardService
         }
     }
 
-    private function wialonReportTableByKind(array $tables, string $kind): ?array
+    private function wialonReportTableByKind(array $tables, string $kind, bool $strict = false): ?array
     {
         foreach ($tables as $table) {
             $meta = $table['table'] ?? [];
@@ -1642,6 +1662,10 @@ class DashboardService
             )) {
                 return $table;
             }
+        }
+
+        if ($strict) {
+            return null;
         }
 
         return $kind === 'engine'
@@ -1844,7 +1868,7 @@ class DashboardService
         ksort($groupIds);
 
         return 'dashboard:wialon-geofence-outside:'.md5(json_encode([
-            'version' => 1,
+            'version' => 2,
             'filters' => $filters,
             'settings' => $settings,
             'groups' => $groupIds,
@@ -2025,9 +2049,8 @@ class DashboardService
                     500,
                     16777216,
                     true,
-                    max(30, (int) config('fleet.wialon.actual_work_report_timeout', 120))
+                    max(5, (int) config('fleet.wialon.actual_work_report_timeout', 10))
                 );
-                $successfulReports++;
             } catch (Throwable $exception) {
                 $failedReports++;
                 Log::warning('Wialon actual work report failed', [
@@ -2040,7 +2063,7 @@ class DashboardService
                 continue;
             }
 
-            $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine');
+            $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine', true);
 
             if ($engineTable === null) {
                 Log::warning('Wialon actual work report table missing', [
@@ -2050,6 +2073,8 @@ class DashboardService
                 ]);
                 continue;
             }
+
+            $successfulReports++;
 
             foreach ($this->engineRowsByReportKey($engineTable, $ownershipType, $equipmentIdByReportKey) as $engineRow) {
                 $equipmentKey = $engineRow['equipment_key'];
@@ -2168,6 +2193,7 @@ class DashboardService
                 'hours' => $cachedReportData['hours'],
                 'mileage' => $cachedReportData['mileage'],
                 'stat_days' => $cachedReportData['stat_days'],
+                'reported_equipment_ids' => $cachedReportData['reported_equipment_ids'] ?? [],
                 'period_days' => $periodDays,
                 'source' => $cachedReportData['source'] ?? 'cache',
             ];
@@ -2219,6 +2245,10 @@ class DashboardService
                         'hours' => $dailyData['hours'],
                         'mileage' => $dailyData['mileage'],
                         'stat_days' => $dailyData['stat_days'] + $intervalData['stat_days'],
+                        'reported_equipment_ids' => array_values(array_unique(array_merge(
+                            $intervalData['reported_equipment_ids'] ?? [],
+                            $dailyData['reported_equipment_ids'] ?? []
+                        ))),
                     ];
 
                     $this->cacheWialonEngineHoursReportData($persistentCacheKey, $mergedData, 'interval_daily');
@@ -2284,7 +2314,7 @@ class DashboardService
         ksort($groupIds);
 
         return 'dashboard:wialon-engine-hours:'.md5(json_encode([
-            'version' => 2,
+            'version' => 4,
             'filters' => $filters,
             'settings' => $settings,
             'groups' => $groupIds,
@@ -2299,6 +2329,7 @@ class DashboardService
             'hours' => $reportData['hours'] ?? [],
             'mileage' => $reportData['mileage'] ?? [],
             'stat_days' => $reportData['stat_days'] ?? [],
+            'reported_equipment_ids' => $reportData['reported_equipment_ids'] ?? [],
             'source' => $source,
         ], now()->addMinutes($ttlMinutes));
     }
@@ -2315,6 +2346,7 @@ class DashboardService
         array $equipmentIdByReportKey
     ): ?array {
         $statDaysByEquipmentId = array_fill_keys(array_keys($hoursByEquipmentId), $periodDays);
+        $reportedEquipmentIds = [];
         $successfulReports = 0;
         $failedOwnershipTypes = [];
 
@@ -2326,18 +2358,17 @@ class DashboardService
             }
 
             try {
-                $report = $this->wialon->getReportRows(
+                $report = $this->wialon->getReportTablesRows(
                     $settings['resource_id'],
                     $settings['template_id'],
                     $group->wialon_group_id,
                     $from,
                     $to,
-                    0,
                     500,
                     16777216,
-                    true
+                    true,
+                    max(5, (int) config('fleet.wialon.engine_hours_report_timeout', 10))
                 );
-                $successfulReports++;
             } catch (Throwable $exception) {
                 $failedOwnershipTypes[] = $ownershipType;
                 Log::warning('Wialon interval engine hours report failed', [
@@ -2350,10 +2381,25 @@ class DashboardService
                 continue;
             }
 
-            $engineHoursIndex = $this->engineHoursColumnIndex($report['table'] ?? []);
-            $mileageIndex = $this->mileageColumnIndex($report['table'] ?? []);
+            $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine', true);
 
-            foreach ($report['rows'] ?? [] as $row) {
+            if ($engineTable === null) {
+                $failedOwnershipTypes[] = $ownershipType;
+                Log::warning('Wialon interval engine hours table missing', [
+                    'project_id' => $filters['project_id'],
+                    'ownership_type' => $ownershipType,
+                    'from' => $filters['from'],
+                    'to' => $filters['to'],
+                    'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
+                ]);
+                continue;
+            }
+
+            $successfulReports++;
+            $engineHoursIndex = $this->engineHoursColumnIndex($engineTable['table'] ?? []);
+            $mileageIndex = $this->mileageColumnIndex($engineTable['table'] ?? []);
+
+            foreach ($engineTable['rows'] ?? [] as $row) {
                 $cells = $row['c'] ?? [];
                 $unitName = $this->reportCellText($cells[0] ?? null);
 
@@ -2367,12 +2413,19 @@ class DashboardService
                     continue;
                 }
 
-                $hoursByEquipmentId[$equipmentId] += $this->parseReportHours($cells[$engineHoursIndex] ?? null);
+                $engineSeconds = $this->parseWialonEngineHoursToSeconds($cells[$engineHoursIndex] ?? null);
+
+                if ($engineSeconds === null) {
+                    continue;
+                }
+
+                $hoursByEquipmentId[$equipmentId] += $engineSeconds / 3600;
                 $mileageByEquipmentId[$equipmentId] += $this->parseReportNumber($cells[$mileageIndex] ?? null);
+                $reportedEquipmentIds[(int) $equipmentId] = true;
             }
         }
 
-        if ($successfulReports === 0 && $failedOwnershipTypes === []) {
+        if ($successfulReports === 0) {
             return null;
         }
 
@@ -2380,6 +2433,7 @@ class DashboardService
             'hours' => $hoursByEquipmentId,
             'mileage' => $mileageByEquipmentId,
             'stat_days' => $statDaysByEquipmentId,
+            'reported_equipment_ids' => array_keys($reportedEquipmentIds),
             'failed_ownership_types' => array_values(array_unique($failedOwnershipTypes)),
         ];
     }
@@ -2394,6 +2448,7 @@ class DashboardService
         ?array $ownershipTypes = null
     ): ?array {
         $reportDaysByEquipmentId = [];
+        $reportedEquipmentIds = [];
         $successfulReports = 0;
         $failedReport = false;
         $ownershipTypes ??= [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE];
@@ -2409,14 +2464,17 @@ class DashboardService
                 $day = Carbon::parse($date->toDateString(), config('app.timezone'));
 
                 try {
-                    $report = $this->wialon->getReportRows(
+                    $report = $this->wialon->getReportTablesRows(
                         $settings['resource_id'],
                         $settings['template_id'],
                         $group->wialon_group_id,
                         $day->copy()->startOfDay()->timestamp,
-                        $day->copy()->endOfDay()->timestamp
+                        $day->copy()->endOfDay()->timestamp,
+                        500,
+                        16777216,
+                        false,
+                        max(5, (int) config('fleet.wialon.engine_hours_report_timeout', 10))
                     );
-                    $successfulReports++;
                 } catch (Throwable $exception) {
                     $failedReport = true;
                     Log::warning('Wialon daily engine hours report failed', [
@@ -2428,10 +2486,24 @@ class DashboardService
                     continue;
                 }
 
-                $engineHoursIndex = $this->engineHoursColumnIndex($report['table'] ?? []);
-                $mileageIndex = $this->mileageColumnIndex($report['table'] ?? []);
+                $engineTable = $this->wialonReportTableByKind($report['tables'] ?? [], 'engine', true);
 
-                foreach ($report['rows'] ?? [] as $row) {
+                if ($engineTable === null) {
+                    $failedReport = true;
+                    Log::warning('Wialon daily engine hours table missing', [
+                        'project_id' => $filters['project_id'],
+                        'ownership_type' => $ownershipType,
+                        'date' => $day->toDateString(),
+                        'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
+                    ]);
+                    continue;
+                }
+
+                $successfulReports++;
+                $engineHoursIndex = $this->engineHoursColumnIndex($engineTable['table'] ?? []);
+                $mileageIndex = $this->mileageColumnIndex($engineTable['table'] ?? []);
+
+                foreach ($engineTable['rows'] ?? [] as $row) {
                     $cells = $row['c'] ?? [];
                     $unitName = $this->reportCellText($cells[0] ?? null);
 
@@ -2445,9 +2517,16 @@ class DashboardService
                         continue;
                     }
 
-                    $hoursByEquipmentId[$equipmentId] += $this->parseReportHours($cells[$engineHoursIndex] ?? null);
+                    $engineSeconds = $this->parseWialonEngineHoursToSeconds($cells[$engineHoursIndex] ?? null);
+
+                    if ($engineSeconds === null) {
+                        continue;
+                    }
+
+                    $hoursByEquipmentId[$equipmentId] += $engineSeconds / 3600;
                     $mileageByEquipmentId[$equipmentId] += $this->parseReportNumber($cells[$mileageIndex] ?? null);
                     $reportDaysByEquipmentId[$equipmentId][$day->toDateString()] = true;
+                    $reportedEquipmentIds[(int) $equipmentId] = true;
                 }
             }
         }
@@ -2460,6 +2539,7 @@ class DashboardService
             'hours' => $hoursByEquipmentId,
             'mileage' => $mileageByEquipmentId,
             'stat_days' => array_map('count', $reportDaysByEquipmentId),
+            'reported_equipment_ids' => array_keys($reportedEquipmentIds),
         ];
     }
 
@@ -2530,25 +2610,55 @@ class DashboardService
 
     private function parseReportHours(mixed $cell): float
     {
+        $seconds = $this->parseWialonEngineHoursToSeconds($cell);
+
+        return $seconds !== null ? $seconds / 3600 : 0.0;
+    }
+
+    private function parseWialonEngineHoursToSeconds(mixed $cell): ?int
+    {
         if (is_array($cell)) {
-            $cell = $cell['v'] ?? $cell['t'] ?? 0;
+            $textValue = $cell['t'] ?? null;
+
+            if ($textValue !== null) {
+                $parsedText = $this->parseWialonEngineHoursToSeconds($textValue);
+
+                if ($parsedText !== null) {
+                    return $parsedText;
+                }
+            }
+
+            return $this->parseWialonEngineHoursToSeconds($cell['v'] ?? null);
         }
 
-        if (is_numeric($cell)) {
-            return (float) $cell;
+        if ($cell === null) {
+            return null;
+        }
+
+        if (is_int($cell) || is_float($cell)) {
+            return max(0, (int) round((float) $cell));
         }
 
         $value = trim((string) $cell);
 
-        if (preg_match('/^(\d+):(\d{2})(?::(\d{2}))?$/', $value, $matches)) {
-            $hours = (int) $matches[1];
-            $minutes = (int) $matches[2];
-            $seconds = (int) ($matches[3] ?? 0);
-
-            return $hours + ($minutes / 60) + ($seconds / 3600);
+        if ($value === '' || in_array($value, ['-', '-----'], true)) {
+            return null;
         }
 
-        return $this->parseReportNumber($value);
+        if (preg_match('/^(?:(\d+)\s+day[s]?\s+)?(\d+):(\d{2})(?::(\d{2}))?$/i', $value, $matches)) {
+            $days = (int) ($matches[1] ?? 0);
+            $hours = (int) $matches[2];
+            $minutes = (int) $matches[3];
+            $seconds = (int) ($matches[4] ?? 0);
+
+            return max(0, (($days * 24 + $hours) * 3600) + ($minutes * 60) + $seconds);
+        }
+
+        if (preg_match('/^\d+(?:[,.]\d+)?$/', $value)) {
+            return max(0, (int) round($this->parseReportNumber($value) * 3600));
+        }
+
+        return null;
     }
 
     private function parseReportNumber(mixed $cell): float
@@ -2617,9 +2727,9 @@ class DashboardService
     {
         return match ($bucket) {
             'less_than_1' => '1 saatdan az',
-            'from_1_to_7' => '1-7 saat',
-            'from_7_to_10' => '7-10 saat',
-            'overtime' => '10 saatdan çox - Overtime',
+            'from_1_to_7' => '7 saatdan az',
+            'from_7_to_10' => '7-10 saat işləyən',
+            'overtime' => '10 saatdan çox işləyən (Overtime)',
             default => $bucket,
         };
     }
@@ -2627,10 +2737,10 @@ class DashboardService
     private function actualWorkHourDashboardBucketLabels(): array
     {
         return [
-            'overtime' => __('app.worked_overtime_hours'),
-            'from_7_to_10' => __('app.worked_7_to_10_hours'),
-            'from_1_to_7' => __('app.worked_less_than_7_hours'),
             'less_than_1' => __('app.worked_less_than_1_hour'),
+            'from_1_to_7' => __('app.worked_less_than_7_hours'),
+            'from_7_to_10' => __('app.worked_7_to_10_hours'),
+            'overtime' => __('app.worked_overtime_hours'),
         ];
     }
 
@@ -2645,6 +2755,23 @@ class DashboardService
         }
 
         if ($hours <= 10) {
+            return 'from_7_to_10';
+        }
+
+        return 'overtime';
+    }
+
+    private function actualWorkHourBucketFromSeconds(int $seconds): string
+    {
+        if ($seconds < 3600) {
+            return 'less_than_1';
+        }
+
+        if ($seconds < 25200) {
+            return 'from_1_to_7';
+        }
+
+        if ($seconds <= 36000) {
             return 'from_7_to_10';
         }
 

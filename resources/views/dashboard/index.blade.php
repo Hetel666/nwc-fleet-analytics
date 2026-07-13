@@ -26,24 +26,44 @@
     $projectWorkCategoryGroups = $data['projectActualWorkHourCategoriesByOwnership'] ?? [$nwc => [], $icare => []];
     $projectWorkCategoryRowsNwc = collect($projectWorkCategoryGroups[$nwc] ?? []);
     $projectWorkCategoryRowsIcare = collect($projectWorkCategoryGroups[$icare] ?? []);
-    $projectWorkCategoryChartHeightNwc = min(max($projectWorkCategoryRowsNwc->count() * 34 + 80, 260), 620);
-    $projectWorkCategoryChartHeightIcare = min(max($projectWorkCategoryRowsIcare->count() * 34 + 80, 260), 620);
     $actualWorkCategoryLabels = collect([
-        'overtime' => __('app.worked_overtime_hours'),
-        'from_7_to_10' => __('app.worked_7_to_10_hours'),
-        'from_1_to_7' => __('app.worked_less_than_7_hours'),
         'less_than_1' => __('app.worked_less_than_1_hour'),
+        'from_1_to_7' => __('app.worked_less_than_7_hours'),
+        'from_7_to_10' => __('app.worked_7_to_10_hours'),
+        'overtime' => __('app.worked_overtime_hours'),
     ]);
-    $projectWorkCategoryNwcSeries = $actualWorkCategoryLabels->keys()->mapWithKeys(fn (string $key) => [$key => $projectWorkCategoryRowsNwc->pluck($key)->values()]);
-    $projectWorkCategoryIcareSeries = $actualWorkCategoryLabels->keys()->mapWithKeys(fn (string $key) => [$key => $projectWorkCategoryRowsIcare->pluck($key)->values()]);
+    $actualWorkCategoryRanges = collect([
+        'less_than_1' => '< 1 saat',
+        'from_1_to_7' => '1 - 7 saat',
+        'from_7_to_10' => '7 - 10 saat',
+        'overtime' => '> 10 saat (Overtime)',
+    ]);
+    $actualWorkCategoryColors = collect([
+        'less_than_1' => '#1f6feb',
+        'from_1_to_7' => '#f97316',
+        'from_7_to_10' => '#24b35b',
+        'overtime' => '#ef4444',
+    ]);
+    $projectWorkCategorySummaryFor = function ($rows) use ($actualWorkCategoryLabels) {
+        $rows = collect($rows);
+        $summary = [];
+
+        foreach ($actualWorkCategoryLabels->keys() as $key) {
+            $summary[$key] = (int) $rows->sum($key);
+        }
+
+        $summary['total'] = array_sum(array_intersect_key($summary, array_flip($actualWorkCategoryLabels->keys()->all())));
+        $summary['missing_data'] = (int) $rows->sum('missing_data');
+
+        return collect($summary);
+    };
+    $projectWorkCategorySummaryNwc = $projectWorkCategorySummaryFor($projectWorkCategoryRowsNwc);
+    $projectWorkCategorySummaryIcare = $projectWorkCategorySummaryFor($projectWorkCategoryRowsIcare);
     $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
     $projectComparisonTop = $projectComparisonRows->take(10)->values();
     $projectComparisonHasMore = $projectComparisonRows->count() > 10;
     $projectComparisonChartHeight = min(max($projectComparisonTop->count() * 34 + 80, 260), 520);
     $utilizationTrendByOwnership = $data['utilizationTrendByOwnership'] ?? ['labels' => [], 'series' => [$nwc => [], $icare => []], 'has_data' => false];
-    $actualWorkModeText = $filters['from'] === $filters['to']
-        ? __('app.actual_work_single_day_mode')
-        : __('app.actual_work_average_daily_mode');
     $today = \Illuminate\Support\Carbon::today(config('app.timezone'));
     $periodPresets = [
         'today' => ['label' => __('app.period_today'), 'from' => $today->toDateString(), 'to' => $today->toDateString()],
@@ -224,6 +244,69 @@
     .dashboard-scroll-table.dashboard-type-table.is-expanded {
         max-height: 252px;
     }
+    .dashboard-work-status-card {
+        min-height: 470px;
+    }
+    .dashboard-work-status-title span {
+        font-weight: 800;
+    }
+    .dashboard-work-status-layout {
+        display: grid;
+        grid-template-columns: minmax(210px, 290px) minmax(0, 1fr);
+        align-items: center;
+        gap: 24px;
+    }
+    .dashboard-work-status-chart {
+        width: min(100%, 280px);
+        aspect-ratio: 1 / 1;
+        min-height: 0;
+        margin: 0 auto;
+        position: relative;
+    }
+    .dashboard-work-status-table {
+        min-width: 0;
+    }
+    .dashboard-work-status-table th,
+    .dashboard-work-status-table td {
+        padding-top: .72rem;
+        padding-bottom: .72rem;
+    }
+    .dashboard-work-status-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }
+    .dashboard-work-status-label-text {
+        overflow-wrap: anywhere;
+    }
+    .dashboard-work-status-total td {
+        font-weight: 800;
+    }
+    .dashboard-work-status-note {
+        border-top: 1px solid var(--fleet-line);
+        color: var(--fleet-muted);
+    }
+    .dashboard-work-status-legend {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(120px, 1fr));
+        gap: 10px 18px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: #fff;
+    }
+    .dashboard-work-status-legend-item {
+        display: inline-flex;
+        align-items: flex-start;
+        gap: 9px;
+        min-width: 0;
+    }
+    .dashboard-work-status-legend small {
+        color: var(--fleet-muted);
+        display: block;
+        line-height: 1.25;
+    }
     .dashboard-expand-toggle {
         font-size: .82rem;
         padding: .2rem .45rem;
@@ -323,7 +406,14 @@
     @media (max-width: 767px) {
         .dashboard-donut-layout,
         .dashboard-type-layout,
+        .dashboard-work-status-layout,
         .dashboard-kpi-grid {
+            grid-template-columns: 1fr;
+        }
+        .dashboard-work-status-card {
+            min-height: auto;
+        }
+        .dashboard-work-status-legend {
             grid-template-columns: 1fr;
         }
         .chart-box--donut {
@@ -508,33 +598,29 @@
             </div>
 
             <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="project-work-categories-nwc" draggable="false">
-                <section class="panel p-3 dashboard-card dashboard-card--medium">
-                    <x-dashboard-card-header title="{{ __('app.project_work_hour_categories') }}: {{ __('app.ownership_nwc') }}" :export-url="$exportUrl('actual-work-hours-nwc')" subtitle="{{ $actualWorkModeText }}" />
-                    @if ($projectWorkCategoryRowsNwc->sum('total') > 0)
-                        <div class="dashboard-chart-scroll">
-                            <div style="height: {{ $projectWorkCategoryChartHeightNwc }}px; min-width: 620px;">
-                                <canvas id="projectWorkCategoriesNwc"></canvas>
-                            </div>
-                        </div>
-                    @else
-                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
-                    @endif
-                </section>
+                @include('dashboard.partials.project-engine-hours-status-card', [
+                    'chartId' => 'projectWorkCategoriesNwc',
+                    'ownershipCode' => $nwc,
+                    'ownershipLabel' => __('app.ownership_nwc'),
+                    'summary' => $projectWorkCategorySummaryNwc,
+                    'categoryLabels' => $actualWorkCategoryLabels,
+                    'categoryRanges' => $actualWorkCategoryRanges,
+                    'categoryColors' => $actualWorkCategoryColors,
+                    'exportUrl' => $exportUrl('actual-work-hours-nwc'),
+                ])
             </div>
 
             <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="project-work-categories-icare" draggable="false">
-                <section class="panel p-3 dashboard-card dashboard-card--medium">
-                    <x-dashboard-card-header title="{{ __('app.project_work_hour_categories') }}: {{ __('app.ownership_icare') }}" :export-url="$exportUrl('actual-work-hours-icare')" subtitle="{{ $actualWorkModeText }}" />
-                    @if ($projectWorkCategoryRowsIcare->sum('total') > 0)
-                        <div class="dashboard-chart-scroll">
-                            <div style="height: {{ $projectWorkCategoryChartHeightIcare }}px; min-width: 620px;">
-                                <canvas id="projectWorkCategoriesIcare"></canvas>
-                            </div>
-                        </div>
-                    @else
-                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
-                    @endif
-                </section>
+                @include('dashboard.partials.project-engine-hours-status-card', [
+                    'chartId' => 'projectWorkCategoriesIcare',
+                    'ownershipCode' => $icare,
+                    'ownershipLabel' => __('app.ownership_icare'),
+                    'summary' => $projectWorkCategorySummaryIcare,
+                    'categoryLabels' => $actualWorkCategoryLabels,
+                    'categoryRanges' => $actualWorkCategoryRanges,
+                    'categoryColors' => $actualWorkCategoryColors,
+                    'exportUrl' => $exportUrl('actual-work-hours-icare'),
+                ])
             </div>
 
             <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="project-averages" draggable="false">
@@ -671,10 +757,10 @@
 const ownershipColor = { NWC: '#24b35b', ICARE: '#1f6feb' };
 const typePalette = ['#1f6feb', '#24b35b', '#f6ad00', '#8b5cf6', '#0ea5b7', '#94a3b8', '#f97316', '#14b8a6', '#6366f1', '#ef4444'];
 const workCategoryColors = {
+    less_than_1: '#1f6feb',
+    from_1_to_7: '#f97316',
     from_7_to_10: '#24b35b',
-    from_1_to_7: '#f6ad00',
     overtime: '#ef4444',
-    less_than_1: '#94a3b8',
 };
 const ownershipShareLabels = @json($ownershipShare->pluck('label')->map($ownershipLabelFor)->values());
 const ownershipShareCounts = @json($ownershipShare->pluck('count')->values());
@@ -684,10 +770,9 @@ const typeIcareLabels = @json($typeIcareTop->pluck('name')->values());
 const typeIcareTotals = @json($typeIcareTop->pluck('total')->values());
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());
-const projectWorkCategoryNwcLabels = @json($projectWorkCategoryRowsNwc->pluck('name')->values());
-const projectWorkCategoryIcareLabels = @json($projectWorkCategoryRowsIcare->pluck('name')->values());
-const projectWorkCategoryNwcSeries = @json($projectWorkCategoryNwcSeries);
-const projectWorkCategoryIcareSeries = @json($projectWorkCategoryIcareSeries);
+const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
+const projectWorkCategoryNwcCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values());
+const projectWorkCategoryIcareCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values());
 const utilizationTrend = @json($utilizationTrendByOwnership);
 const projectComparisonLabels = @json($projectComparisonTop->pluck('name')->values());
 const projectComparisonNwc = @json($projectComparisonTop->pluck($nwc)->values());
@@ -823,47 +908,110 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
     });
 };
 
-const createProjectWorkCategoryChart = (id, chartLabels, series) => {
-    const canvas = document.getElementById(id);
-    const hasData = workCategoryKeys.some(key => hasChartData(series[key] || []));
+const workStatusCenterTextPlugin = {
+    id: 'workStatusCenterText',
+    afterDraw(chart, args, options) {
+        if (!options?.display) {
+            return;
+        }
 
-    if (!canvas || !hasData) {
+        const { ctx, chartArea } = chart;
+        const centerX = (chartArea.left + chartArea.right) / 2;
+        const centerY = (chartArea.top + chartArea.bottom) / 2;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.fillText(options.label || 'Cəmi', centerX, centerY - 13);
+        ctx.fillStyle = '#0f1f3a';
+        ctx.font = '800 26px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        ctx.fillText(Number(options.total || 0).toLocaleString(), centerX, centerY + 14);
+        ctx.restore();
+    },
+};
+
+const workStatusPercentLabelsPlugin = {
+    id: 'workStatusPercentLabels',
+    afterDatasetsDraw(chart) {
+        const dataset = chart.data.datasets[0];
+        const total = (dataset.data || []).reduce((sum, value) => sum + Number(value || 0), 0);
+
+        if (!total) {
+            return;
+        }
+
+        const meta = chart.getDatasetMeta(0);
+        const { ctx } = chart;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#fff';
+        ctx.font = '700 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+        meta.data.forEach((arc, index) => {
+            const value = Number(dataset.data[index] || 0);
+            const percent = value / total;
+
+            if (percent < .045) {
+                return;
+            }
+
+            const position = arc.tooltipPosition();
+            ctx.fillText(`${(percent * 100).toFixed(1)}%`, position.x, position.y);
+        });
+
+        ctx.restore();
+    },
+};
+
+const createProjectWorkCategoryChart = (id, values) => {
+    const canvas = document.getElementById(id);
+    const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
+
+    if (!canvas || total <= 0) {
         return null;
     }
 
-    const shortLabels = chartLabels.map(truncateLabel);
-
     return new Chart(canvas, {
-        type: 'bar',
+        type: 'doughnut',
         data: {
-            labels: shortLabels,
-            datasets: workCategoryKeys.map((key, index) => ({
-                label: workCategoryLabels[index],
-                data: series[key] || [],
-                backgroundColor: workCategoryColors[key],
-                borderRadius: 4,
-                stack: 'actual-work-hours',
-            })),
-            originalLabels: chartLabels,
+            labels: workCategoryLabels,
+            datasets: [{
+                data: values,
+                backgroundColor: workCategoryColorValues,
+                borderColor: '#fff',
+                borderWidth: 2,
+                hoverOffset: 4,
+            }],
         },
         options: {
-            indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            scales: {
-                x: { beginAtZero: true, stacked: true, ticks: { precision: 0 } },
-                y: { stacked: true, ticks: { autoSkip: false, font: { size: 11 } } }
-            },
+            cutout: '58%',
+            radius: '94%',
             plugins: {
-                legend: { position: 'bottom' },
+                legend: { display: false },
+                workStatusCenterText: {
+                    display: true,
+                    label: 'Cəmi',
+                    total,
+                },
                 tooltip: {
                     callbacks: {
-                        title: items => chartLabels[items[0]?.dataIndex] || '',
-                        label: context => `${context.dataset.label}: ${Number(context.raw || 0).toLocaleString()}`,
+                        label: context => {
+                            const value = Number(context.raw || 0);
+                            const percent = total > 0 ? (value / total) * 100 : 0;
+
+                            return `${context.label}: ${value.toLocaleString()} (${percent.toFixed(1)}%)`;
+                        },
                     }
                 }
-            }
-        }
+            },
+        },
+        plugins: [workStatusCenterTextPlugin, workStatusPercentLabelsPlugin],
     });
 };
 
@@ -1168,8 +1316,8 @@ dashboardResetButton?.addEventListener('click', () => {
 createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], { showLegend: false });
 createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false });
 createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false });
-createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcLabels, projectWorkCategoryNwcSeries);
-createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareLabels, projectWorkCategoryIcareSeries);
+createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcCounts);
+createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareCounts);
 createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
 if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
