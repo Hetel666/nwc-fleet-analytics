@@ -15,6 +15,8 @@ class WialonService
 
     private ?int $requestTimeoutOverride = null;
 
+    private ?float $requestDeadlineAt = null;
+
     public function __construct()
     {
         $this->baseUrl = rtrim((string) config('fleet.wialon.base_url'), '/');
@@ -224,7 +226,9 @@ class WialonService
         ?int $requestTimeout = null
     ): array {
         $previousTimeout = $this->requestTimeoutOverride;
+        $previousDeadline = $this->requestDeadlineAt;
         $this->requestTimeoutOverride = $requestTimeout;
+        $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
         $sid = $this->loginByToken();
@@ -278,6 +282,7 @@ class WialonService
         ];
         } finally {
             $this->requestTimeoutOverride = $previousTimeout;
+            $this->requestDeadlineAt = $previousDeadline;
         }
     }
 
@@ -293,7 +298,9 @@ class WialonService
         ?int $requestTimeout = null
     ): array {
         $previousTimeout = $this->requestTimeoutOverride;
+        $previousDeadline = $this->requestDeadlineAt;
         $this->requestTimeoutOverride = $requestTimeout;
+        $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
         $sid = $this->loginByToken();
@@ -361,6 +368,7 @@ class WialonService
         ];
         } finally {
             $this->requestTimeoutOverride = $previousTimeout;
+            $this->requestDeadlineAt = $previousDeadline;
         }
     }
 
@@ -524,6 +532,8 @@ class WialonService
         $delayMs = (int) config('fleet.wialon.report_status_delay_ms', 1000);
 
         for ($attempt = 0; $attempt < max(1, $attempts); $attempt++) {
+            $this->ensureRequestDeadlineNotExceeded('Wialon remote report did not finish before request timeout.');
+
             $status = $this->request('report/get_report_status', [], $sid);
             $code = (int) ($status['status'] ?? 0);
 
@@ -535,7 +545,14 @@ class WialonService
                 throw new RuntimeException("Wialon remote report failed with status {$code}.");
             }
 
-            usleep(max(100, $delayMs) * 1000);
+            $sleepMs = max(100, $delayMs);
+
+            if ($this->requestDeadlineAt !== null) {
+                $remainingMs = (int) max(0, floor(($this->requestDeadlineAt - microtime(true)) * 1000));
+                $sleepMs = min($sleepMs, max(100, $remainingMs));
+            }
+
+            usleep($sleepMs * 1000);
         }
 
         throw new RuntimeException('Wialon remote report did not finish in time.');
@@ -629,6 +646,8 @@ class WialonService
 
     private function request(string $svc, array $params = [], string|bool|null $sid = null): array
     {
+        $this->ensureRequestDeadlineNotExceeded("Wialon request timeout exceeded before {$svc}.");
+
         $payload = [
             'svc' => $svc,
             'params' => json_encode($params, JSON_THROW_ON_ERROR),
@@ -700,6 +719,13 @@ class WialonService
         }
 
         return $data;
+    }
+
+    private function ensureRequestDeadlineNotExceeded(string $message): void
+    {
+        if ($this->requestDeadlineAt !== null && microtime(true) >= $this->requestDeadlineAt) {
+            throw new RuntimeException($message);
+        }
     }
 
     private function extractIgnition(array $params): bool
