@@ -26,8 +26,18 @@ return [
         'geofence_outside_report_template_name' => env('WIALON_GEOFENCE_OUTSIDE_REPORT_TEMPLATE_NAME', 'Dashboard geofence outside (Api)'),
         'geofence_outside_report_cache_minutes' => (int) env('WIALON_GEOFENCE_OUTSIDE_REPORT_CACHE_MINUTES', 30),
         'geofence_outside_report_timeout' => (int) env('WIALON_GEOFENCE_OUTSIDE_REPORT_TIMEOUT', 10),
+        'geozon_report_resource_id' => (int) env('WIALON_GEOZON_REPORT_RESOURCE_ID', env('WIALON_ENGINE_HOURS_REPORT_RESOURCE_ID', 601701680)),
+        'geozon_report_template_id' => (int) env('WIALON_GEOZON_REPORT_TEMPLATE_ID', 0),
+        'geozon_report_template_name' => env('WIALON_GEOZON_REPORT_TEMPLATE_NAME', 'geozon api'),
+        'geozon_report_timeout' => (int) env('WIALON_GEOZON_REPORT_TIMEOUT', 30),
+        'geozon_report_chunk_size' => (int) env('WIALON_GEOZON_REPORT_CHUNK_SIZE', 500),
+        'geozon_report_interval_flags' => (int) env('WIALON_GEOZON_REPORT_INTERVAL_FLAGS', 0),
+        'geozon_report_sleep_ms' => (int) env('WIALON_GEOZON_REPORT_SLEEP_MS', 250),
         'daily_report_fallback_max_days' => (int) env('WIALON_DAILY_REPORT_FALLBACK_MAX_DAYS', 3),
         'daily_report_fallback_max_reports' => (int) env('WIALON_DAILY_REPORT_FALLBACK_MAX_REPORTS', 14),
+        'live_dashboard_reports' => (bool) env('WIALON_LIVE_DASHBOARD_REPORTS', false),
+        'nwc_group_id' => (string) env('WIALON_NWC_GROUP_ID', '601701870'),
+        'icare_group_id' => (string) env('WIALON_ICARE_GROUP_ID', '601701871'),
     ],
 
     'dashboard' => [
@@ -38,6 +48,25 @@ return [
 
     'geofence' => [
         'min_exit_minutes' => (int) env('GEOFENCE_MIN_EXIT_MINUTES', 3),
+    ],
+
+    'foreign_geofence' => [
+        'min_minutes' => (int) env('FOREIGN_GEOFENCE_MINUTES', 180),
+        'show_all' => (bool) env('FOREIGN_GEOFENCE_SHOW_ALL', false),
+        'include_stale' => (bool) env('FOREIGN_GEOFENCE_INCLUDE_STALE', false),
+        'stale_after_minutes' => (int) env('FOREIGN_GEOFENCE_STALE_AFTER_MINUTES', 30),
+        'merge_gap_minutes' => (int) env('GEOFENCE_VISIT_MERGE_GAP_MINUTES', 5),
+        'geozon_api_sync_lookback_hours' => (int) env('GEOZON_API_SYNC_LOOKBACK_HOURS', 24),
+        'geozon_api_max_concurrent_jobs' => (int) env('GEOZON_API_MAX_CONCURRENT_JOBS', 1),
+        'allowed_vehicle_types' => [
+            'Dump Truck',
+            'Excavator',
+            'Road Grader',
+            'Loader',
+            'Backhoe Loader',
+            'Bakhoe Loader',
+            'Road Roller',
+        ],
     ],
 
     'demo' => [

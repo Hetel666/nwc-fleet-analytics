@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\EquipmentType;
 use App\Models\Project;
+use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -11,7 +12,7 @@ use Illuminate\View\View;
 
 class ProjectDashboardController extends Controller
 {
-    public function show(Request $request, Project $project, DashboardService $dashboard): View
+    public function show(Request $request, Project $project, DashboardService $dashboard, DashboardLayoutService $layout): View
     {
         $filters = $dashboard->normalizeFilters([
             ...$request->only([
@@ -43,6 +44,8 @@ class ProjectDashboardController extends Controller
             'projects' => Project::query()->where('active', true)->orderBy('name')->get(),
             'equipmentTypeOptions' => EquipmentType::query()->orderBy('name')->get(),
             'selectedProject' => $project,
+            'dashboardLayout' => $layout->getResolvedLayout(),
+            'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
         ]);
     }
 }

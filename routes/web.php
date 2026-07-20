@@ -1,8 +1,13 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Admin\HistoricalRecalculationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DashboardDrilldownController;
 use App\Http\Controllers\DashboardExportController;
+use App\Http\Controllers\DashboardLayoutController;
+use App\Http\Controllers\DashboardOwnershipExportController;
+use App\Http\Controllers\DashboardTopWorkingUnitsExportController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\EquipmentTypeController;
 use App\Http\Controllers\GeofenceController;
@@ -27,6 +32,12 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->name('dashboard.drilldown.units');
+    Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->name('dashboard.drilldown.units.export');
+    Route::put('/dashboard/layout', [DashboardLayoutController::class, 'update'])->middleware('admin')->name('dashboard.layout.update');
+    Route::delete('/dashboard/layout', [DashboardLayoutController::class, 'destroy'])->middleware('admin')->name('dashboard.layout.destroy');
+    Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->name('dashboard.ownership.export');
+    Route::get('/dashboard/top-working-units/export', DashboardTopWorkingUnitsExportController::class)->name('dashboard.top-working-units.export');
     Route::get('/dashboard/export', DashboardExportController::class)->name('dashboard.export');
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
@@ -35,6 +46,19 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::resource('equipment', EquipmentController::class)->except(['show'])->middleware('admin');
     Route::resource('geofences', GeofenceController::class)->except(['show'])->middleware('admin');
     Route::resource('users', UserController::class)->except(['show'])->middleware('admin');
+
+    Route::prefix('admin/historical-recalculations')
+        ->name('admin.historical-recalculations.')
+        ->middleware('admin')
+        ->group(function (): void {
+            Route::get('/', [HistoricalRecalculationController::class, 'index'])->name('index');
+            Route::post('/preview', [HistoricalRecalculationController::class, 'preview'])->name('preview');
+            Route::post('/', [HistoricalRecalculationController::class, 'store'])->name('store');
+            Route::get('/{historicalRecalculation:uuid}', [HistoricalRecalculationController::class, 'show'])->name('show');
+            Route::get('/{historicalRecalculation:uuid}/status', [HistoricalRecalculationController::class, 'status'])->name('status');
+            Route::post('/{historicalRecalculation:uuid}/cancel', [HistoricalRecalculationController::class, 'cancel'])->name('cancel');
+            Route::post('/{historicalRecalculation:uuid}/retry', [HistoricalRecalculationController::class, 'retry'])->name('retry');
+        });
 
     Route::get('/settings', [SettingsController::class, 'edit'])->middleware('admin')->name('settings.edit');
     Route::put('/settings', [SettingsController::class, 'update'])->middleware('admin')->name('settings.update');

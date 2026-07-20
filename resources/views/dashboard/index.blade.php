@@ -23,6 +23,11 @@
     ]);
     $totalOwnershipCount = (int) $ownershipShare->sum('count');
     $ownershipAverages = collect($data['averageMetricsByOwnership'] ?? []);
+    $ownershipAverageRows = $ownershipAverages->keyBy('ownership');
+    $averageEngineMax = max(0.1, (float) $ownershipAverages->max(fn ($row) => (float) ($row['avg_hours'] ?? 0)));
+    $averageMileageMax = max(0.1, (float) $ownershipAverages->max(fn ($row) => (float) ($row['avg_mileage'] ?? 0)));
+    $dailyAverageMetrics = $data['dailyAverageMetrics'] ?? [];
+    $dailyAverageDashboards = $data['dailyAverageDashboards'] ?? [];
     $projectWorkCategoryGroups = $data['projectActualWorkHourCategoriesByOwnership'] ?? [$nwc => [], $icare => []];
     $projectWorkCategoryRowsNwc = collect($projectWorkCategoryGroups[$nwc] ?? []);
     $projectWorkCategoryRowsIcare = collect($projectWorkCategoryGroups[$icare] ?? []);
@@ -30,13 +35,13 @@
         'less_than_1' => __('app.worked_less_than_1_hour'),
         'from_1_to_7' => __('app.worked_less_than_7_hours'),
         'from_7_to_10' => __('app.worked_7_to_10_hours'),
-        'overtime' => __('app.worked_overtime_hours'),
+        'overtime' => 'İş vaxtından kənar işləyən (Overtime)',
     ]);
     $actualWorkCategoryRanges = collect([
         'less_than_1' => '< 1 saat',
-        'from_1_to_7' => '1 - 7 saat',
-        'from_7_to_10' => '7 - 10 saat',
-        'overtime' => '> 10 saat (Overtime)',
+        'from_1_to_7' => '1 - 5 saat',
+        'from_7_to_10' => '5 - 10 saat',
+        'overtime' => '18:01 - 07:59 (Overtime)',
     ]);
     $actualWorkCategoryColors = collect([
         'less_than_1' => '#1f6feb',
@@ -63,6 +68,14 @@
     $projectComparisonTop = $projectComparisonRows->take(10)->values();
     $projectComparisonHasMore = $projectComparisonRows->count() > 10;
     $projectComparisonChartHeight = min(max($projectComparisonTop->count() * 34 + 80, 260), 520);
+    $geofenceViolations = $data['geofenceViolations'] ?? ['labels' => [], 'counts' => [], 'project_ids' => [], 'geofence_ids' => [], 'sector_keys' => [], 'total' => 0, 'rows' => []];
+    $geofenceViolationRows = collect($geofenceViolations['rows'] ?? [])->sortByDesc('count')->values();
+    $geofenceViolationTotal = (int) ($geofenceViolations['total'] ?? 0);
+    $geofenceViolationMaxCount = max(1, (int) $geofenceViolationRows->max('count'));
+    $geofenceViolationActiveProjects = $geofenceViolationRows->count();
+    $geofenceViolationTopRow = $geofenceViolationRows->first();
+    $geofenceViolationPalette = ['#2563EB', '#22C55E', '#F59E0B', '#8B5CF6', '#14B8A6', '#EF4444', '#64748B', '#0EA5E9', '#A855F7', '#F97316'];
+    $geofenceHomeProjectLabel = $selectedProject?->name ?? ($filters['project_id'] ? 'ID '.$filters['project_id'] : __('app.all_projects'));
     $utilizationTrendByOwnership = $data['utilizationTrendByOwnership'] ?? ['labels' => [], 'series' => [$nwc => [], $icare => []], 'has_data' => false];
     $today = \Illuminate\Support\Carbon::today(config('app.timezone'));
     $periodPresets = [
@@ -88,6 +101,13 @@
             'ownership_type' => $filters['ownership_type'],
         ], fn ($value) => $value !== null && $value !== ''));
     };
+    $ownershipExportUrl = function (?string $type = null) use ($filters): string {
+        return route('dashboard.ownership.export', array_filter([
+            'project_id' => $filters['project_id'],
+            'equipment_type_id' => $filters['equipment_type_id'],
+            'type' => $type,
+        ], fn ($value) => $value !== null && $value !== ''));
+    };
     $kpis = [
         ['label' => __('app.total_hours'), 'value' => number_format($overview['total_hours'], 1).' '.__('app.hours'), 'icon' => 'bi-clock', 'tone' => '#eaf2ff', 'color' => '#1f6feb', 'change' => $overview['changes']['total_hours']],
         ['label' => __('app.total_distance'), 'value' => number_format($overview['total_distance'], 1).' '.__('app.km'), 'icon' => 'bi-signpost-split', 'tone' => '#eaf8ef', 'color' => '#24b35b', 'change' => $overview['changes']['total_distance']],
@@ -95,6 +115,23 @@
         ['label' => __('app.avg_distance'), 'value' => number_format($overview['avg_distance_per_equipment'], 1).' '.__('app.km'), 'icon' => 'bi-geo-alt', 'tone' => '#fff1e9', 'color' => '#f97316', 'change' => $overview['changes']['avg_distance_per_equipment']],
         ['label' => __('app.utilization'), 'value' => number_format($overview['utilization'], 1).' %', 'icon' => 'bi-graph-up-arrow', 'tone' => '#e8f8fb', 'color' => '#0ea5b7', 'change' => $overview['changes']['utilization']],
     ];
+    $dashboardLayoutItems = collect($dashboardLayout ?? [])->keyBy('key');
+    $dashboardWidgetLayoutFor = function (string $key, string $defaultClass, int $defaultWidth) use ($dashboardLayoutItems): array {
+        $item = $dashboardLayoutItems->get($key, []);
+
+        return [
+            'class' => $item['column_class'] ?? $defaultClass,
+            'order' => (int) ($item['order'] ?? 999),
+            'width' => (int) ($item['width'] ?? $defaultWidth),
+        ];
+    };
+    $dashboardWidgetTitleFor = function (string $key, string $defaultTitle) use ($dashboardLayoutItems): string {
+        $title = trim((string) ($dashboardLayoutItems->get($key, [])['title'] ?? ''));
+
+        return $title !== '' ? $title : $defaultTitle;
+    };
+    $dashboardWidgetVisibleFor = fn (string $key): bool => (bool) ($dashboardLayoutItems->get($key, [])['visible'] ?? true);
+    $dashboardWidgetVisibilityClassFor = fn (string $key): string => $dashboardWidgetVisibleFor($key) ? '' : ' dashboard-widget-hidden';
 @endphp
 
 @push('styles')
@@ -106,12 +143,64 @@
     .dashboard-layout-actions {
         min-height: 34px;
     }
+    .dashboard-layout-status {
+        min-height: 24px;
+        color: var(--fleet-muted);
+    }
     .dashboard-widget {
         transition: opacity .15s ease, transform .15s ease;
+    }
+    .dashboard-widget.is-editable .panel {
+        outline: 1px dashed rgba(31, 111, 235, .38);
+        outline-offset: 3px;
+    }
+    .dashboard-page:not(.dashboard-layout-editing) .dashboard-title-input {
+        display: none !important;
+    }
+    .dashboard-layout-editing .dashboard-card-title-text {
+        display: none;
+    }
+    .dashboard-layout-editing .dashboard-title-input {
+        display: block !important;
+        font-weight: 700;
+        max-width: 420px;
+    }
+    .dashboard-widget-hidden {
+        display: none;
+    }
+    .dashboard-layout-editing .dashboard-widget-hidden {
+        display: block;
+        opacity: .58;
+    }
+    .dashboard-layout-editing .dashboard-widget-hidden .panel {
+        filter: grayscale(.25);
     }
     .dashboard-widget.dragging {
         opacity: .48;
         transform: scale(.995);
+    }
+    .dashboard-drilldown-trigger {
+        cursor: pointer;
+    }
+    .dashboard-drilldown-trigger:hover {
+        background: #f4f8ff;
+    }
+    .dashboard-drilldown-trigger:focus-visible {
+        outline: 2px solid rgba(31, 111, 235, .55);
+        outline-offset: 2px;
+    }
+    .dashboard-drilldown-table-wrapper {
+        max-height: 65vh;
+        overflow: auto;
+    }
+    .dashboard-drilldown-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f8fafc;
+    }
+    .dashboard-drilldown-status {
+        min-height: 24px;
     }
     .dashboard-widget.drag-over .panel {
         border-color: rgba(31, 111, 235, .55);
@@ -122,6 +211,7 @@
     }
     .dashboard-drag-handle,
     .dashboard-export-button,
+    .dashboard-visibility-toggle,
     .dashboard-reset-order {
         width: 32px;
         height: 32px;
@@ -136,10 +226,17 @@
         background: transparent;
         flex: 0 0 auto;
     }
+    .dashboard-page:not(.dashboard-layout-editing) .dashboard-drag-handle,
+    .dashboard-page:not(.dashboard-layout-editing) .dashboard-visibility-toggle,
+    .dashboard-page:not(.dashboard-layout-editing) .dashboard-reset-order {
+        display: none;
+    }
     .dashboard-drag-handle:hover,
     .dashboard-drag-handle:focus,
     .dashboard-export-button:hover,
     .dashboard-export-button:focus,
+    .dashboard-visibility-toggle:hover,
+    .dashboard-visibility-toggle:focus,
     .dashboard-reset-order:hover,
     .dashboard-reset-order:focus {
         color: var(--fleet-blue);
@@ -338,10 +435,252 @@
         font-weight: 800;
         line-height: 1.1;
     }
-    .map-box {
-        height: 300px;
+    .dashboard-average-card {
+        min-height: 330px;
+    }
+    .dashboard-average-header {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr);
+        gap: 14px;
+        align-items: center;
+    }
+    .dashboard-average-icon {
+        width: 56px;
+        height: 56px;
         border-radius: 8px;
+        display: grid;
+        place-items: center;
+        font-size: 1.7rem;
+    }
+    .dashboard-average-row {
+        display: grid;
+        grid-template-columns: minmax(110px, 150px) minmax(140px, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        padding: 18px 0;
+    }
+    .dashboard-average-row + .dashboard-average-row {
+        border-top: 1px dashed var(--fleet-line);
+    }
+    .dashboard-average-title {
+        font-weight: 800;
+        color: var(--fleet-ink);
+    }
+    .dashboard-average-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--fleet-muted);
+        font-size: .88rem;
+        margin-top: 6px;
+    }
+    .dashboard-average-bar {
+        height: 12px;
+        border-radius: 999px;
         overflow: hidden;
+        background: #edf1f7;
+    }
+    .dashboard-average-bar-value {
+        height: 100%;
+        min-width: 0;
+        border-radius: inherit;
+    }
+    .dashboard-average-value {
+        min-width: 92px;
+        text-align: right;
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+    .dashboard-average-chart {
+        position: relative;
+        min-height: 230px;
+        flex: 1 1 auto;
+    }
+    .dashboard-average-note {
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: #f2f7ff;
+        color: var(--fleet-muted);
+        font-size: .9rem;
+    }
+    .dashboard-average-insight-card {
+        min-height: 620px;
+        gap: 0;
+    }
+    .dashboard-average-filter-pill {
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        padding: 6px 10px;
+        background: #fff;
+        color: var(--fleet-muted);
+        font-size: .82rem;
+        white-space: nowrap;
+    }
+    .dashboard-average-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: #f6f9ff;
+        color: var(--fleet-muted);
+        font-size: .88rem;
+    }
+    .dashboard-average-info-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 auto;
+        font-size: 1.1rem;
+    }
+    .dashboard-average-kpis {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .dashboard-average-kpi {
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 12px 14px;
+        min-width: 0;
+        min-height: 78px;
+        max-height: 90px;
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+    }
+    .dashboard-average-kpi-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        display: inline-block;
+    }
+    .dashboard-average-kpi-label {
+        color: var(--fleet-ink);
+        font-weight: 800;
+        line-height: 1.1;
+        margin-bottom: 5px;
+    }
+    .dashboard-average-kpi-value {
+        font-size: 1.35rem;
+        line-height: 1.1;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .dashboard-average-kpi-meta {
+        display: grid;
+        justify-items: end;
+        gap: 2px;
+        color: var(--fleet-muted);
+        font-size: .82rem;
+        line-height: 1.15;
+        white-space: nowrap;
+    }
+    .dashboard-average-kpi-meta strong {
+        color: var(--fleet-ink);
+        font-size: 1rem;
+    }
+    .dashboard-average-kpi-meta small {
+        font-size: .72rem;
+    }
+    .dashboard-average-main {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        order: 1;
+    }
+    .dashboard-chart-mode-tabs {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        align-self: center;
+        gap: 0;
+        flex-wrap: nowrap;
+        height: 32px;
+        padding: 2px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: #f3f6fb;
+    }
+    .dashboard-chart-mode-tabs .btn {
+        min-width: 72px;
+        height: 26px;
+        border: 0;
+        border-radius: 6px;
+        padding: 0 14px;
+        font-size: .82rem;
+        line-height: 26px;
+    }
+    .dashboard-average-chart--large {
+        min-height: 340px;
+        flex: 1 1 auto;
+        width: 100%;
+    }
+    .dashboard-average-daily-table {
+        min-width: 0;
+        width: 100%;
+    }
+    .dashboard-average-daily-table .dashboard-scroll-table {
+        max-height: 280px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: #fff;
+    }
+    .dashboard-average-daily-table th,
+    .dashboard-average-daily-table td {
+        white-space: nowrap;
+    }
+    .dashboard-average-day-strip {
+        border-top: 1px solid var(--fleet-line);
+        padding-top: 16px;
+    }
+    .dashboard-average-day-cards {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+    .dashboard-average-day-card {
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 9px 11px;
+        flex: 0 0 150px;
+        height: 70px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 3px 8px;
+        text-align: left;
+        color: var(--fleet-ink);
+        font-size: .78rem;
+        line-height: 1.15;
+    }
+    .dashboard-average-day-card span:not(.dashboard-average-day-date) {
+        white-space: nowrap;
+    }
+    .dashboard-average-day-date {
+        font-weight: 800;
+        grid-column: 1 / -1;
+    }
+    .dashboard-average-day-card i {
+        align-self: end;
+        justify-self: end;
+        grid-column: 2;
+        grid-row: 2 / span 2;
+    }
+    .dashboard-average-day-card:hover,
+    .dashboard-average-day-card:focus {
+        border-color: rgba(31, 111, 235, .45);
+        box-shadow: 0 8px 24px rgba(31, 111, 235, .08);
     }
     .dashboard-loading-overlay {
         position: fixed;
@@ -402,13 +741,24 @@
             height: auto;
             min-height: 330px;
         }
+        .dashboard-average-kpis {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
     }
     @media (max-width: 767px) {
         .dashboard-donut-layout,
         .dashboard-type-layout,
         .dashboard-work-status-layout,
+        .dashboard-average-row,
         .dashboard-kpi-grid {
             grid-template-columns: 1fr;
+        }
+        .dashboard-average-row {
+            gap: 10px;
+        }
+        .dashboard-average-value {
+            min-width: 0;
+            text-align: left;
         }
         .dashboard-work-status-card {
             min-height: auto;
@@ -422,12 +772,649 @@
         .dashboard-type-chart-box {
             flex-basis: auto;
         }
+        .dashboard-average-insight-header {
+            align-items: stretch !important;
+        }
+        .dashboard-average-kpis {
+            grid-template-columns: 1fr;
+        }
+        .dashboard-average-kpi {
+            max-height: none;
+        }
+        .dashboard-average-chart--large {
+            min-height: 260px;
+        }
+        .dashboard-chart-mode-tabs {
+            width: 100%;
+            justify-content: center;
+        }
+        .dashboard-chart-mode-tabs .btn {
+            flex: 1 1 0;
+            min-width: 0;
+        }
+    }
+    .dashboard-widget[data-widget-key="geofence-analysis"] {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    .foreign-geofence-shell {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        max-width: 1540px;
+        width: 100%;
+        margin: 0 auto;
+    }
+    .foreign-geofence-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .foreign-geofence-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: clamp(1.25rem, 1.65vw, 1.75rem);
+        font-weight: 800;
+        line-height: 1.2;
+    }
+    .foreign-geofence-subtitle {
+        margin-top: 4px;
+        color: #64748b;
+        font-size: .875rem;
+        line-height: 1.4;
+    }
+    .foreign-geofence-context {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+        border-radius: 999px;
+        padding: 5px 10px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: .75rem;
+        font-weight: 900;
+        max-width: 100%;
+    }
+    .foreign-geofence-context span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .foreign-geofence-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .foreign-geofence-period {
+        min-width: 220px;
+        height: 42px;
+        border: 1px solid #dbe7f5;
+        border-radius: 14px;
+        padding: 8px 38px 8px 14px;
+        color: #0f172a;
+        background-color: #fff;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+        font-size: .875rem;
+        font-weight: 700;
+    }
+    .foreign-geofence-action {
+        min-height: 40px;
+        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        font-size: .875rem;
+        font-weight: 800;
+        transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease, background .24s ease;
+    }
+    .foreign-geofence-action:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 26px rgba(37, 99, 235, .14);
+    }
+    select.foreign-geofence-action {
+        display: block;
+        width: auto;
+        min-width: 128px;
+    }
+    .dashboard-page:not(.dashboard-layout-editing) .foreign-geofence-action.dashboard-visibility-toggle,
+    .dashboard-page:not(.dashboard-layout-editing) .foreign-geofence-action.dashboard-drag-handle {
+        display: none;
+    }
+    .foreign-geofence-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.04fr) minmax(360px, .96fr);
+        gap: 16px;
+        align-items: stretch;
+    }
+    .foreign-geofence-card,
+    .foreign-geofence-kpi,
+    .foreign-geofence-table-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, .06);
+        transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
+    }
+    .foreign-geofence-card:hover,
+    .foreign-geofence-kpi:hover,
+    .foreign-geofence-table-card:hover {
+        transform: translateY(-2px);
+        border-color: #cbdaf0;
+        box-shadow: 0 24px 54px rgba(15, 23, 42, .1);
+    }
+    .foreign-geofence-card {
+        height: 400px;
+        min-height: 0;
+        padding: 18px 20px;
+        overflow: hidden;
+    }
+    .foreign-geofence-card-title {
+        margin: 0 0 12px;
+        color: #0f172a;
+        font-size: 1rem;
+        font-weight: 800;
+    }
+    .foreign-geofence-donut-layout {
+        display: grid;
+        grid-template-columns: minmax(270px, 300px) minmax(220px, 1fr);
+        gap: 16px;
+        align-items: center;
+        min-width: 0;
+        height: 100%;
+    }
+    .foreign-geofence-donut-wrap {
+        position: relative;
+        width: min(100%, 300px);
+        aspect-ratio: 1 / 1;
+        margin: 0 auto;
+    }
+    .foreign-geofence-donut-wrap::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: #e2e8f0;
+        opacity: .75;
+        -webkit-mask: radial-gradient(circle, transparent 0 52%, #000 53%);
+        mask: radial-gradient(circle, transparent 0 52%, #000 53%);
+    }
+    .foreign-geofence-donut-wrap canvas {
+        position: relative;
+        z-index: 1;
+        width: 100% !important;
+        height: 100% !important;
+        cursor: pointer;
+    }
+    .foreign-geofence-center {
+        position: absolute;
+        inset: 50% auto auto 50%;
+        transform: translate(-50%, -50%);
+        display: grid;
+        place-items: center;
+        text-align: center;
+        pointer-events: none;
+        color: #0f172a;
+        z-index: 2;
+    }
+    .foreign-geofence-center strong {
+        display: block;
+        font-size: clamp(2.1rem, 3.2vw, 2.75rem);
+        line-height: 1;
+        font-weight: 900;
+    }
+    .foreign-geofence-center span {
+        margin-top: 6px;
+        color: #64748b;
+        font-weight: 800;
+        font-size: .875rem;
+    }
+    .foreign-geofence-legend {
+        display: grid;
+        gap: 6px;
+        align-content: start;
+        max-height: 300px;
+        min-width: 0;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+    .foreign-geofence-legend-row {
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: #f8fafc;
+        display: grid;
+        grid-template-columns: 14px minmax(0, 1fr) auto auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 42px;
+        padding: 7px 10px;
+        color: #0f172a;
+        text-align: left;
+        transition: background .24s ease, transform .24s ease, box-shadow .24s ease;
+    }
+    .foreign-geofence-legend-row:hover,
+    .foreign-geofence-legend-row:focus-visible {
+        background: #eff6ff;
+        transform: translateX(2px);
+        box-shadow: inset 3px 0 0 #2563eb;
+    }
+    .foreign-geofence-dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 999px;
+        display: inline-block;
+    }
+    .foreign-geofence-legend-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: .8125rem;
+        line-height: 1.25;
+        font-weight: 800;
+    }
+    .foreign-geofence-legend-count {
+        color: #0f172a;
+        font-size: .8125rem;
+        font-weight: 900;
+    }
+    .foreign-geofence-legend-percent {
+        min-width: 40px;
+        color: #64748b;
+        text-align: right;
+        font-size: .75rem;
+        font-weight: 800;
+    }
+    .foreign-geofence-stat-wrap {
+        max-height: 305px;
+        overflow-y: auto;
+        padding-right: 4px;
+    }
+    .foreign-geofence-stat-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 7px;
+    }
+    .foreign-geofence-stat-table thead th {
+        padding: 0 12px 4px;
+        color: #64748b;
+        font-size: .6875rem;
+        text-transform: uppercase;
+        font-weight: 900;
+    }
+    .foreign-geofence-stat-row {
+        cursor: pointer;
+        transition: transform .22s ease, box-shadow .22s ease;
+    }
+    .foreign-geofence-stat-row td {
+        background: #f8fafc;
+        padding: 10px 12px;
+        font-size: .8125rem;
+        line-height: 1.25;
+        vertical-align: middle;
+    }
+    .foreign-geofence-stat-row td:first-child {
+        border-radius: 14px 0 0 14px;
+    }
+    .foreign-geofence-stat-row td:last-child {
+        border-radius: 0 14px 14px 0;
+    }
+    .foreign-geofence-stat-row:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 14px 28px rgba(15, 23, 42, .08);
+    }
+    .foreign-geofence-progress {
+        height: 7px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #e2e8f0;
+        margin-top: 7px;
+    }
+    .foreign-geofence-progress span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #2563eb, #14b8a6);
+    }
+    .foreign-geofence-show-all {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #2563eb;
+        font-size: .8125rem;
+        font-weight: 900;
+        text-decoration: none;
+    }
+    .foreign-geofence-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 12px;
+    }
+    .foreign-geofence-kpi {
+        padding: 14px 18px;
+        min-height: 86px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .foreign-geofence-kpi-label {
+        color: #64748b;
+        font-weight: 800;
+        font-size: .78rem;
+    }
+    .foreign-geofence-kpi-value {
+        color: #0f172a;
+        font-size: clamp(1.75rem, 2.3vw, 1.875rem);
+        line-height: 1;
+        font-weight: 900;
+        overflow-wrap: anywhere;
+    }
+    .foreign-geofence-kpi-note {
+        color: #94a3b8;
+        font-size: .75rem;
+        font-weight: 700;
+    }
+    .foreign-geofence-table-card {
+        margin-top: 12px;
+        padding: 14px 16px;
+        overflow: hidden;
+    }
+    .foreign-geofence-table-toolbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .foreign-geofence-table-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1.05rem;
+        font-weight: 900;
+    }
+    .foreign-geofence-table-meta {
+        color: #64748b;
+        font-size: .8125rem;
+        margin-top: 4px;
+    }
+    .foreign-geofence-table-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+    .foreign-geofence-search {
+        position: relative;
+        min-width: 240px;
+    }
+    .foreign-geofence-search input {
+        min-height: 40px;
+        border-radius: 14px;
+        padding-left: 38px;
+        font-size: .8125rem;
+        border-color: #dbe7f5;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+    }
+    .foreign-geofence-search i {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+    }
+    .foreign-geofence-table-wrap {
+        overflow: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        max-height: 640px;
+    }
+    .foreign-geofence-detail-table {
+        min-width: 1265px;
+        table-layout: fixed;
+        width: 100%;
+        margin: 0;
+    }
+    .foreign-geofence-detail-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f8fafc;
+        color: #475569;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 10px 12px;
+        font-size: .6875rem;
+        line-height: 1.2;
+        text-transform: uppercase;
+        font-weight: 900;
+    }
+    .foreign-geofence-detail-table tbody td {
+        padding: 10px 12px;
+        border-color: #edf2f7;
+        color: #1e293b;
+        font-size: .8125rem;
+        line-height: 1.35;
+        vertical-align: middle;
+    }
+    .foreign-geofence-detail-table tbody tr {
+        height: 52px;
+        transition: background .22s ease, transform .22s ease;
+    }
+    .foreign-geofence-detail-table tbody tr:hover {
+        background: #f8fbff;
+    }
+    .foreign-geofence-equipment {
+        color: #0f172a;
+        font-weight: 900;
+    }
+    .foreign-geofence-muted {
+        color: #94a3b8;
+    }
+    .foreign-geofence-clamp {
+        max-width: 190px;
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-clamp: 2;
+    }
+    .foreign-geofence-duration {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 5px 8px;
+        font-size: .75rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .foreign-geofence-duration--soft {
+        background: #f1f5f9;
+        color: #475569;
+    }
+    .foreign-geofence-duration--warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    .foreign-geofence-duration--orange {
+        background: #ffedd5;
+        color: #c2410c;
+    }
+    .foreign-geofence-duration--danger {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+    .foreign-geofence-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border-radius: 999px;
+        padding: 5px 8px;
+        font-size: .75rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .foreign-geofence-status::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: currentColor;
+    }
+    .foreign-geofence-loading {
+        color: #64748b;
+        padding: 28px !important;
+        text-align: center;
+    }
+    .foreign-geofence-empty {
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #64748b;
+        padding: 14px;
+        font-size: .8125rem;
+        font-weight: 800;
+        text-align: center;
+    }
+    .foreign-geofence-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 10px;
+        color: #64748b;
+        font-size: .8125rem;
+        font-weight: 800;
+    }
+    .foreign-geofence-pagination .btn {
+        min-width: 34px;
+        height: 34px;
+        padding: 6px 10px;
+        border-radius: 10px;
+        font-size: .8125rem;
+        font-weight: 800;
+    }
+    .foreign-geofence-page-size {
+        min-width: 82px;
+        height: 40px;
+        border-radius: 14px;
+        font-size: .8125rem;
+        font-weight: 800;
+        border-color: #dbe7f5;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+    }
+    @keyframes foreignGeofenceFadeUp {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    .foreign-geofence-shell,
+    .foreign-geofence-card,
+    .foreign-geofence-kpi,
+    .foreign-geofence-table-card {
+        animation: foreignGeofenceFadeUp .32s ease both;
+    }
+    @media (max-width: 1199.98px) {
+        .foreign-geofence-grid,
+        .foreign-geofence-donut-layout {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .foreign-geofence-card {
+            height: auto;
+            min-height: auto;
+            min-width: 0;
+        }
+        .foreign-geofence-donut-wrap {
+            width: min(100%, 280px);
+            max-width: 100%;
+        }
+    }
+    @media (max-width: 991.98px) {
+        .foreign-geofence-header,
+        .foreign-geofence-table-toolbar {
+            align-items: stretch;
+            flex-direction: column;
+        }
+        .foreign-geofence-actions,
+        .foreign-geofence-table-actions {
+            justify-content: flex-start;
+        }
+        .foreign-geofence-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    @media (min-width: 1200px) and (max-width: 1399.98px) {
+        .foreign-geofence-card {
+            height: 390px;
+        }
+        .foreign-geofence-donut-layout {
+            grid-template-columns: minmax(250px, 270px) minmax(210px, 1fr);
+        }
+        .foreign-geofence-donut-wrap {
+            width: min(100%, 270px);
+        }
+    }
+    @media (max-width: 575.98px) {
+        .foreign-geofence-card,
+        .foreign-geofence-table-card {
+            padding: 16px;
+        }
+        .foreign-geofence-actions,
+        .foreign-geofence-table-actions,
+        .foreign-geofence-period,
+        .foreign-geofence-search,
+        .foreign-geofence-page-size {
+            width: 100%;
+        }
+        .foreign-geofence-action,
+        .foreign-geofence-search input {
+            width: 100%;
+        }
+        .foreign-geofence-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .foreign-geofence-donut-wrap {
+            width: min(100%, 230px);
+            max-width: 100%;
+            justify-self: center;
+        }
+        .foreign-geofence-legend-row {
+            grid-template-columns: 14px minmax(0, 1fr) auto;
+        }
+        .foreign-geofence-legend-percent {
+            grid-column: 2 / 4;
+            text-align: left;
+        }
     }
 </style>
 @endpush
 
 @section('content')
-    <div class="dashboard-page">
+    <div
+        class="dashboard-page"
+        data-dashboard-layout-editable="{{ $canManageDashboardLayout ? '1' : '0' }}"
+        data-dashboard-layout-update-url="{{ route('dashboard.layout.update') }}"
+        data-dashboard-layout-reset-url="{{ route('dashboard.layout.destroy') }}"
+        data-dashboard-drilldown-url="{{ route('dashboard.drilldown.units') }}"
+        data-dashboard-drilldown-export-url="{{ route('dashboard.drilldown.units.export') }}"
+        data-dashboard-date-from="{{ $filters['from'] }}"
+        data-dashboard-date-to="{{ $filters['to'] }}"
+        data-dashboard-project-id="{{ $filters['project_id'] ?? '' }}"
+        data-dashboard-equipment-type-id="{{ $filters['equipment_type_id'] ?? '' }}"
+        data-dashboard-ownership="{{ $filters['ownership_type'] === $nwc ? 'nwc' : ($filters['ownership_type'] === $icare ? 'icare' : 'all') }}"
+    >
         <div class="dashboard-loading-overlay" id="dashboardLoadingOverlay" aria-hidden="true">
             <div class="dashboard-loading-card" role="status" aria-live="polite">
                 <div class="d-flex align-items-center gap-3 mb-4">
@@ -532,19 +1519,42 @@
             @endforeach
         </div>
 
-        <div class="dashboard-layout-actions d-flex justify-content-end gap-2 mb-2">
+        <div class="dashboard-layout-actions d-flex flex-wrap align-items-center justify-content-end gap-2 mb-2">
+            <div class="dashboard-layout-status small me-auto" id="dashboardLayoutStatus" aria-live="polite"></div>
             <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
                 <i class="bi bi-download"></i><span>Excel</span>
             </a>
+            @if ($canManageDashboardLayout)
+                <button type="button" class="btn btn-outline-primary btn-sm btn-icon" id="editDashboardLayout">
+                    <i class="bi bi-layout-three-columns"></i><span>Düzülüşü dəyiş</span>
+                </button>
+                <button type="button" class="btn btn-primary btn-sm btn-icon d-none" id="saveDashboardLayout">
+                    <i class="bi bi-check2"></i><span>Yadda saxla</span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm btn-icon d-none" id="cancelDashboardLayout">
+                    <i class="bi bi-x-lg"></i><span>Ləğv et</span>
+                </button>
             <button type="button" class="btn btn-outline-secondary btn-sm dashboard-reset-order" id="resetDashboardLayout" title="Sıralamanı sıfırla" aria-label="Sıralamanı sıfırla">
                 <i class="bi bi-arrow-counterclockwise"></i>
             </button>
+            @endif
         </div>
 
         <div class="row g-3 dashboard-grid" id="dashboardGrid">
-            <div class="col-12 col-lg-6 col-xxl-4 dashboard-widget" data-dashboard-widget="ownership-share" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('ownership-share', 'col-12 col-lg-6 col-xxl-4', 4);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('ownership-share') }}" data-dashboard-widget="ownership-share" data-widget-key="ownership-share" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('ownership-share') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
-                    <x-dashboard-card-header title="{{ __('app.ownership_share') }}" :export-url="$exportUrl('ownership-share')" />
+                    <x-dashboard-card-header
+                        :title="$dashboardWidgetTitleFor('ownership-share', __('app.ownership_share'))"
+                        :export-url="$ownershipExportUrl()"
+                        :export-items="[
+                            ['label' => 'Bütün siyahı', 'url' => $ownershipExportUrl()],
+                            ['label' => 'Yalnız NWC', 'url' => $ownershipExportUrl('nwc')],
+                            ['label' => 'Yalnız İCARƏ', 'url' => $ownershipExportUrl('icare')],
+                        ]"
+                    />
                     <div class="dashboard-card-body flex-grow-1">
                         @if ($totalOwnershipCount > 0)
                             <div class="dashboard-donut-layout h-100">
@@ -556,7 +1566,13 @@
                                             $percent = $totalOwnershipCount > 0 ? round(($row['count'] / $totalOwnershipCount) * 100, 1) : 0;
                                             $dotColor = $code === $nwc ? '#24b35b' : '#1f6feb';
                                         @endphp
-                                        <div class="dashboard-share-row">
+                                        <div
+                                            class="dashboard-share-row dashboard-drilldown-trigger"
+                                            role="button"
+                                            tabindex="0"
+                                            data-drilldown-title="{{ $ownershipLabelFor($code) }} texnikaları"
+                                            data-drilldown-ownership="{{ $code === $nwc ? 'nwc' : 'icare' }}"
+                                        >
                                             <span class="dashboard-color-dot" style="background: {{ $dotColor }}"></span>
                                             <span class="fw-semibold">{{ $ownershipLabelFor($code) }}</span>
                                             <span>{{ $row['count'] }} / {{ $percent }}%</span>
@@ -571,33 +1587,46 @@
                 </section>
             </div>
 
-            <div class="col-12 col-lg-6 col-xxl-4 dashboard-widget" data-dashboard-widget="equipment-types-nwc" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('equipment-types-nwc', 'col-12 col-lg-6 col-xxl-4', 4);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('equipment-types-nwc') }}" data-dashboard-widget="equipment-types-nwc" data-widget-key="equipment-types-nwc" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('equipment-types-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
-                    <x-dashboard-card-header title="{{ __('app.equipment_type_distribution') }}: {{ __('app.ownership_nwc') }}" :export-url="$exportUrl('equipment-types-nwc')" />
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('equipment-types-nwc', __('app.equipment_type_distribution').': '.__('app.ownership_nwc'))" :export-url="$exportUrl('equipment-types-nwc')" />
                     @include('dashboard.partials.type-distribution-card', [
                         'chartId' => 'typeDonutNwc',
                         'rows' => $typeNwc,
                         'topRows' => $typeNwcTop,
                         'hasMore' => $typeNwcHasMore,
                         'expandId' => 'types-nwc',
+                        'ownership' => 'nwc',
+                        'ownershipLabel' => __('app.ownership_nwc'),
                     ])
                 </section>
             </div>
 
-            <div class="col-12 col-lg-6 col-xxl-4 dashboard-widget" data-dashboard-widget="equipment-types-icare" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('equipment-types-icare', 'col-12 col-lg-6 col-xxl-4', 4);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('equipment-types-icare') }}" data-dashboard-widget="equipment-types-icare" data-widget-key="equipment-types-icare" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('equipment-types-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
-                    <x-dashboard-card-header title="{{ __('app.equipment_type_distribution') }}: {{ __('app.ownership_icare') }}" :export-url="$exportUrl('equipment-types-icare')" />
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('equipment-types-icare', __('app.equipment_type_distribution').': '.__('app.ownership_icare'))" :export-url="$exportUrl('equipment-types-icare')" />
                     @include('dashboard.partials.type-distribution-card', [
                         'chartId' => 'typeDonutIcare',
                         'rows' => $typeIcare,
                         'topRows' => $typeIcareTop,
                         'hasMore' => $typeIcareHasMore,
                         'expandId' => 'types-icare',
+                        'ownership' => 'icare',
+                        'ownershipLabel' => __('app.ownership_icare'),
                     ])
                 </section>
             </div>
 
-            <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="project-work-categories-nwc" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-xl-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesNwc',
                     'ownershipCode' => $nwc,
@@ -607,10 +1636,14 @@
                     'categoryRanges' => $actualWorkCategoryRanges,
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-nwc'),
+                    'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Project üzrə: '.__('app.ownership_nwc')),
                 ])
             </div>
 
-            <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="project-work-categories-icare" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-icare', 'col-12 col-xl-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesIcare',
                     'ownershipCode' => $icare,
@@ -620,83 +1653,295 @@
                     'categoryRanges' => $actualWorkCategoryRanges,
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-icare'),
+                    'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Project üzrə: '.__('app.ownership_icare')),
                 ])
             </div>
 
-            <div class="col-12 col-xl-4 dashboard-widget" data-dashboard-widget="project-averages" draggable="false">
-                <section class="panel p-3 dashboard-card dashboard-card--medium">
-                    <x-dashboard-card-header title="{{ __('app.project_averages') }}: {{ __('app.ownership_nwc') }} vs {{ __('app.ownership_icare') }}" :export-url="$exportUrl('project-averages')" />
-                    @if ($ownershipAverages->sum('count') > 0)
-                        <div class="dashboard-kpi-grid">
-                            @foreach ($ownershipAverages as $row)
-                                <div class="dashboard-mini-kpi">
-                                    <div class="text-secondary small fw-semibold">{{ $ownershipLabelFor($row['ownership'] ?? null) }}</div>
-                                    <div class="dashboard-mini-kpi-value mt-1">{{ number_format($row['avg_hours'], 1) }}</div>
-                                    <div class="small text-secondary">{{ __('app.engine_hours') }} / {{ __('app.hours') }}</div>
-                                </div>
-                                <div class="dashboard-mini-kpi">
-                                    <div class="text-secondary small fw-semibold">{{ $ownershipLabelFor($row['ownership'] ?? null) }}</div>
-                                    <div class="dashboard-mini-kpi-value mt-1">{{ number_format($row['avg_mileage'], 1) }}</div>
-                                    <div class="small text-secondary">{{ __('app.mileage') }} / {{ __('app.km') }}</div>
-                                </div>
-                            @endforeach
-                        </div>
-                    @else
-                        <div class="dashboard-empty">{{ __('app.no_data') }}</div>
-                    @endif
-                </section>
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-xl-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+                @include('dashboard.partials.daily-average-dashboard-card', [
+                    'metric' => 'engine_hours',
+                    'chartId' => 'averageEngineHoursChart',
+                    'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
+                    'title' => $dashboardWidgetTitleFor('average-engine-hours', 'Orta motosaat göstəricisi'),
+                    'subtitle' => 'Hər gün üzrə orta motosaat (saat)',
+                    'exportUrl' => $exportUrl('average-engine-hours'),
+                    'filters' => $filters,
+                    'selectedProject' => $selectedProject,
+                ])
             </div>
 
-            <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="least-working" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('average-mileage', 'col-12 col-xl-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+                @include('dashboard.partials.daily-average-dashboard-card', [
+                    'metric' => 'mileage',
+                    'chartId' => 'averageMileageChart',
+                    'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
+                    'title' => $dashboardWidgetTitleFor('average-mileage', 'Orta yürüş göstəricisi'),
+                    'subtitle' => 'Hər gün üzrə orta yürüş (km)',
+                    'exportUrl' => $exportUrl('average-mileage'),
+                    'filters' => $filters,
+                    'selectedProject' => $selectedProject,
+                ])
+            </div>
+
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-xl-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header title="{{ __('app.least_working') }}" :export-url="$exportUrl('least-working')" />
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking']])
                 </section>
             </div>
 
-            <div class="col-12 col-xl-6 dashboard-widget" data-dashboard-widget="most-working" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-xl-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header title="{{ __('app.most_working') }}" :export-url="$exportUrl('most-working')" />
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking']])
                 </section>
             </div>
 
-            <div class="col-12 col-xl-7 dashboard-widget" data-dashboard-widget="geofence-analysis" draggable="false">
-                <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header title="{{ __('app.geofence_analysis') }}" :export-url="$exportUrl('geofence-analysis')" />
-                    <div class="row g-3">
-                        <div class="col-lg-7"><div id="fleetMap" class="map-box"></div></div>
-                        <div class="col-lg-5">
-                            <div class="dashboard-scroll-table">
-                                <table class="table table-sm align-middle mb-0">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('geofence-analysis', 'col-12', 12);
+                $geofenceAnalysisTitle = $dashboardWidgetTitleFor('geofence-analysis', __('app.geofence_analysis'));
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('geofence-analysis') }}" data-dashboard-widget="geofence-analysis" data-widget-key="geofence-analysis" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-analysis') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+                <section class="panel dashboard-card foreign-geofence-shell">
+                    <div class="foreign-geofence-header">
+                        <div class="min-w-0">
+                            <h2 class="foreign-geofence-title dashboard-card-title-text">{{ $geofenceAnalysisTitle }}</h2>
+                            <input type="text" class="form-control form-control-sm dashboard-title-input mt-1 d-none" value="{{ $geofenceAnalysisTitle }}" maxlength="120" aria-label="Dashboard başlığı">
+                            <div class="foreign-geofence-subtitle">Öz layihəsinin geozonasından kənarda olan texnikalar</div>
+                            <div class="foreign-geofence-context" title="{{ $geofenceHomeProjectLabel }}">
+                                <i class="bi bi-house-check"></i>
+                                <span>Ev layihəsi: {{ $geofenceHomeProjectLabel }}</span>
+                            </div>
+                        </div>
+                        <div class="foreign-geofence-actions">
+                            <select class="form-select form-select-sm foreign-geofence-period" id="foreignGeofencePeriodSelect" aria-label="{{ __('app.period') }}">
+                                @foreach ($periodPresets as $key => $preset)
+                                    <option value="{{ $key }}" data-from="{{ $preset['from'] }}" data-to="{{ $preset['to'] }}" @selected($selectedPeriod === $key)>
+                                        {{ $preset['label'] }} · {{ $preset['from'] }} - {{ $preset['to'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <button type="button" class="btn btn-outline-primary foreign-geofence-action" id="foreignGeofenceRefresh">
+                                <i class="bi bi-arrow-clockwise"></i><span>Refresh</span>
+                            </button>
+                            <a href="{{ $exportUrl('geofence-analysis') }}" class="btn btn-primary foreign-geofence-action">
+                                <i class="bi bi-download"></i><span>Excel</span>
+                            </a>
+                            <button type="button" class="btn btn-sm dashboard-visibility-toggle foreign-geofence-action" title="Bloku gizlət" aria-label="Bloku gizlət">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm dashboard-drag-handle foreign-geofence-action" title="Bloku daşı" aria-label="Bloku daşı">
+                                <i class="bi bi-grip-vertical"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="foreign-geofence-grid">
+                        <div class="foreign-geofence-card">
+                            <div class="foreign-geofence-donut-layout">
+                                <div class="foreign-geofence-donut-wrap">
+                                    <canvas id="geofenceViolationsDonut"></canvas>
+                                    <div class="foreign-geofence-center">
+                                        <div>
+                                            <strong>{{ number_format($geofenceViolationTotal) }}</strong>
+                                            <span>Ümumi texnika</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="foreign-geofence-legend" aria-label="Cari geozona üzrə bölgü">
+                                    @if ($geofenceViolationRows->isNotEmpty())
+                                        @foreach ($geofenceViolationRows as $row)
+                                            @php
+                                                $count = (int) ($row['count'] ?? 0);
+                                                $percent = $geofenceViolationTotal > 0 ? round(($count / $geofenceViolationTotal) * 100) : 0;
+                                                $color = $geofenceViolationPalette[$loop->index % count($geofenceViolationPalette)];
+                                            @endphp
+                                            <button
+                                                type="button"
+                                                class="foreign-geofence-legend-row dashboard-drilldown-trigger"
+                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} — Geozonadan çıxma halları"
+                                                data-drilldown-geofence-violation="1"
+                                                data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
+                                                data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
+                                                data-drilldown-current-geozone-key="{{ $row['sector_key'] }}"
+                                                title="{{ $row['label'] ?? $row['project'] }}"
+                                            >
+                                                <span class="foreign-geofence-dot" style="background: {{ $color }}"></span>
+                                                <span class="foreign-geofence-legend-name">{{ $row['label'] ?? $row['project'] }}</span>
+                                                <span class="foreign-geofence-legend-count">{{ number_format($count) }}</span>
+                                                <span class="foreign-geofence-legend-percent">{{ $percent }}%</span>
+                                            </button>
+                                        @endforeach
+                                    @else
+                                        <div class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</div>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                        <div class="foreign-geofence-card">
+                            <h3 class="foreign-geofence-card-title">Cari geozona / layihə üzrə statistika</h3>
+                            <div class="table-responsive foreign-geofence-stat-wrap">
+                                <table class="foreign-geofence-stat-table">
                                     <thead>
                                         <tr>
-                                            <th>Texnika</th>
-                                            <th>Vendor</th>
-                                            <th class="text-end">Saat</th>
+                                            <th>Layihə</th>
+                                            <th class="text-end">Texnika sayı</th>
+                                            <th class="text-end">Faiz</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        @forelse ($data['geofenceOutsideRows'] as $row)
-                                            <tr>
-                                                <td class="fw-semibold">{{ $row['grouping'] }}</td>
-                                                <td>{{ $row['vendor'] }}</td>
-                                                <td class="text-end">{{ number_format((float) $row['outside_hours'], 2, '.', '') }}</td>
+                                        @forelse ($geofenceViolationRows as $row)
+                                            @php
+                                                $count = (int) ($row['count'] ?? 0);
+                                                $percent = $geofenceViolationTotal > 0 ? round(($count / $geofenceViolationTotal) * 100) : 0;
+                                                $barWidth = min(100, max(3, round(($count / $geofenceViolationMaxCount) * 100)));
+                                            @endphp
+                                            <tr
+                                                class="foreign-geofence-stat-row dashboard-drilldown-trigger"
+                                                role="button"
+                                                tabindex="0"
+                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} — Geozonadan çıxma halları"
+                                                data-drilldown-geofence-violation="1"
+                                                data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
+                                                data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
+                                                data-drilldown-current-geozone-key="{{ $row['sector_key'] }}"
+                                                title="{{ $row['label'] ?? $row['project'] }}"
+                                            >
+                                                <td>
+                                                    <div class="fw-bold text-truncate" title="{{ $row['label'] ?? $row['project'] }}">{{ $row['label'] ?? $row['project'] }}</div>
+                                                    <div class="foreign-geofence-progress"><span style="width: {{ $barWidth }}%"></span></div>
+                                                </td>
+                                                <td class="text-end fw-bold">{{ number_format($count) }}</td>
+                                                <td class="text-end text-secondary fw-bold">{{ $percent }}%</td>
                                             </tr>
                                         @empty
-                                            <tr><td colspan="3" class="text-secondary">{{ __('app.no_data') }}</td></tr>
+                                            <tr><td colspan="3" class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</td></tr>
                                         @endforelse
                                     </tbody>
                                 </table>
                             </div>
+                            @if ($geofenceViolationTotal > 0)
+                                <button
+                                    type="button"
+                                    class="btn btn-link foreign-geofence-show-all mt-2 dashboard-drilldown-trigger"
+                                    data-drilldown-title="Geozonadan çıxma halları"
+                                    data-drilldown-geofence-violation="1"
+                                >
+                                    Hamısını göstər <i class="bi bi-arrow-right"></i>
+                                </button>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="foreign-geofence-kpi-grid">
+                        <div class="foreign-geofence-kpi">
+                            <div class="foreign-geofence-kpi-label">Ümumi pozuntu</div>
+                            <div class="foreign-geofence-kpi-value">{{ number_format($geofenceViolationTotal) }}</div>
+                            <div class="foreign-geofence-kpi-note">Dashboard seçimi</div>
+                        </div>
+                        <div class="foreign-geofence-kpi">
+                            <div class="foreign-geofence-kpi-label">3 saatdan çox</div>
+                            <div class="foreign-geofence-kpi-value">{{ number_format($geofenceViolationTotal) }}</div>
+                            <div class="foreign-geofence-kpi-note">Minimum müddət filtri</div>
+                        </div>
+                        <div class="foreign-geofence-kpi">
+                            <div class="foreign-geofence-kpi-label">Aktiv layihələr</div>
+                            <div class="foreign-geofence-kpi-value">{{ number_format($geofenceViolationActiveProjects) }}</div>
+                            <div class="foreign-geofence-kpi-note">Cari xarici geozonalar</div>
+                        </div>
+                        <div class="foreign-geofence-kpi">
+                            <div class="foreign-geofence-kpi-label">Ən böyük geozona</div>
+                            <div class="foreign-geofence-kpi-value">{{ number_format((int) ($geofenceViolationTopRow['count'] ?? 0)) }}</div>
+                            <div class="foreign-geofence-kpi-note">{{ $geofenceViolationTopRow['label'] ?? __('app.no_data') }}</div>
+                        </div>
+                    </div>
+
+                    <div class="foreign-geofence-table-card">
+                        <div class="foreign-geofence-table-toolbar">
+                            <div class="min-w-0">
+                                <h3 class="foreign-geofence-table-title">Geozonadan çıxma halları{{ $filters['project_id'] ? ' — '.$geofenceHomeProjectLabel : '' }}</h3>
+                                <div class="foreign-geofence-table-meta" id="foreignGeofenceTableMeta">Məlumatlar yüklənir...</div>
+                            </div>
+                            <div class="foreign-geofence-table-actions">
+                                <div class="foreign-geofence-search">
+                                    <i class="bi bi-search"></i>
+                                    <input type="search" class="form-control" id="foreignGeofenceSearch" placeholder="Axtarış...">
+                                </div>
+                                <select class="form-select foreign-geofence-action" id="foreignGeofenceOwnershipFilter" aria-label="{{ __('app.ownership') }}">
+                                    <option value="all">Hamısı</option>
+                                    <option value="nwc">NWC</option>
+                                    <option value="icare">İcarə</option>
+                                </select>
+                                <select class="form-select foreign-geofence-page-size" id="foreignGeofencePageSize" aria-label="Sətir sayı">
+                                    <option value="20" selected>20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                                <a href="{{ $exportUrl('geofence-analysis') }}" class="btn btn-outline-primary foreign-geofence-action" id="foreignGeofenceTableExport">
+                                    <i class="bi bi-download"></i><span>Eksport</span>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="foreign-geofence-table-wrap">
+                            <table class="table foreign-geofence-detail-table align-middle">
+                                <colgroup>
+                                    <col style="width: 100px;">
+                                    <col style="width: 110px;">
+                                    <col style="width: 110px;">
+                                    <col style="width: 80px;">
+                                    <col style="width: 170px;">
+                                    <col style="width: 170px;">
+                                    <col style="width: 180px;">
+                                    <col style="width: 125px;">
+                                    <col style="width: 120px;">
+                                    <col style="width: 100px;">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>Texnika</th>
+                                        <th>Qeydiyyat nişanı</th>
+                                        <th>Texnika növü</th>
+                                        <th>Ownership</th>
+                                        <th>Ev layihəsi</th>
+                                        <th>Cari layihə</th>
+                                        <th>Cari geozona</th>
+                                        <th>Giriş vaxtı</th>
+                                        <th>Qalma müddəti</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="foreignGeofenceRows">
+                                    <tr><td colspan="10" class="foreign-geofence-loading">Məlumatlar yüklənir...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="foreign-geofence-pagination" aria-label="Geozonadan çıxma halları səhifələmə">
+                            <button type="button" class="btn btn-outline-secondary" id="foreignGeofencePrev">Əvvəlki</button>
+                            <span id="foreignGeofencePageInfo">1 / 1</span>
+                            <button type="button" class="btn btn-outline-secondary" id="foreignGeofenceNext">Növbəti</button>
                         </div>
                     </div>
                 </section>
             </div>
 
-            <div class="col-12 col-xl-5 dashboard-widget" data-dashboard-widget="utilization-trend" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('utilization-trend', 'col-12 col-xl-5', 5);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('utilization-trend') }}" data-dashboard-widget="utilization-trend" data-widget-key="utilization-trend" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('utilization-trend') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header title="{{ __('app.utilization_trend') }}" :export-url="$exportUrl('utilization-trend')" />
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('utilization-trend', __('app.utilization_trend'))" :export-url="$exportUrl('utilization-trend')" />
                     @if ($utilizationTrendByOwnership['has_data'] ?? false)
                         <div class="chart-box"><canvas id="utilizationLine"></canvas></div>
                     @else
@@ -705,9 +1950,12 @@
                 </section>
             </div>
 
-            <div class="col-12 dashboard-widget" data-dashboard-widget="project-comparison" draggable="false">
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('project-comparison', 'col-12', 12);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-comparison') }}" data-dashboard-widget="project-comparison" data-widget-key="project-comparison" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-comparison') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header title="{{ __('app.work_hours_by_ownership') }}" :export-url="$exportUrl('project-comparison')" />
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('project-comparison', __('app.work_hours_by_ownership'))" :export-url="$exportUrl('project-comparison')" />
                     @if ($projectComparisonRows->isNotEmpty())
                         <div class="row g-3 align-items-start">
                             <div class="col-lg-7">
@@ -729,10 +1977,31 @@
                                         </thead>
                                         <tbody>
                                             @foreach ($projectComparisonRows as $row)
-                                                <tr class="{{ $loop->iteration > 10 ? 'expandable-extra d-none' : '' }}">
+                                                <tr
+                                                    class="{{ $loop->iteration > 10 ? 'expandable-extra d-none' : '' }} dashboard-drilldown-trigger"
+                                                    role="button"
+                                                    tabindex="0"
+                                                    data-drilldown-title="{{ $row['name'] }} — Bütün texnika"
+                                                    data-drilldown-project-id="{{ $row['id'] }}"
+                                                    data-drilldown-ownership="all"
+                                                >
                                                     <td class="fw-semibold">{{ $row['name'] }}</td>
-                                                    <td class="text-end">{{ number_format($row[$nwc], 0) }}</td>
-                                                    <td class="text-end">{{ number_format($row[$icare], 0) }}</td>
+                                                    <td
+                                                        class="text-end dashboard-drilldown-trigger"
+                                                        role="button"
+                                                        tabindex="0"
+                                                        data-drilldown-title="{{ $row['name'] }} — NWC"
+                                                        data-drilldown-project-id="{{ $row['id'] }}"
+                                                        data-drilldown-ownership="nwc"
+                                                    >{{ number_format($row[$nwc], 0) }}</td>
+                                                    <td
+                                                        class="text-end dashboard-drilldown-trigger"
+                                                        role="button"
+                                                        tabindex="0"
+                                                        data-drilldown-title="{{ $row['name'] }} — {{ __('app.ownership_icare') }}"
+                                                        data-drilldown-project-id="{{ $row['id'] }}"
+                                                        data-drilldown-ownership="icare"
+                                                    >{{ number_format($row[$icare], 0) }}</td>
                                                 </tr>
                                             @endforeach
                                         </tbody>
@@ -750,6 +2019,65 @@
             </div>
         </div>
     </div>
+
+    <div class="modal fade" id="dashboardDrilldownModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title" id="dashboardDrilldownTitle">Texnika siyahısı</h5>
+                        <div class="small text-secondary" id="dashboardDrilldownFilters"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Bağla"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Mənsubiyyət">
+                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="all">Hamısı</button>
+                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="nwc">NWC</button>
+                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="icare">İCARƏ</button>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Məlumat statusu">
+                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="all">Hamısı</button>
+                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="available">Məlumat var</button>
+                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="missing">Məlumat yoxdur</button>
+                        </div>
+                        <input type="search" class="form-control form-control-sm ms-auto" id="dashboardDrilldownSearch" placeholder="Axtarış..." style="max-width: 260px;">
+                    </div>
+                    <div class="dashboard-drilldown-status small text-secondary mb-2" id="dashboardDrilldownStatus">Məlumatlar yüklənir...</div>
+                    <div class="dashboard-drilldown-table-wrapper border rounded">
+                        <table class="table table-sm align-middle mb-0 dashboard-drilldown-table">
+                            <thead>
+                                <tr id="dashboardDrilldownHeader">
+                                    <th>№</th>
+                                    <th>Texnikanın adı</th>
+                                    <th>Texnika növü</th>
+                                    <th>Mənsubiyyət</th>
+                                    <th>Layihə</th>
+                                    <th>Wialon ID</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboardDrilldownRows"></tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+                        <div class="small text-secondary" id="dashboardDrilldownPageInfo"></div>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-secondary" id="dashboardDrilldownPrev">Əvvəlki</button>
+                            <button type="button" class="btn btn-outline-secondary" id="dashboardDrilldownNext">Növbəti</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a href="#" class="btn btn-outline-secondary btn-sm" id="dashboardDrilldownExport">
+                        <i class="bi bi-download"></i> Excel
+                    </a>
+                    <button type="button" class="btn btn-outline-primary btn-sm d-none" id="dashboardDrilldownRetry">Yenidən cəhd et</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Bağla</button>
+                </div>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('scripts')
@@ -764,10 +2092,15 @@ const workCategoryColors = {
 };
 const ownershipShareLabels = @json($ownershipShare->pluck('label')->map($ownershipLabelFor)->values());
 const ownershipShareCounts = @json($ownershipShare->pluck('count')->values());
+const ownershipShareTotal = {{ (int) $totalOwnershipCount }};
 const typeNwcLabels = @json($typeNwcTop->pluck('name')->values());
 const typeNwcTotals = @json($typeNwcTop->pluck('total')->values());
+const typeNwcIds = @json($typeNwcTop->pluck('id')->values());
+const typeNwcTotal = {{ (int) $typeNwc->sum('total') }};
 const typeIcareLabels = @json($typeIcareTop->pluck('name')->values());
 const typeIcareTotals = @json($typeIcareTop->pluck('total')->values());
+const typeIcareIds = @json($typeIcareTop->pluck('id')->values());
+const typeIcareTotal = {{ (int) $typeIcare->sum('total') }};
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
@@ -775,13 +2108,28 @@ const projectWorkCategoryNwcCounts = @json($actualWorkCategoryLabels->keys()->ma
 const projectWorkCategoryIcareCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values());
 const utilizationTrend = @json($utilizationTrendByOwnership);
 const projectComparisonLabels = @json($projectComparisonTop->pluck('name')->values());
+const projectComparisonIds = @json($projectComparisonTop->pluck('id')->values());
 const projectComparisonNwc = @json($projectComparisonTop->pluck($nwc)->values());
 const projectComparisonIcare = @json($projectComparisonTop->pluck($icare)->values());
-const mapData = @json($data['mapData']);
-const dashboardLayoutScope = @json($selectedProject ? 'project-'.$selectedProject->id : 'dashboard');
-const dashboardLayoutKey = `fleet.analytics.dashboard.order.v4.${dashboardLayoutScope}`;
+const dailyAverageMetrics = @json($dailyAverageMetrics);
+const dailyAverageDashboards = @json($dailyAverageDashboards);
+const geofenceViolationLabels = @json($geofenceViolations['labels'] ?? []);
+const geofenceViolationCounts = @json($geofenceViolations['counts'] ?? []);
+const geofenceViolationProjectIds = @json($geofenceViolations['project_ids'] ?? []);
+const geofenceViolationGeofenceIds = @json($geofenceViolations['geofence_ids'] ?? []);
+const geofenceViolationSectorKeys = @json($geofenceViolations['sector_keys'] ?? []);
+const geofenceViolationTotal = {{ (int) ($geofenceViolations['total'] ?? 0) }};
+const geofenceViolationPalette = @json($geofenceViolationPalette);
+const dashboardPage = document.querySelector('.dashboard-page');
 const dashboardGrid = document.getElementById('dashboardGrid');
 const dashboardResetButton = document.getElementById('resetDashboardLayout');
+const dashboardEditButton = document.getElementById('editDashboardLayout');
+const dashboardSaveButton = document.getElementById('saveDashboardLayout');
+const dashboardCancelButton = document.getElementById('cancelDashboardLayout');
+const dashboardLayoutStatus = document.getElementById('dashboardLayoutStatus');
+const dashboardLayoutEditable = dashboardPage?.dataset.dashboardLayoutEditable === '1';
+const dashboardLayoutUpdateUrl = dashboardPage?.dataset.dashboardLayoutUpdateUrl || '';
+const dashboardLayoutResetUrl = dashboardPage?.dataset.dashboardLayoutResetUrl || '';
 const dashboardFilterForm = document.getElementById('dashboardFilterForm');
 const dashboardFilterButton = document.getElementById('dashboardFilterButton');
 const dashboardLoadingOverlay = document.getElementById('dashboardLoadingOverlay');
@@ -814,7 +2162,6 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character =>
 }[character]));
 const hasChartData = values => Array.isArray(values) && values.some(value => Number(value) > 0);
 const truncateLabel = value => String(value ?? '').length > 28 ? `${String(value).slice(0, 27)}…` : String(value ?? '');
-let fleetMap = null;
 let draggedWidget = null;
 let dragOverWidget = null;
 let dashboardLoadingTimer = null;
@@ -842,6 +2189,70 @@ const doughnutOptions = {
     }
 };
 
+const getChartColor = color => {
+    if (Array.isArray(color)) {
+        return color[0] || '#ffffff';
+    }
+
+    return color || '#ffffff';
+};
+
+const getContrastingTextColor = color => {
+    const hex = getChartColor(color).trim();
+    const normalized = hex.startsWith('#') ? hex.slice(1) : hex;
+
+    if (!/^[0-9a-f]{6}$/i.test(normalized)) {
+        return '#ffffff';
+    }
+
+    const red = parseInt(normalized.slice(0, 2), 16);
+    const green = parseInt(normalized.slice(2, 4), 16);
+    const blue = parseInt(normalized.slice(4, 6), 16);
+    const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
+
+    return luminance > 150 ? '#0f1f3a' : '#ffffff';
+};
+
+if (window.ChartDataLabels) {
+    Chart.register(ChartDataLabels);
+}
+
+const donutDataLabelsOptions = {
+    display: context => {
+        const dataset = context.chart.data.datasets[context.datasetIndex];
+        const total = (dataset.data || []).reduce((sum, value) => sum + Number(value || 0), 0);
+        const value = Number(dataset.data[context.dataIndex] || 0);
+
+        return total > 0 && (value / total) >= .05;
+    },
+    formatter: (value, context) => {
+        const dataset = context.chart.data.datasets[context.datasetIndex];
+        const total = (dataset.data || []).reduce((sum, value) => sum + Number(value || 0), 0);
+
+        if (!total) {
+            return '';
+        }
+
+        return `${((Number(value || 0) / total) * 100).toFixed(1)}%`;
+    },
+    color: context => {
+        const dataset = context.chart.data.datasets[context.datasetIndex];
+        const backgroundColor = Array.isArray(dataset.backgroundColor)
+            ? dataset.backgroundColor[context.dataIndex]
+            : dataset.backgroundColor;
+
+        return getContrastingTextColor(backgroundColor);
+    },
+    anchor: 'center',
+    align: 'center',
+    clamp: true,
+    clip: false,
+    font: {
+        weight: 700,
+        size: 13,
+    },
+};
+
 const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => {
     const canvas = document.getElementById(id);
 
@@ -850,21 +2261,51 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
     }
 
     const showLegend = settings.showLegend ?? true;
+    const total = Number(settings.total ?? values.reduce((sum, value) => sum + Number(value || 0), 0));
     const options = {
         ...doughnutOptions,
+        cutout: settings.cutout || doughnutOptions.cutout,
+        onClick: (event, elements, chart) => {
+            const selected = elements?.[0];
+
+            if (selected && settings.drilldownItems?.[selected.index]) {
+                openDashboardDrilldown(settings.drilldownItems[selected.index]);
+                return;
+            }
+
+            if (settings.centerDrilldown && chart) {
+                const { left, right, top, bottom } = chart.chartArea;
+                const x = event.x - ((left + right) / 2);
+                const y = event.y - ((top + bottom) / 2);
+                const distance = Math.sqrt((x * x) + (y * y));
+                const innerRadius = chart.getDatasetMeta(0)?.data?.[0]?.innerRadius || 0;
+
+                if (distance <= innerRadius) {
+                    openDashboardDrilldown(settings.centerDrilldown);
+                }
+            }
+        },
         plugins: {
             ...doughnutOptions.plugins,
             legend: {
                 ...doughnutOptions.plugins.legend,
                 display: showLegend,
             },
+            datalabels: donutDataLabelsOptions,
+            workStatusCenterText: {
+                display: (settings.showCenterText ?? true) && total > 0,
+                label: 'Cəmi',
+                total,
+                label: settings.centerLabel || 'Cəmi',
+            },
         },
     };
 
     return new Chart(canvas, {
         type: 'doughnut',
-        data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
-        options
+        data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff', hoverOffset: settings.hoverOffset ?? 0 }] },
+        options,
+        plugins: [workStatusCenterTextPlugin],
     });
 };
 
@@ -891,6 +2332,24 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
+            onClick: (event, elements) => {
+                const selected = elements?.[0];
+
+                if (!selected) {
+                    return;
+                }
+
+                const projectId = projectComparisonIds[selected.index];
+                const ownership = selected.datasetIndex === 0 ? 'nwc' : 'icare';
+
+                if (projectId) {
+                    openDashboardDrilldown({
+                        title: `${chartLabels[selected.index]} — ${ownership === 'nwc' ? labels.nwc : labels.icare}`,
+                        project_id: projectId,
+                        ownership,
+                    });
+                }
+            },
             scales: {
                 x: { beginAtZero: true, ticks: { precision: 0 } },
                 y: { ticks: { autoSkip: false, font: { size: 11 } } }
@@ -906,6 +2365,131 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
             }
         }
     });
+};
+
+const dashboardDailyAverageCharts = {};
+
+const dailyAverageChartMode = id => {
+    const saved = window.localStorage?.getItem(`dashboard:${id}:chart-mode`);
+
+    return ['line', 'bar', 'area'].includes(saved) ? saved : 'line';
+};
+
+const setDailyAverageChartModeButtons = (id, mode) => {
+    document.querySelectorAll(`[data-chart-mode-target="${id}"] [data-chart-mode]`).forEach(button => {
+        const active = button.dataset.chartMode === mode;
+        button.classList.toggle('btn-primary', active);
+        button.classList.toggle('btn-outline-secondary', !active);
+    });
+};
+
+const createDailyAverageChart = (id, metricData, metric, unit) => {
+    const canvas = document.getElementById(id);
+
+    if (!canvas || !metricData?.has_data) {
+        canvas?.closest('.dashboard-average-chart')?.classList.add('dashboard-empty');
+        if (canvas?.parentElement) {
+            canvas.parentElement.textContent = labels.noData;
+        }
+        return null;
+    }
+
+    dashboardDailyAverageCharts[id]?.destroy();
+    const mode = dailyAverageChartMode(id);
+    setDailyAverageChartModeButtons(id, mode);
+
+    const ownershipKeys = ['NWC', 'ICARE'];
+    const datasetMeta = {
+        NWC: { label: labels.nwc, color: ownershipColor.NWC },
+        ICARE: { label: labels.icare, color: ownershipColor.ICARE },
+    };
+
+    dashboardDailyAverageCharts[id] = new Chart(canvas, {
+        type: mode === 'bar' ? 'bar' : 'line',
+        data: {
+            labels: metricData.labels || [],
+            datasets: ownershipKeys.map(key => ({
+                label: datasetMeta[key].label,
+                data: metricData.series?.[key] || [],
+                borderColor: datasetMeta[key].color,
+                backgroundColor: mode === 'area'
+                    ? (key === 'NWC' ? 'rgba(36,179,91,.16)' : 'rgba(31,111,235,.16)')
+                    : datasetMeta[key].color,
+                borderRadius: mode === 'bar' ? 4 : 0,
+                fill: mode === 'area',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                spanGaps: false,
+                tension: .3,
+            })),
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: (event, elements) => {
+                const selected = elements?.[0];
+
+                if (!selected) {
+                    return;
+                }
+
+                const date = metricData.dates?.[selected.index];
+                const ownership = selected.datasetIndex === 0 ? 'nwc' : 'icare';
+
+                if (date) {
+                    openDashboardDrilldown({
+                        title: `${metric === 'mileage' ? 'Orta yürüş' : 'Orta motosaat'} — ${selected.datasetIndex === 0 ? labels.nwc : labels.icare} — ${metricData.full_dates?.[selected.index] || date}`,
+                        date_from: date,
+                        date_to: date,
+                        ownership,
+                        metric,
+                    });
+                }
+            },
+            interaction: { mode: 'nearest', intersect: true },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: value => `${value} ${unit}`,
+                    },
+                },
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                datalabels: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: items => `Tarix: ${metricData.full_dates?.[items[0]?.dataIndex] || items[0]?.label || ''}`,
+                        label: context => {
+                            const ownershipKey = context.datasetIndex === 0 ? 'NWC' : 'ICARE';
+                            const value = context.raw;
+
+                            if (value === null || value === undefined) {
+                                return `${context.dataset.label}: ${labels.noData}`;
+                            }
+
+                            return `${context.dataset.label}: ${Number(value).toLocaleString(undefined, { maximumFractionDigits: metric === 'mileage' ? 0 : 1 })} ${unit}`;
+                        },
+                        afterLabel: context => {
+                            const ownershipKey = context.datasetIndex === 0 ? 'NWC' : 'ICARE';
+                            const index = context.dataIndex;
+                            const valid = metricData.valid_counts?.[ownershipKey]?.[index] ?? 0;
+                            const missing = metricData.missing_counts?.[ownershipKey]?.[index] ?? 0;
+                            const noun = metric === 'mileage' ? 'Dump Truck' : 'texnika';
+
+                            return [
+                                `Məlumatı olan ${noun}: ${valid}`,
+                                `Məlumatı olmayan ${noun}: ${missing}`,
+                            ];
+                        },
+                    },
+                },
+            },
+        },
+    });
+
+    return dashboardDailyAverageCharts[id];
 };
 
 const workStatusCenterTextPlugin = {
@@ -932,42 +2516,7 @@ const workStatusCenterTextPlugin = {
     },
 };
 
-const workStatusPercentLabelsPlugin = {
-    id: 'workStatusPercentLabels',
-    afterDatasetsDraw(chart) {
-        const dataset = chart.data.datasets[0];
-        const total = (dataset.data || []).reduce((sum, value) => sum + Number(value || 0), 0);
-
-        if (!total) {
-            return;
-        }
-
-        const meta = chart.getDatasetMeta(0);
-        const { ctx } = chart;
-
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#fff';
-        ctx.font = '700 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-
-        meta.data.forEach((arc, index) => {
-            const value = Number(dataset.data[index] || 0);
-            const percent = value / total;
-
-            if (percent < .045) {
-                return;
-            }
-
-            const position = arc.tooltipPosition();
-            ctx.fillText(`${(percent * 100).toFixed(1)}%`, position.x, position.y);
-        });
-
-        ctx.restore();
-    },
-};
-
-const createProjectWorkCategoryChart = (id, values) => {
+const createProjectWorkCategoryChart = (id, values, settings = {}) => {
     const canvas = document.getElementById(id);
     const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
 
@@ -990,6 +2539,13 @@ const createProjectWorkCategoryChart = (id, values) => {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            onClick: (event, elements) => {
+                const selected = elements?.[0];
+
+                if (selected && settings.drilldownItems?.[selected.index]) {
+                    openDashboardDrilldown(settings.drilldownItems[selected.index]);
+                }
+            },
             cutout: '58%',
             radius: '94%',
             plugins: {
@@ -1008,10 +2564,11 @@ const createProjectWorkCategoryChart = (id, values) => {
                             return `${context.label}: ${value.toLocaleString()} (${percent.toFixed(1)}%)`;
                         },
                     }
-                }
+                },
+                datalabels: donutDataLabelsOptions,
             },
         },
-        plugins: [workStatusCenterTextPlugin, workStatusPercentLabelsPlugin],
+        plugins: [workStatusCenterTextPlugin],
     });
 };
 
@@ -1175,42 +2732,147 @@ const disableDashboardDragging = () => {
 
 const refreshDashboardVisuals = () => {
     window.dispatchEvent(new Event('resize'));
-    if (fleetMap) {
-        setTimeout(() => fleetMap.invalidateSize(), 60);
-    }
 };
 
-const readDashboardOrder = () => {
-    try {
-        const order = JSON.parse(localStorage.getItem(dashboardLayoutKey) || '[]');
-        return Array.isArray(order) ? order : [];
-    } catch (error) {
-        return [];
-    }
-};
-
-const saveDashboardOrder = () => {
-    try {
-        const order = dashboardWidgets().map(widget => widget.dataset.dashboardWidget).filter(Boolean);
-        localStorage.setItem(dashboardLayoutKey, JSON.stringify(order));
-    } catch (error) {
-        // Ignore private-mode storage errors; dragging still works for the current page.
-    }
-};
-
-const applySavedDashboardOrder = () => {
-    const savedOrder = readDashboardOrder();
-    if (!dashboardGrid || savedOrder.length === 0) {
+const setDashboardLayoutStatus = (message, tone = 'muted') => {
+    if (!dashboardLayoutStatus) {
         return;
     }
 
-    const widgetsById = new Map(dashboardWidgets().map(widget => [widget.dataset.dashboardWidget, widget]));
-    savedOrder.forEach(id => {
-        const widget = widgetsById.get(id);
-        if (widget) {
-            dashboardGrid.appendChild(widget);
+    dashboardLayoutStatus.textContent = message || '';
+    dashboardLayoutStatus.classList.toggle('text-danger', tone === 'danger');
+    dashboardLayoutStatus.classList.toggle('text-success', tone === 'success');
+};
+
+const sortWidgetsByServerOrder = () => {
+    if (!dashboardGrid) {
+        return;
+    }
+
+    dashboardWidgets()
+        .sort((a, b) => Number(a.dataset.widgetOrder || 999) - Number(b.dataset.widgetOrder || 999))
+        .forEach(widget => dashboardGrid.appendChild(widget));
+};
+
+const setWidgetVisibility = (widget, visible) => {
+    widget.dataset.widgetVisible = visible ? '1' : '0';
+    widget.classList.toggle('dashboard-widget-hidden', !visible);
+
+    const toggle = widget.querySelector('.dashboard-visibility-toggle');
+    const icon = toggle?.querySelector('i');
+    const title = visible ? 'Bloku gizlət' : 'Bloku göstər';
+
+    if (toggle) {
+        toggle.setAttribute('title', title);
+        toggle.setAttribute('aria-label', title);
+    }
+
+    if (icon) {
+        icon.className = visible ? 'bi bi-eye-slash' : 'bi bi-eye';
+    }
+};
+
+const refreshWidgetVisibilityControls = () => {
+    dashboardWidgets().forEach(widget => setWidgetVisibility(widget, widget.dataset.widgetVisible !== '0'));
+};
+
+const collectDashboardLayoutPayload = () => dashboardWidgets().map((widget, index) => {
+    const titleInput = widget.querySelector('.dashboard-title-input');
+    const title = titleInput ? (titleInput.value.trim() || titleInput.defaultValue || '') : '';
+
+    return {
+        key: widget.dataset.widgetKey || widget.dataset.dashboardWidget,
+        order: (index + 1) * 10,
+        width: Number(widget.dataset.widgetWidth || 12),
+        title,
+        visible: widget.dataset.widgetVisible !== '0',
+    };
+});
+
+const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+const setDashboardLayoutEditing = enabled => {
+    if (!dashboardLayoutEditable || !dashboardGrid || !dashboardPage) {
+        return;
+    }
+
+    dashboardPage.classList.toggle('dashboard-layout-editing', enabled);
+    dashboardEditButton?.classList.toggle('d-none', enabled);
+    dashboardSaveButton?.classList.toggle('d-none', !enabled);
+    dashboardCancelButton?.classList.toggle('d-none', !enabled);
+    dashboardResetButton?.classList.toggle('d-none', !enabled);
+
+    dashboardWidgets().forEach(widget => {
+        widget.classList.toggle('is-editable', enabled);
+        widget.style.order = enabled ? '' : (widget.dataset.widgetOrder || '');
+        widget.draggable = false;
+
+        const titleInput = widget.querySelector('.dashboard-title-input');
+        if (titleInput && enabled) {
+            titleInput.defaultValue = titleInput.value;
+        }
+
+        if (enabled) {
+            widget.dataset.widgetVisibleDefault = widget.dataset.widgetVisible || '1';
         }
     });
+
+    setDashboardLayoutStatus(enabled ? 'Blokları tutub daşıyın, sonra yadda saxlayın.' : '');
+    refreshWidgetVisibilityControls();
+    refreshDashboardVisuals();
+};
+
+const persistDashboardLayout = async () => {
+    if (!dashboardLayoutEditable || !dashboardLayoutUpdateUrl) {
+        return;
+    }
+
+    dashboardSaveButton?.setAttribute('disabled', 'disabled');
+    setDashboardLayoutStatus('Düzülüş saxlanılır...');
+
+    try {
+        const payload = collectDashboardLayoutPayload();
+        const response = await fetch(dashboardLayoutUpdateUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': csrfToken(),
+            },
+            body: JSON.stringify({ widgets: payload }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        payload.forEach(item => {
+            const widget = dashboardWidgets().find(candidate => (candidate.dataset.widgetKey || candidate.dataset.dashboardWidget) === item.key);
+
+            if (widget) {
+                widget.dataset.widgetOrder = String(item.order);
+                widget.style.order = String(item.order);
+                setWidgetVisibility(widget, item.visible);
+                widget.dataset.widgetVisibleDefault = widget.dataset.widgetVisible;
+
+                const titleInput = widget.querySelector('.dashboard-title-input');
+                const titleText = widget.querySelector('.dashboard-card-title-text');
+
+                if (titleInput && titleText) {
+                    titleInput.value = item.title;
+                    titleInput.defaultValue = item.title;
+                    titleText.textContent = item.title;
+                }
+            }
+        });
+
+        setDashboardLayoutEditing(false);
+        setDashboardLayoutStatus('Düzülüş yadda saxlanıldı.', 'success');
+    } catch (error) {
+        setDashboardLayoutStatus('Düzülüş saxlanmadı. Yenidən cəhd edin.', 'danger');
+    } finally {
+        dashboardSaveButton?.removeAttribute('disabled');
+    }
 };
 
 const setDragOverWidget = widget => {
@@ -1224,15 +2886,38 @@ const setDragOverWidget = widget => {
 };
 
 if (dashboardGrid) {
-    applySavedDashboardOrder();
+    sortWidgetsByServerOrder();
+    refreshWidgetVisibilityControls();
     disableDashboardDragging();
 
     dashboardGrid.querySelectorAll('.dashboard-drag-handle').forEach(handle => {
         handle.addEventListener('pointerdown', () => {
+            if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing')) {
+                return;
+            }
+
             const widget = handle.closest('.dashboard-widget');
             if (widget) {
                 widget.draggable = true;
             }
+        });
+    });
+
+    dashboardGrid.querySelectorAll('.dashboard-visibility-toggle').forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing')) {
+                return;
+            }
+
+            const widget = toggle.closest('.dashboard-widget');
+
+            if (!widget) {
+                return;
+            }
+
+            setWidgetVisibility(widget, widget.dataset.widgetVisible === '0');
+            setDashboardLayoutStatus('Dəyişiklikləri yadda saxlayın.');
+            refreshDashboardVisuals();
         });
     });
 
@@ -1245,7 +2930,7 @@ if (dashboardGrid) {
     dashboardGrid.addEventListener('dragstart', event => {
         const widget = event.target.closest('.dashboard-widget');
 
-        if (!widget || !dashboardGrid.contains(widget) || !widget.draggable) {
+        if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing') || !widget || !dashboardGrid.contains(widget) || !widget.draggable) {
             event.preventDefault();
             return;
         }
@@ -1297,28 +2982,775 @@ if (dashboardGrid) {
             draggedWidget.classList.remove('dragging');
             draggedWidget = null;
             disableDashboardDragging();
-            saveDashboardOrder();
             refreshDashboardVisuals();
         }
         setDragOverWidget(null);
     });
 }
 
-dashboardResetButton?.addEventListener('click', () => {
-    try {
-        localStorage.removeItem(dashboardLayoutKey);
-    } catch (error) {
-        // Nothing to clear when local storage is unavailable.
-    }
-    window.location.reload();
+dashboardEditButton?.addEventListener('click', () => {
+    sortWidgetsByServerOrder();
+    setDashboardLayoutEditing(true);
 });
 
-createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], { showLegend: false });
-createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false });
-createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false });
-createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcCounts);
-createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareCounts);
+dashboardCancelButton?.addEventListener('click', () => {
+    dashboardWidgets().forEach(widget => {
+        const titleInput = widget.querySelector('.dashboard-title-input');
+        if (titleInput) {
+            titleInput.value = titleInput.defaultValue;
+        }
+
+        setWidgetVisibility(widget, (widget.dataset.widgetVisibleDefault || widget.dataset.widgetVisible || '1') !== '0');
+    });
+    sortWidgetsByServerOrder();
+    setDashboardLayoutEditing(false);
+});
+
+dashboardSaveButton?.addEventListener('click', persistDashboardLayout);
+
+dashboardResetButton?.addEventListener('click', () => {
+    if (!dashboardLayoutEditable || !dashboardLayoutResetUrl) {
+        return;
+    }
+
+    if (!confirm('Standart düzülüş bərpa edilsin?')) {
+        return;
+    }
+
+    dashboardResetButton.setAttribute('disabled', 'disabled');
+    setDashboardLayoutStatus('Standart düzülüş bərpa edilir...');
+
+    fetch(dashboardLayoutResetUrl, {
+        method: 'DELETE',
+        headers: {
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrfToken(),
+        },
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            window.location.reload();
+        })
+        .catch(() => {
+            dashboardResetButton.removeAttribute('disabled');
+            setDashboardLayoutStatus('Standart düzülüş bərpa edilmədi.', 'danger');
+        });
+});
+
+const drilldownModalElement = document.getElementById('dashboardDrilldownModal');
+const drilldownModal = drilldownModalElement && window.bootstrap ? new bootstrap.Modal(drilldownModalElement) : null;
+const drilldownTitle = document.getElementById('dashboardDrilldownTitle');
+const drilldownFilters = document.getElementById('dashboardDrilldownFilters');
+const drilldownStatus = document.getElementById('dashboardDrilldownStatus');
+const drilldownRows = document.getElementById('dashboardDrilldownRows');
+const drilldownHeader = document.getElementById('dashboardDrilldownHeader');
+const drilldownSearch = document.getElementById('dashboardDrilldownSearch');
+const drilldownPageInfo = document.getElementById('dashboardDrilldownPageInfo');
+const drilldownPrev = document.getElementById('dashboardDrilldownPrev');
+const drilldownNext = document.getElementById('dashboardDrilldownNext');
+const drilldownExport = document.getElementById('dashboardDrilldownExport');
+const drilldownRetry = document.getElementById('dashboardDrilldownRetry');
+let drilldownController = null;
+let drilldownRequestId = 0;
+let drilldownState = {
+    title: '',
+    filters: {},
+    page: 1,
+    meta: null,
+    columns: {},
+};
+
+const baseDrilldownFilters = () => ({
+    date_from: dashboardPage?.dataset.dashboardDateFrom || '',
+    date_to: dashboardPage?.dataset.dashboardDateTo || '',
+    project_id: dashboardPage?.dataset.dashboardProjectId || '',
+    equipment_type_id: dashboardPage?.dataset.dashboardEquipmentTypeId || '',
+    ownership: dashboardPage?.dataset.dashboardOwnership || 'all',
+    data_status: 'all',
+    per_page: 50,
+});
+
+const defaultDrilldownColumns = () => ({
+    number: '№',
+    name: 'Texnikanın adı',
+    vehicle_type: 'Texnika növü',
+    ownership: 'Mənsubiyyət',
+    project: 'Layihə',
+    wialon_id: 'Wialon ID',
+});
+
+const cleanDrilldownFilters = filters => Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== '')
+);
+
+const drilldownUrl = (baseUrl, filters) => {
+    const params = new URLSearchParams(cleanDrilldownFilters(filters));
+
+    return `${baseUrl}?${params.toString()}`;
+};
+
+const foreignGeofenceRows = document.getElementById('foreignGeofenceRows');
+const foreignGeofenceTableMeta = document.getElementById('foreignGeofenceTableMeta');
+const foreignGeofenceSearch = document.getElementById('foreignGeofenceSearch');
+const foreignGeofenceOwnershipFilter = document.getElementById('foreignGeofenceOwnershipFilter');
+const foreignGeofenceTableExport = document.getElementById('foreignGeofenceTableExport');
+const foreignGeofencePeriodSelect = document.getElementById('foreignGeofencePeriodSelect');
+const foreignGeofenceRefresh = document.getElementById('foreignGeofenceRefresh');
+const foreignGeofencePageSize = document.getElementById('foreignGeofencePageSize');
+const foreignGeofencePrev = document.getElementById('foreignGeofencePrev');
+const foreignGeofenceNext = document.getElementById('foreignGeofenceNext');
+const foreignGeofencePageInfo = document.getElementById('foreignGeofencePageInfo');
+let foreignGeofenceController = null;
+let foreignGeofenceRequestId = 0;
+let foreignGeofencePage = 1;
+let foreignGeofenceMeta = { current_page: 1, last_page: 1, total: 0, per_page: 20 };
+
+if (foreignGeofenceOwnershipFilter) {
+    foreignGeofenceOwnershipFilter.value = dashboardPage?.dataset.dashboardOwnership || 'all';
+}
+
+const foreignGeofenceFilters = () => ({
+    ...baseDrilldownFilters(),
+    geofence_violation: 1,
+    ownership: foreignGeofenceOwnershipFilter?.value || dashboardPage?.dataset.dashboardOwnership || 'all',
+    data_status: 'all',
+    search: foreignGeofenceSearch?.value.trim() || '',
+    page: foreignGeofencePage,
+    per_page: Number(foreignGeofencePageSize?.value || 20),
+});
+
+const foreignGeofenceDurationMinutes = duration => {
+    const value = String(duration || '');
+    const match = value.match(/(\d+)\s+saat\s+(\d+)/i);
+
+    if (!match) {
+        return 0;
+    }
+
+    return Number(match[1] || 0) * 60 + Number(match[2] || 0);
+};
+
+const foreignGeofenceTone = minutes => {
+    if (minutes >= 720) {
+        return { className: 'foreign-geofence-duration--danger', label: '12 saat+' };
+    }
+
+    if (minutes >= 360) {
+        return { className: 'foreign-geofence-duration--orange', label: '6 saat+' };
+    }
+
+    if (minutes >= 180) {
+        return { className: 'foreign-geofence-duration--warning', label: '3 saat+' };
+    }
+
+    return { className: 'foreign-geofence-duration--soft', label: '< 3 saat' };
+};
+
+const appendForeignGeofenceCell = (row, text, className = '', title = '') => {
+    const cell = document.createElement('td');
+    const value = text || '—';
+
+    if (className === 'foreign-geofence-clamp') {
+        const content = document.createElement('span');
+        content.className = className;
+        content.textContent = value;
+        content.title = title || value;
+        cell.appendChild(content);
+    } else if (className) {
+        cell.className = className;
+        cell.textContent = value;
+    } else {
+        cell.textContent = value;
+    }
+
+    cell.title = title || value;
+    row.appendChild(cell);
+
+    return cell;
+};
+
+const foreignGeofenceNormalizeMeta = (meta, rows) => {
+    const perPage = Number(meta?.per_page || foreignGeofencePageSize?.value || 20);
+    const total = Number(meta?.total || rows.length || 0);
+    const currentPage = Number(meta?.current_page || foreignGeofencePage || 1);
+    const lastPage = Number(meta?.last_page || Math.max(1, Math.ceil(total / Math.max(perPage, 1))));
+
+    return {
+        current_page: Math.min(Math.max(currentPage, 1), Math.max(lastPage, 1)),
+        last_page: Math.max(lastPage, 1),
+        per_page: perPage,
+        total,
+    };
+};
+
+const renderForeignGeofencePagination = () => {
+    const currentPage = Number(foreignGeofenceMeta.current_page || 1);
+    const lastPage = Number(foreignGeofenceMeta.last_page || 1);
+
+    if (foreignGeofencePageInfo) {
+        foreignGeofencePageInfo.textContent = `${currentPage} / ${lastPage}`;
+    }
+
+    if (foreignGeofencePrev) {
+        foreignGeofencePrev.disabled = currentPage <= 1;
+    }
+
+    if (foreignGeofenceNext) {
+        foreignGeofenceNext.disabled = currentPage >= lastPage;
+    }
+};
+
+const setForeignGeofenceLoading = message => {
+    if (foreignGeofenceRows) {
+        foreignGeofenceRows.innerHTML = `<tr><td colspan="10" class="foreign-geofence-loading">${message}</td></tr>`;
+    }
+
+    if (foreignGeofenceTableMeta) {
+        foreignGeofenceTableMeta.textContent = message;
+    }
+};
+
+const renderForeignGeofenceRows = (rows, meta) => {
+    if (!foreignGeofenceRows) {
+        return;
+    }
+
+    foreignGeofenceRows.textContent = '';
+    foreignGeofenceMeta = foreignGeofenceNormalizeMeta(meta, rows);
+    foreignGeofencePage = foreignGeofenceMeta.current_page;
+
+    if (!rows.length) {
+        setForeignGeofenceLoading('Seçilmiş layihə və dövr üzrə geozonadan çıxma halı aşkarlanmadı.');
+        renderForeignGeofencePagination();
+        return;
+    }
+
+    rows.forEach(item => {
+        const tr = document.createElement('tr');
+        const minutes = foreignGeofenceDurationMinutes(item.duration);
+        const tone = foreignGeofenceTone(minutes);
+
+        appendForeignGeofenceCell(tr, item.equipment, 'foreign-geofence-equipment', item.equipment);
+        appendForeignGeofenceCell(tr, item.registration_number);
+        appendForeignGeofenceCell(tr, item.vehicle_type);
+        appendForeignGeofenceCell(tr, item.ownership);
+        appendForeignGeofenceCell(tr, item.home_project, 'foreign-geofence-clamp', item.home_project);
+        appendForeignGeofenceCell(tr, item.current_project, 'foreign-geofence-clamp', item.current_project);
+        appendForeignGeofenceCell(tr, item.current_geofence, 'foreign-geofence-clamp', item.current_geofence);
+        appendForeignGeofenceCell(tr, item.entered_at);
+
+        const durationCell = document.createElement('td');
+        const durationBadge = document.createElement('span');
+        durationBadge.className = `foreign-geofence-duration ${tone.className}`;
+        durationBadge.textContent = item.duration || '—';
+        durationCell.appendChild(durationBadge);
+        tr.appendChild(durationCell);
+
+        const statusCell = document.createElement('td');
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `foreign-geofence-status ${tone.className}`;
+        statusBadge.textContent = tone.label;
+        statusCell.appendChild(statusBadge);
+        tr.appendChild(statusCell);
+
+        foreignGeofenceRows.appendChild(tr);
+    });
+
+    if (foreignGeofenceTableMeta) {
+        foreignGeofenceTableMeta.textContent = `Cəmi: ${Number(foreignGeofenceMeta.total || rows.length).toLocaleString()} | Göstərilən: ${rows.length.toLocaleString()} | Səhifə: ${foreignGeofenceMeta.current_page}`;
+    }
+
+    renderForeignGeofencePagination();
+};
+
+const updateForeignGeofenceExport = filters => {
+    if (foreignGeofenceTableExport && dashboardPage?.dataset.dashboardDrilldownExportUrl) {
+        foreignGeofenceTableExport.href = drilldownUrl(dashboardPage.dataset.dashboardDrilldownExportUrl, filters);
+    }
+};
+
+const loadForeignGeofenceTable = async () => {
+    if (!foreignGeofenceRows || !dashboardPage?.dataset.dashboardDrilldownUrl) {
+        return;
+    }
+
+    const filters = foreignGeofenceFilters();
+    foreignGeofenceController?.abort();
+    foreignGeofenceController = new AbortController();
+    const requestId = foreignGeofenceRequestId + 1;
+    foreignGeofenceRequestId = requestId;
+    updateForeignGeofenceExport(filters);
+    setForeignGeofenceLoading('Məlumatlar yüklənir...');
+
+    try {
+        const response = await fetch(drilldownUrl(dashboardPage.dataset.dashboardDrilldownUrl, filters), {
+            headers: { 'Accept': 'application/json' },
+            signal: foreignGeofenceController.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = await response.json();
+
+        if (requestId !== foreignGeofenceRequestId) {
+            return;
+        }
+
+        renderForeignGeofenceRows(payload.data || [], payload.meta || {});
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
+
+        if (requestId !== foreignGeofenceRequestId) {
+            return;
+        }
+
+        setForeignGeofenceLoading('Məlumatları yükləmək mümkün olmadı.');
+    }
+};
+
+foreignGeofencePeriodSelect?.addEventListener('change', () => {
+    const option = foreignGeofencePeriodSelect.selectedOptions?.[0];
+
+    if (dashboardDateFrom && option?.dataset.from) {
+        dashboardDateFrom.value = option.dataset.from;
+    }
+
+    if (dashboardDateTo && option?.dataset.to) {
+        dashboardDateTo.value = option.dataset.to;
+    }
+
+    if (dashboardPeriodInput) {
+        dashboardPeriodInput.value = foreignGeofencePeriodSelect.value || 'custom';
+    }
+
+    dashboardFilterForm?.requestSubmit();
+});
+
+foreignGeofenceRefresh?.addEventListener('click', () => {
+    dashboardFilterForm?.requestSubmit();
+});
+
+let foreignGeofenceSearchTimer = null;
+foreignGeofenceSearch?.addEventListener('input', () => {
+    window.clearTimeout(foreignGeofenceSearchTimer);
+    foreignGeofenceSearchTimer = window.setTimeout(() => {
+        foreignGeofencePage = 1;
+        loadForeignGeofenceTable();
+    }, 300);
+});
+
+foreignGeofenceOwnershipFilter?.addEventListener('change', () => {
+    foreignGeofencePage = 1;
+    loadForeignGeofenceTable();
+});
+foreignGeofencePageSize?.addEventListener('change', () => {
+    foreignGeofencePage = 1;
+    loadForeignGeofenceTable();
+});
+foreignGeofencePrev?.addEventListener('click', () => {
+    if (foreignGeofencePage <= 1) {
+        return;
+    }
+
+    foreignGeofencePage -= 1;
+    loadForeignGeofenceTable();
+});
+foreignGeofenceNext?.addEventListener('click', () => {
+    const lastPage = Number(foreignGeofenceMeta.last_page || 1);
+
+    if (foreignGeofencePage >= lastPage) {
+        return;
+    }
+
+    foreignGeofencePage += 1;
+    loadForeignGeofenceTable();
+});
+loadForeignGeofenceTable();
+
+const setDrilldownStatus = (message, tone = 'muted') => {
+    if (!drilldownStatus) {
+        return;
+    }
+
+    drilldownStatus.textContent = message || '';
+    drilldownStatus.classList.toggle('text-danger', tone === 'danger');
+    drilldownStatus.classList.toggle('text-success', tone === 'success');
+};
+
+const renderDrilldownFilters = filters => {
+    if (!drilldownFilters) {
+        return;
+    }
+
+    drilldownFilters.textContent = Object.entries(filters || {})
+        .map(([label, value]) => `${label}: ${value}`)
+        .join(' | ');
+};
+
+const renderDrilldownRows = rows => {
+    if (!drilldownRows) {
+        return;
+    }
+
+    drilldownRows.textContent = '';
+    const columns = Object.keys(drilldownState.columns || {});
+
+    rows.forEach((row, index) => {
+        const tr = document.createElement('tr');
+        const rowNumber = ((drilldownState.meta?.current_page || 1) - 1) * (drilldownState.meta?.per_page || 50) + index + 1;
+
+        columns.forEach(key => {
+            const td = document.createElement('td');
+            const value = key === 'number' ? rowNumber : row[key];
+            td.textContent = value ?? '—';
+            tr.appendChild(td);
+        });
+
+        drilldownRows.appendChild(tr);
+    });
+};
+
+const renderDrilldownColumns = columns => {
+    if (!drilldownHeader) {
+        return;
+    }
+
+    drilldownState.columns = columns && Object.keys(columns).length ? columns : defaultDrilldownColumns();
+
+    drilldownHeader.textContent = '';
+
+    Object.values(drilldownState.columns).forEach(label => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        drilldownHeader.appendChild(th);
+    });
+};
+
+const updateDrilldownPagination = () => {
+    const meta = drilldownState.meta || { current_page: 1, last_page: 1, total: 0 };
+
+    if (drilldownPageInfo) {
+        drilldownPageInfo.textContent = `Cəmi: ${Number(meta.total || 0).toLocaleString()} | Səhifə ${meta.current_page || 1} / ${meta.last_page || 1}`;
+    }
+
+    if (drilldownPrev) {
+        drilldownPrev.disabled = Number(meta.current_page || 1) <= 1;
+    }
+
+    if (drilldownNext) {
+        drilldownNext.disabled = Number(meta.current_page || 1) >= Number(meta.last_page || 1);
+    }
+};
+
+const updateDrilldownFilterButtons = () => {
+    document.querySelectorAll('.dashboard-drilldown-filter').forEach(button => {
+        const name = button.dataset.filterName;
+        const value = button.dataset.filterValue;
+        button.classList.toggle('active', String(drilldownState.filters[name] || 'all') === value);
+    });
+};
+
+const updateDrilldownExportUrl = () => {
+    if (drilldownExport && dashboardPage?.dataset.dashboardDrilldownExportUrl) {
+        drilldownExport.href = drilldownUrl(dashboardPage.dataset.dashboardDrilldownExportUrl, drilldownState.filters);
+    }
+};
+
+const resetDashboardDrilldownState = (options = {}) => {
+    const abortRequest = options.abortRequest ?? true;
+    const clearTitle = options.clearTitle ?? true;
+
+    if (abortRequest) {
+        drilldownController?.abort();
+        drilldownController = null;
+    }
+
+    drilldownRequestId += 1;
+    drilldownState = {
+        title: '',
+        filters: {},
+        page: 1,
+        meta: null,
+        columns: defaultDrilldownColumns(),
+    };
+
+    if (clearTitle && drilldownTitle) {
+        drilldownTitle.textContent = 'Texnika siyahısı';
+    }
+
+    if (drilldownSearch) {
+        drilldownSearch.value = '';
+    }
+
+    if (drilldownFilters) {
+        drilldownFilters.textContent = '';
+    }
+
+    setDrilldownStatus('');
+    renderDrilldownColumns(null);
+    renderDrilldownRows([]);
+    updateDrilldownPagination();
+    updateDrilldownFilterButtons();
+    drilldownRetry?.classList.add('d-none');
+
+    if (drilldownExport) {
+        drilldownExport.href = '#';
+    }
+};
+
+const loadDashboardDrilldown = async () => {
+    if (!dashboardPage?.dataset.dashboardDrilldownUrl) {
+        return;
+    }
+
+    drilldownController?.abort();
+    drilldownController = new AbortController();
+    const requestId = drilldownRequestId + 1;
+    drilldownRequestId = requestId;
+
+    setDrilldownStatus('Məlumatlar yüklənir...');
+    drilldownRetry?.classList.add('d-none');
+    renderDrilldownRows([]);
+    updateDrilldownFilterButtons();
+    updateDrilldownExportUrl();
+
+    try {
+        const response = await fetch(drilldownUrl(dashboardPage.dataset.dashboardDrilldownUrl, drilldownState.filters), {
+            headers: { 'Accept': 'application/json' },
+            signal: drilldownController.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = await response.json();
+
+        if (requestId !== drilldownRequestId) {
+            return;
+        }
+
+        drilldownState.title = payload.title || drilldownState.title || 'Texnika siyahısı';
+        drilldownState.meta = payload.meta || null;
+        renderDrilldownColumns(payload.columns || null);
+
+        if (drilldownTitle) {
+            drilldownTitle.textContent = drilldownState.title;
+        }
+
+        renderDrilldownFilters(payload.filters || {});
+        renderDrilldownRows(payload.data || []);
+        updateDrilldownPagination();
+        setDrilldownStatus((payload.data || []).length ? `Cəmi: ${payload.summary?.total ?? 0}` : 'Seçilmiş filtr üzrə texnika tapılmadı.', (payload.data || []).length ? 'success' : 'muted');
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
+
+        if (requestId !== drilldownRequestId) {
+            return;
+        }
+
+        drilldownState.meta = null;
+        updateDrilldownPagination();
+        setDrilldownStatus('Məlumatları yükləmək mümkün olmadı.', 'danger');
+        drilldownRetry?.classList.remove('d-none');
+    }
+};
+
+const openDashboardDrilldown = (filters = {}) => {
+    resetDashboardDrilldownState({ abortRequest: true, clearTitle: false });
+    const nextFilters = cleanDrilldownFilters(filters);
+
+    drilldownState.filters = {
+        ...baseDrilldownFilters(),
+        ...nextFilters,
+        data_status: nextFilters.data_status || 'all',
+        page: 1,
+        search: '',
+    };
+    drilldownState.title = nextFilters.title || '';
+
+    delete drilldownState.filters.title;
+
+    if (drilldownSearch) {
+        drilldownSearch.value = '';
+    }
+
+    if (drilldownTitle) {
+        drilldownTitle.textContent = drilldownState.title || 'Texnika siyahısı';
+    }
+
+    drilldownModal?.show();
+    loadDashboardDrilldown();
+};
+
+drilldownModalElement?.addEventListener('hidden.bs.modal', () => {
+    resetDashboardDrilldownState({ abortRequest: true, clearTitle: true });
+});
+
+document.addEventListener('click', event => {
+    const trigger = event.target.closest('.dashboard-drilldown-trigger');
+
+    if (!trigger || trigger.dataset.expandToggle) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    openDashboardDrilldown({
+        title: trigger.dataset.drilldownTitle || '',
+        ownership: trigger.dataset.drilldownOwnership || undefined,
+        project_id: trigger.dataset.drilldownProjectId || undefined,
+        equipment_type_id: trigger.dataset.drilldownEquipmentTypeId || undefined,
+        work_category: trigger.dataset.drilldownWorkCategory || undefined,
+        date_from: trigger.dataset.drilldownDateFrom || undefined,
+        date_to: trigger.dataset.drilldownDateTo || undefined,
+        metric: trigger.dataset.drilldownMetric || undefined,
+        data_status: trigger.dataset.drilldownDataStatus || undefined,
+        top_working_equipment_id: trigger.dataset.drilldownTopEquipmentId || undefined,
+        top_working_stat_date: trigger.dataset.drilldownTopStatDate || undefined,
+        geofence_violation: trigger.dataset.drilldownGeofenceViolation || undefined,
+        current_geozone_project_id: trigger.dataset.drilldownCurrentGeozoneProjectId || undefined,
+        current_geozone_id: trigger.dataset.drilldownCurrentGeozoneId || undefined,
+        current_geozone_key: trigger.dataset.drilldownCurrentGeozoneKey || undefined,
+    });
+});
+
+document.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key)) {
+        return;
+    }
+
+    const trigger = event.target.closest('.dashboard-drilldown-trigger');
+
+    if (!trigger || trigger.dataset.expandToggle) {
+        return;
+    }
+
+    event.preventDefault();
+    trigger.click();
+});
+
+document.querySelectorAll('.dashboard-drilldown-filter').forEach(button => {
+    button.addEventListener('click', () => {
+        drilldownState.filters[button.dataset.filterName] = button.dataset.filterValue;
+        drilldownState.filters.page = 1;
+        loadDashboardDrilldown();
+    });
+});
+
+let drilldownSearchTimer = null;
+drilldownSearch?.addEventListener('input', () => {
+    window.clearTimeout(drilldownSearchTimer);
+    drilldownSearchTimer = window.setTimeout(() => {
+        drilldownState.filters.search = drilldownSearch.value.trim();
+        drilldownState.filters.page = 1;
+        loadDashboardDrilldown();
+    }, 300);
+});
+
+drilldownPrev?.addEventListener('click', () => {
+    const currentPage = Number(drilldownState.meta?.current_page || 1);
+    if (currentPage > 1) {
+        drilldownState.filters.page = currentPage - 1;
+        loadDashboardDrilldown();
+    }
+});
+
+drilldownNext?.addEventListener('click', () => {
+    const currentPage = Number(drilldownState.meta?.current_page || 1);
+    const lastPage = Number(drilldownState.meta?.last_page || 1);
+    if (currentPage < lastPage) {
+        drilldownState.filters.page = currentPage + 1;
+        loadDashboardDrilldown();
+    }
+});
+
+drilldownRetry?.addEventListener('click', loadDashboardDrilldown);
+
+const ownershipDrilldownItems = [
+    { title: `${labels.nwc} texnikaları`, ownership: 'nwc' },
+    { title: `${labels.icare} texnikaları`, ownership: 'icare' },
+];
+const projectWorkCategoryNwcDrilldownItems = workCategoryKeys.map((key, index) => ({
+    title: `${labels.nwc} — ${workCategoryLabels[index]}`,
+    ownership: 'nwc',
+    work_category: key,
+}));
+const projectWorkCategoryIcareDrilldownItems = workCategoryKeys.map((key, index) => ({
+    title: `${labels.icare} — ${workCategoryLabels[index]}`,
+    ownership: 'icare',
+    work_category: key,
+}));
+const typeNwcDrilldownItems = typeNwcIds.map((id, index) => ({
+    title: `${labels.nwc} — ${typeNwcLabels[index]}`,
+    ownership: 'nwc',
+    equipment_type_id: id,
+}));
+const typeIcareDrilldownItems = typeIcareIds.map((id, index) => ({
+    title: `${labels.icare} — ${typeIcareLabels[index]}`,
+    ownership: 'icare',
+    equipment_type_id: id,
+}));
+const geofenceViolationDrilldownItems = geofenceViolationProjectIds.map((id, index) => ({
+    title: `${geofenceViolationLabels[index]} — Geozonadan çıxma halları`,
+    geofence_violation: 1,
+    current_geozone_project_id: id,
+    current_geozone_id: geofenceViolationGeofenceIds[index],
+    current_geozone_key: geofenceViolationSectorKeys[index],
+}));
+
+createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], {
+    showLegend: false,
+    total: ownershipShareTotal,
+    drilldownItems: ownershipDrilldownItems,
+    centerDrilldown: { title: 'Bütün texnikalar', ownership: 'all' },
+});
+createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false, total: typeNwcTotal, drilldownItems: typeNwcDrilldownItems });
+createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false, total: typeIcareTotal, drilldownItems: typeIcareDrilldownItems });
+createDoughnutChart('geofenceViolationsDonut', geofenceViolationLabels, geofenceViolationCounts, geofenceViolationPalette, {
+    showLegend: false,
+    showCenterText: false,
+    cutout: '66%',
+    hoverOffset: 10,
+    total: geofenceViolationTotal,
+    centerLabel: 'Ümumi texnika',
+    drilldownItems: geofenceViolationDrilldownItems,
+    centerDrilldown: { title: 'Geozonadan çıxma halları', geofence_violation: 1 },
+});
+createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcCounts, { drilldownItems: projectWorkCategoryNwcDrilldownItems });
+createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareCounts, { drilldownItems: projectWorkCategoryIcareDrilldownItems });
 createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
+createDailyAverageChart('averageEngineHoursChart', dailyAverageDashboards.engine_hours?.chart || dailyAverageMetrics.engine_hours, 'engine_hours', labels.hours);
+createDailyAverageChart('averageMileageChart', dailyAverageDashboards.mileage?.chart || dailyAverageMetrics.mileage, 'mileage', @json(__('app.km')));
+
+document.querySelectorAll('[data-chart-mode-target] [data-chart-mode]').forEach(button => {
+    button.addEventListener('click', () => {
+        const target = button.closest('[data-chart-mode-target]')?.dataset.chartModeTarget;
+
+        if (!target) {
+            return;
+        }
+
+        window.localStorage?.setItem(`dashboard:${target}:chart-mode`, button.dataset.chartMode || 'line');
+
+        if (target === 'averageEngineHoursChart') {
+            createDailyAverageChart(target, dailyAverageDashboards.engine_hours?.chart || dailyAverageMetrics.engine_hours, 'engine_hours', labels.hours);
+        }
+
+        if (target === 'averageMileageChart') {
+            createDailyAverageChart(target, dailyAverageDashboards.mileage?.chart || dailyAverageMetrics.mileage, 'mileage', @json(__('app.km')));
+        }
+    });
+});
 
 if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
     new Chart(document.getElementById('utilizationLine'), {
@@ -1347,37 +3779,5 @@ if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
     });
 }
 
-const mapContainer = document.getElementById('fleetMap');
-if (mapContainer) {
-    const map = L.map('fleetMap', { scrollWheelZoom: false }).setView([40.39, 49.86], 10);
-    fleetMap = map;
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
-
-    const bounds = [];
-    mapData.geofences.forEach(zone => {
-        if (!zone.geometry) return;
-        const layer = L.geoJSON(zone.geometry, { style: { color: '#1f6feb', weight: 2, fillOpacity: .12 } }).addTo(map);
-        layer.bindPopup(escapeHtml(zone.name));
-        layer.getBounds && bounds.push(layer.getBounds());
-    });
-    mapData.equipment.forEach(item => {
-        if (!item.position || !item.position.lat || !item.position.lng) return;
-        const marker = L.circleMarker([item.position.lat, item.position.lng], {
-            radius: 7,
-            color: item.ownership === 'ICARE' ? ownershipColor.ICARE : ownershipColor.NWC,
-            fillOpacity: .9
-        }).addTo(map);
-        marker.bindPopup(`<strong>${escapeHtml(item.name)}</strong><br>${escapeHtml(item.type)}<br>${escapeHtml(item.project)}`);
-        bounds.push(marker.getLatLng());
-    });
-    if (bounds.length > 0) {
-        const group = L.featureGroup(bounds.map(item => item instanceof L.LatLng ? L.marker(item) : L.rectangle(item)));
-        map.fitBounds(group.getBounds().pad(.18));
-    }
-    setTimeout(() => map.invalidateSize(), 80);
-}
 </script>
 @endpush

@@ -1,0 +1,1155 @@
+<!doctype html>
+<html lang="az">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Geozonadan çıxma halları - static preview</title>
+    <style>
+        :root {
+            --fleet-blue: #2563eb;
+            --fleet-ink: #0f172a;
+            --fleet-muted: #64748b;
+            --fleet-line: #e2e8f0;
+            --fleet-bg: #f6f8fb;
+            --fleet-card: #ffffff;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            margin: 0;
+            background: var(--fleet-bg);
+            color: var(--fleet-ink);
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+        }
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+        .btn {
+            min-height: 40px;
+            border: 1px solid #dbe7f5;
+            border-radius: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: #fff;
+            color: var(--fleet-blue);
+            font-size: .875rem;
+            font-weight: 800;
+            text-decoration: none;
+            cursor: pointer;
+            transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease, background .24s ease;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 26px rgba(37, 99, 235, .14);
+        }
+        .btn-primary {
+            background: var(--fleet-blue);
+            color: #fff;
+            border-color: var(--fleet-blue);
+        }
+        .form-control,
+        .form-select {
+            min-height: 40px;
+            border: 1px solid #dbe7f5;
+            border-radius: 14px;
+            padding: 8px 14px;
+            background: #fff;
+            color: var(--fleet-ink);
+            font-size: .8125rem;
+            font-weight: 700;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+        }
+        .preview-page {
+            width: min(100% - 32px, 1540px);
+            margin: 12px auto;
+        }
+        .foreign-geofence-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .foreign-geofence-title {
+            margin: 0;
+            color: var(--fleet-ink);
+            font-size: clamp(1.25rem, 1.65vw, 1.75rem);
+            font-weight: 850;
+            line-height: 1.2;
+        }
+        .foreign-geofence-subtitle {
+            margin-top: 4px;
+            color: var(--fleet-muted);
+            font-size: .875rem;
+            line-height: 1.4;
+        }
+        .foreign-geofence-context {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            border-radius: 999px;
+            padding: 5px 10px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: .75rem;
+            font-weight: 900;
+            max-width: 100%;
+        }
+        .foreign-geofence-context span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .foreign-geofence-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .foreign-geofence-period {
+            min-width: 220px;
+            height: 42px;
+        }
+        .foreign-geofence-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.04fr) minmax(360px, .96fr);
+            gap: 16px;
+            align-items: stretch;
+        }
+        .foreign-geofence-card,
+        .foreign-geofence-kpi,
+        .foreign-geofence-table-card {
+            border: 1px solid var(--fleet-line);
+            border-radius: 16px;
+            background: var(--fleet-card);
+            box-shadow: 0 18px 42px rgba(15, 23, 42, .06);
+            transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
+        }
+        .foreign-geofence-card:hover,
+        .foreign-geofence-kpi:hover,
+        .foreign-geofence-table-card:hover {
+            transform: translateY(-2px);
+            border-color: #cbdaf0;
+            box-shadow: 0 24px 54px rgba(15, 23, 42, .1);
+        }
+        .foreign-geofence-card {
+            height: 400px;
+            min-height: 0;
+            padding: 18px 20px;
+            overflow: hidden;
+        }
+        .foreign-geofence-card-title {
+            margin: 0 0 12px;
+            color: var(--fleet-ink);
+            font-size: 1rem;
+            font-weight: 850;
+        }
+        .foreign-geofence-donut-layout {
+            display: grid;
+            grid-template-columns: minmax(270px, 300px) minmax(220px, 1fr);
+            gap: 16px;
+            align-items: center;
+            min-width: 0;
+            height: 100%;
+        }
+        .foreign-geofence-donut-wrap {
+            position: relative;
+            width: min(100%, 300px);
+            aspect-ratio: 1 / 1;
+            margin: 0 auto;
+        }
+        .foreign-geofence-donut-wrap svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            overflow: visible;
+        }
+        .donut-segment {
+            cursor: pointer;
+            transition: opacity .24s ease, filter .24s ease, transform .24s ease;
+            transform-origin: 50% 50%;
+        }
+        .donut-segment:hover,
+        .donut-segment.is-active {
+            opacity: .9;
+            filter: drop-shadow(0 10px 16px rgba(37, 99, 235, .18));
+            transform: scale(1.015);
+        }
+        .foreign-geofence-center {
+            position: absolute;
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, -50%);
+            display: grid;
+            place-items: center;
+            text-align: center;
+            pointer-events: none;
+            color: var(--fleet-ink);
+        }
+        .foreign-geofence-center strong {
+            display: block;
+            font-size: clamp(2.1rem, 3.2vw, 2.75rem);
+            line-height: 1;
+            font-weight: 900;
+        }
+        .foreign-geofence-center span {
+            margin-top: 6px;
+            color: var(--fleet-muted);
+            font-weight: 800;
+            font-size: .875rem;
+        }
+        .foreign-geofence-legend {
+            display: grid;
+            gap: 6px;
+            align-content: start;
+            max-height: 300px;
+            min-width: 0;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .foreign-geofence-legend-row {
+            width: 100%;
+            border: 0;
+            border-radius: 10px;
+            background: #f8fafc;
+            display: grid;
+            grid-template-columns: 14px minmax(0, 1fr) auto auto;
+            gap: 10px;
+            align-items: center;
+            min-height: 42px;
+            padding: 7px 10px;
+            color: var(--fleet-ink);
+            text-align: left;
+            cursor: pointer;
+            transition: background .24s ease, transform .24s ease, box-shadow .24s ease;
+        }
+        .foreign-geofence-legend-row:hover,
+        .foreign-geofence-legend-row.is-active,
+        .foreign-geofence-legend-row:focus-visible {
+            background: #eff6ff;
+            transform: translateX(2px);
+            box-shadow: inset 3px 0 0 var(--fleet-blue);
+            outline: 0;
+        }
+        .foreign-geofence-dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+        .foreign-geofence-legend-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: .8125rem;
+            line-height: 1.25;
+            font-weight: 800;
+        }
+        .foreign-geofence-legend-count {
+            color: var(--fleet-ink);
+            font-size: .8125rem;
+            font-weight: 900;
+        }
+        .foreign-geofence-legend-percent {
+            min-width: 40px;
+            color: var(--fleet-muted);
+            text-align: right;
+            font-size: .75rem;
+            font-weight: 800;
+        }
+        .foreign-geofence-stat-wrap {
+            max-height: 305px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .foreign-geofence-stat-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 7px;
+        }
+        .foreign-geofence-stat-table thead th {
+            padding: 0 12px 4px;
+            color: var(--fleet-muted);
+            font-size: .6875rem;
+            text-transform: uppercase;
+            font-weight: 900;
+        }
+        .foreign-geofence-stat-row {
+            cursor: pointer;
+            transition: transform .22s ease, box-shadow .22s ease;
+        }
+        .foreign-geofence-stat-row td {
+            background: #f8fafc;
+            padding: 10px 12px;
+            font-size: .8125rem;
+            line-height: 1.25;
+            vertical-align: middle;
+        }
+        .foreign-geofence-stat-row td:first-child {
+            border-radius: 14px 0 0 14px;
+        }
+        .foreign-geofence-stat-row td:last-child {
+            border-radius: 0 14px 14px 0;
+        }
+        .foreign-geofence-stat-row:hover,
+        .foreign-geofence-stat-row.is-active {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, .08);
+        }
+        .foreign-geofence-progress {
+            height: 7px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: #e2e8f0;
+            margin-top: 7px;
+        }
+        .foreign-geofence-progress span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--fleet-blue), #14b8a6);
+        }
+        .foreign-geofence-show-all {
+            border: 0;
+            background: transparent;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--fleet-blue);
+            font-size: .8125rem;
+            font-weight: 900;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .foreign-geofence-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .foreign-geofence-kpi {
+            padding: 14px 18px;
+            min-height: 86px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .foreign-geofence-kpi-label {
+            color: var(--fleet-muted);
+            font-weight: 800;
+            font-size: .78rem;
+        }
+        .foreign-geofence-kpi-value {
+            color: var(--fleet-ink);
+            font-size: clamp(1.75rem, 2.3vw, 1.875rem);
+            line-height: 1;
+            font-weight: 900;
+            overflow-wrap: anywhere;
+        }
+        .foreign-geofence-kpi-note {
+            color: #94a3b8;
+            font-size: .75rem;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        .foreign-geofence-table-card {
+            margin-top: 12px;
+            padding: 14px 16px;
+            overflow: hidden;
+        }
+        .foreign-geofence-table-toolbar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .foreign-geofence-table-title {
+            margin: 0;
+            color: var(--fleet-ink);
+            font-size: 1.05rem;
+            font-weight: 900;
+        }
+        .foreign-geofence-table-meta {
+            color: var(--fleet-muted);
+            font-size: .8125rem;
+            margin-top: 4px;
+        }
+        .foreign-geofence-table-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .foreign-geofence-search {
+            position: relative;
+            min-width: 240px;
+        }
+        .foreign-geofence-search input {
+            width: 100%;
+            padding-left: 38px;
+        }
+        .foreign-geofence-search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+        }
+        .foreign-geofence-table-wrap {
+            overflow: auto;
+            border: 1px solid var(--fleet-line);
+            border-radius: 16px;
+            max-height: 640px;
+        }
+        .foreign-geofence-detail-table {
+            min-width: 1265px;
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        .foreign-geofence-detail-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #f8fafc;
+            color: #475569;
+            border-bottom: 1px solid var(--fleet-line);
+            padding: 10px 12px;
+            font-size: .6875rem;
+            line-height: 1.2;
+            text-transform: uppercase;
+            font-weight: 900;
+            text-align: left;
+        }
+        .foreign-geofence-detail-table tbody td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #edf2f7;
+            color: #1e293b;
+            font-size: .8125rem;
+            line-height: 1.35;
+            vertical-align: middle;
+        }
+        .foreign-geofence-detail-table tbody tr {
+            height: 52px;
+            transition: background .22s ease;
+        }
+        .foreign-geofence-detail-table tbody tr:hover {
+            background: #f8fbff;
+        }
+        .foreign-geofence-equipment {
+            color: var(--fleet-ink);
+            font-weight: 900;
+        }
+        .foreign-geofence-duration,
+        .foreign-geofence-status {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 5px 8px;
+            font-size: .75rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+        .foreign-geofence-clamp {
+            max-width: 190px;
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            line-clamp: 2;
+        }
+        .foreign-geofence-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 10px;
+            color: var(--fleet-muted);
+            font-size: .8125rem;
+            font-weight: 800;
+        }
+        .foreign-geofence-pagination .btn {
+            min-width: 34px;
+            height: 34px;
+            padding: 6px 10px;
+            border-radius: 10px;
+            font-size: .8125rem;
+        }
+        .foreign-geofence-page-size {
+            min-width: 82px;
+            height: 40px;
+            font-weight: 800;
+        }
+        .foreign-geofence-empty {
+            border-radius: 12px;
+            background: #f8fafc;
+            color: var(--fleet-muted);
+            padding: 14px;
+            font-size: .8125rem;
+            font-weight: 800;
+            text-align: center;
+        }
+        .foreign-geofence-status {
+            gap: 7px;
+        }
+        .foreign-geofence-status::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: currentColor;
+        }
+        .foreign-geofence-duration--soft {
+            background: #f1f5f9;
+            color: #475569;
+        }
+        .foreign-geofence-duration--warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .foreign-geofence-duration--orange {
+            background: #ffedd5;
+            color: #c2410c;
+        }
+        .foreign-geofence-duration--danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+        .preview-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(15, 23, 42, .42);
+        }
+        .preview-modal.is-open {
+            display: flex;
+        }
+        .preview-modal-panel {
+            width: min(1120px, 100%);
+            max-height: min(720px, calc(100vh - 40px));
+            overflow: hidden;
+            border-radius: 16px;
+            background: #fff;
+            box-shadow: 0 30px 90px rgba(15, 23, 42, .26);
+            animation: modalIn .22s ease;
+        }
+        .preview-modal-header,
+        .preview-modal-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px;
+            border-bottom: 1px solid var(--fleet-line);
+        }
+        .preview-modal-footer {
+            border-top: 1px solid var(--fleet-line);
+            border-bottom: 0;
+        }
+        .preview-modal-title {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 900;
+        }
+        .preview-modal-body {
+            padding: 18px;
+            overflow: auto;
+            max-height: 560px;
+        }
+        .preview-close {
+            min-width: 42px;
+            padding: 0;
+        }
+        @keyframes modalIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px) scale(.985);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        @media (max-width: 1199.98px) {
+            .foreign-geofence-grid,
+            .foreign-geofence-donut-layout {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .foreign-geofence-card {
+                height: auto;
+                min-height: auto;
+                min-width: 0;
+            }
+            .foreign-geofence-donut-wrap {
+                width: min(100%, 280px);
+                max-width: 100%;
+            }
+        }
+        @media (min-width: 1200px) and (max-width: 1399.98px) {
+            .foreign-geofence-card {
+                height: 390px;
+            }
+            .foreign-geofence-donut-layout {
+                grid-template-columns: minmax(250px, 270px) minmax(210px, 1fr);
+            }
+            .foreign-geofence-donut-wrap {
+                width: min(100%, 270px);
+            }
+        }
+        @media (max-width: 991.98px) {
+            .foreign-geofence-header,
+            .foreign-geofence-table-toolbar {
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .foreign-geofence-actions,
+            .foreign-geofence-table-actions {
+                justify-content: flex-start;
+            }
+            .foreign-geofence-kpi-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 575.98px) {
+            .preview-page {
+                width: min(100% - 24px, 420px);
+                margin: 20px auto;
+            }
+            .foreign-geofence-card,
+            .foreign-geofence-table-card {
+                padding: 16px;
+            }
+            .foreign-geofence-actions,
+            .foreign-geofence-table-actions,
+            .foreign-geofence-period,
+            .foreign-geofence-search,
+            .foreign-geofence-page-size {
+                width: 100%;
+            }
+            .btn,
+            .foreign-geofence-search input,
+            .foreign-geofence-table-actions .form-select {
+                width: 100%;
+            }
+            .foreign-geofence-kpi-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .foreign-geofence-donut-wrap {
+                width: min(100%, 230px);
+                max-width: 100%;
+                justify-self: center;
+            }
+            .foreign-geofence-legend-row {
+                grid-template-columns: 14px minmax(0, 1fr) auto;
+            }
+            .foreign-geofence-legend-percent {
+                grid-column: 2 / 4;
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+<body>
+<main class="preview-page" data-dashboard-drilldown-url="/dashboard/drilldown/units" data-dashboard-drilldown-export-url="/dashboard/drilldown/units/export">
+    <section class="panel dashboard-card foreign-geofence-shell">
+        <div class="foreign-geofence-header">
+            <div class="min-w-0">
+                <h1 class="foreign-geofence-title dashboard-card-title-text">Geozonadan çıxma halları</h1>
+                <div class="foreign-geofence-subtitle">Öz layihəsinin geozonasından kənarda olan texnikalar</div>
+                <div class="foreign-geofence-context" id="activeProjectBadge" title="Bütün layihələr">
+                    <span>Ev layihəsi: Bütün layihələr</span>
+                </div>
+            </div>
+            <div class="foreign-geofence-actions">
+                <select class="form-select form-select-sm foreign-geofence-period" id="homeProjectSelect" aria-label="Ev layihəsi">
+                    <option value="all">Bütün layihələr</option>
+                    <option value="Laçın yol">Laçın yol</option>
+                    <option value="Füzuli Ağdam yol">Füzuli Ağdam yol</option>
+                    <option value="Yuxarı Şirvan LOT3">Yuxarı Şirvan LOT3</option>
+                </select>
+                <select class="form-select form-select-sm foreign-geofence-period" id="geofencePeriodSelect" aria-label="Dövr">
+                    <option>17.07.2026 00:00 - 17.07.2026 23:59</option>
+                    <option>Son 7 gün</option>
+                    <option>Bu ay</option>
+                </select>
+                <button type="button" class="btn" id="geofenceRefresh">Refresh</button>
+                <button type="button" class="btn btn-primary" id="geofenceExport">Excel</button>
+            </div>
+        </div>
+
+        <div class="foreign-geofence-grid">
+            <div class="foreign-geofence-card">
+                <div class="foreign-geofence-donut-layout">
+                    <div class="foreign-geofence-donut-wrap" role="img" aria-label="Cari layihələr üzrə donut chart">
+                        <svg id="donutSvg" viewBox="0 0 420 420" aria-hidden="true"></svg>
+                        <div class="foreign-geofence-center">
+                            <div>
+                                <strong id="donutTotal">191</strong>
+                                <span>Ümumi texnika</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="foreign-geofence-legend" id="geofenceLegend" aria-label="Cari geozona üzrə bölgü"></div>
+                </div>
+            </div>
+
+            <div class="foreign-geofence-card">
+                <h2 class="foreign-geofence-card-title">Cari geozona / layihə üzrə statistika</h2>
+                <div class="foreign-geofence-stat-wrap" style="overflow-x:auto;">
+                    <table class="foreign-geofence-stat-table">
+                        <thead>
+                        <tr>
+                            <th>Layihə</th>
+                            <th style="text-align:right;">Texnika sayı</th>
+                            <th style="text-align:right;">Faiz</th>
+                        </tr>
+                        </thead>
+                        <tbody id="geofenceStats"></tbody>
+                    </table>
+                </div>
+                <button type="button" class="foreign-geofence-show-all" id="showAll">Hamısını göstər →</button>
+            </div>
+        </div>
+
+        <div class="foreign-geofence-kpi-grid">
+            <div class="foreign-geofence-kpi">
+                <div class="foreign-geofence-kpi-label">Ümumi pozuntu</div>
+                <div class="foreign-geofence-kpi-value" id="kpiTotal">191</div>
+                <div class="foreign-geofence-kpi-note">Dashboard seçimi</div>
+            </div>
+            <div class="foreign-geofence-kpi">
+                <div class="foreign-geofence-kpi-label">3 saatdan çox</div>
+                <div class="foreign-geofence-kpi-value" id="kpiAboveMinimum">191</div>
+                <div class="foreign-geofence-kpi-note">Minimum müddət filtri</div>
+            </div>
+            <div class="foreign-geofence-kpi">
+                <div class="foreign-geofence-kpi-label">Aktiv layihələr</div>
+                <div class="foreign-geofence-kpi-value" id="kpiActiveProjects">17</div>
+                <div class="foreign-geofence-kpi-note">Cari xarici geozonalar</div>
+            </div>
+            <div class="foreign-geofence-kpi">
+                <div class="foreign-geofence-kpi-label">Ən böyük geozona</div>
+                <div class="foreign-geofence-kpi-value" id="kpiTopCount">88</div>
+                <div class="foreign-geofence-kpi-note" id="kpiTopLabel">Füzuli Ağdam yol</div>
+            </div>
+        </div>
+
+        <div class="foreign-geofence-table-card">
+            <div class="foreign-geofence-table-toolbar">
+                <div>
+                    <h2 class="foreign-geofence-table-title" id="tableTitle">Geozonadan çıxma halları</h2>
+                    <div class="foreign-geofence-table-meta" id="tableMeta">Cəmi: 191 | Göstərilən: 8</div>
+                </div>
+                <div class="foreign-geofence-table-actions">
+                    <div class="foreign-geofence-search">
+                        <span class="foreign-geofence-search-icon">⌕</span>
+                        <input type="search" class="form-control" id="geofenceSearch" placeholder="Axtarış...">
+                    </div>
+                    <select class="form-select" id="geofenceOwnershipFilter" aria-label="Ownership">
+                        <option value="all">Hamısı</option>
+                        <option value="NWC">NWC</option>
+                        <option value="İcarə">İcarə</option>
+                    </select>
+                    <select class="form-select foreign-geofence-page-size" id="geofencePageSize" aria-label="Sətir sayı">
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    <button type="button" class="btn" id="tableExport">Eksport</button>
+                </div>
+            </div>
+            <div class="foreign-geofence-table-wrap">
+                <table class="foreign-geofence-detail-table">
+                    <colgroup>
+                        <col style="width: 100px;">
+                        <col style="width: 110px;">
+                        <col style="width: 110px;">
+                        <col style="width: 80px;">
+                        <col style="width: 170px;">
+                        <col style="width: 170px;">
+                        <col style="width: 180px;">
+                        <col style="width: 125px;">
+                        <col style="width: 120px;">
+                        <col style="width: 100px;">
+                    </colgroup>
+                    <thead>
+                    <tr>
+                        <th>Texnika</th>
+                        <th>Qeydiyyat nişanı</th>
+                        <th>Texnika növü</th>
+                        <th>Ownership</th>
+                        <th>Ev layihəsi</th>
+                        <th>Cari layihə</th>
+                        <th>Cari geozona</th>
+                        <th>Giriş vaxtı</th>
+                        <th>Qalma müddəti</th>
+                        <th>Status</th>
+                    </tr>
+                    </thead>
+                    <tbody id="geofenceRows"></tbody>
+                </table>
+            </div>
+            <div class="foreign-geofence-pagination" aria-label="Static preview pagination">
+                <button type="button" class="btn" id="geofencePrev">Əvvəlki</button>
+                <span id="geofencePageInfo">1 / 1</span>
+                <button type="button" class="btn" id="geofenceNext">Növbəti</button>
+            </div>
+        </div>
+    </section>
+</main>
+
+<div class="preview-modal" id="previewModal" aria-hidden="true">
+    <div class="preview-modal-panel" role="dialog" aria-modal="true" aria-labelledby="previewModalTitle">
+        <div class="preview-modal-header">
+            <h2 class="preview-modal-title" id="previewModalTitle">Geozonadan çıxma halları</h2>
+            <button type="button" class="btn preview-close" id="previewModalClose" aria-label="Bağla">×</button>
+        </div>
+        <div class="preview-modal-body">
+            <div class="foreign-geofence-table-wrap">
+                <table class="foreign-geofence-detail-table">
+                    <thead>
+                    <tr>
+                        <th>Texnika</th>
+                        <th>Qeydiyyat nişanı</th>
+                        <th>Texnika növü</th>
+                        <th>Vendor</th>
+                        <th>Ev layihəsi</th>
+                        <th>Cari layihə/geozona</th>
+                        <th>Geozonaya giriş vaxtı</th>
+                        <th>Geozonada qalma müddəti</th>
+                        <th>Son məlumat vaxtı</th>
+                        <th>Wialon ID</th>
+                    </tr>
+                    </thead>
+                    <tbody id="previewModalRows"></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="preview-modal-footer">
+            <span id="previewModalMeta">Static preview data</span>
+            <button type="button" class="btn btn-primary" id="previewModalExport">Excel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const palette = ['#2563EB', '#22C55E', '#F59E0B', '#8B5CF6', '#14B8A6', '#EF4444'];
+    const units = [
+        { equipment: '99-TJ-253', registration_number: '99-TJ-253', vehicle_type: 'Excavator', ownership: 'İcarə', vendor: 'Wialon', home_project: 'Laçın yol', current_project: 'Füzuli Ağdam yol', current_geofence: 'Füzuli Ağdam yol', entered_at: '2026-07-17 07:10', duration: '3 saat 55 dəqiqə', duration_minutes: 235, last_position_at: '2026-07-17 11:05', wialon_id: '20481101' },
+        { equipment: '10-NR-680', registration_number: '10-NR-680', vehicle_type: 'Dump Truck', ownership: 'NWC', vendor: 'Wialon', home_project: 'Laçın yol', current_project: 'Müşviqabad ümumi', current_geofence: 'Müşviqabad kanalizasiya', entered_at: '2026-07-17 05:40', duration: '6 saat 12 dəqiqə', duration_minutes: 372, last_position_at: '2026-07-17 11:52', wialon_id: '20481102' },
+        { equipment: '45-AC-539', registration_number: '45-AC-539', vehicle_type: 'Loader', ownership: 'İcarə', vendor: 'Wialon', home_project: 'Laçın yol', current_project: 'Füzuli Ağdam yol', current_geofence: 'Füzuli Ağdam yol', entered_at: '2026-07-16 23:12', duration: '12 saat 20 dəqiqə', duration_minutes: 740, last_position_at: '2026-07-17 11:32', wialon_id: '20481103' },
+        { equipment: '90-HL-963', registration_number: '90-HL-963', vehicle_type: 'Road Grader', ownership: 'NWC', vendor: 'Wialon', home_project: 'Daşkəsən', current_project: 'Xocavənd təlim mərkəzi', current_geofence: 'Xocavənd təlim mərkəzi', entered_at: '2026-07-17 08:15', duration: '3 saat 02 dəqiqə', duration_minutes: 182, last_position_at: '2026-07-17 11:17', wialon_id: '20481104' },
+        { equipment: '99-ZP-736', registration_number: '99-ZP-736', vehicle_type: 'Road Roller', ownership: 'İcarə', vendor: 'Wialon', home_project: 'Müşviqabad', current_project: 'Daşkəsən', current_geofence: 'Daşkəsən', entered_at: '2026-07-17 04:00', duration: '7 saat 44 dəqiqə', duration_minutes: 464, last_position_at: '2026-07-17 11:44', wialon_id: '20481105' },
+        { equipment: '90-JK-266', registration_number: '90-JK-266', vehicle_type: 'Backhoe Loader', ownership: 'NWC', vendor: 'Wialon', home_project: 'Füzuli Ağdam yol', current_project: 'Yuxarı Şirvan LOT3', current_geofence: 'Kamp LOT-3', entered_at: '2026-07-17 06:31', duration: '5 saat 18 dəqiqə', duration_minutes: 318, last_position_at: '2026-07-17 11:49', wialon_id: '20481106' },
+        { equipment: '10-AD-410', registration_number: '10-AD-410', vehicle_type: 'Dump Truck', ownership: 'İcarə', vendor: 'Wialon', home_project: 'Laçın yol', current_project: 'Füzuli Ağdam yol', current_geofence: 'Füzuli Ağdam yol', entered_at: '2026-07-17 03:22', duration: '8 saat 05 dəqiqə', duration_minutes: 485, last_position_at: '2026-07-17 11:27', wialon_id: '20481107' },
+        { equipment: '77-BK-122', registration_number: '77-BK-122', vehicle_type: 'Excavator', ownership: 'NWC', vendor: 'Wialon', home_project: 'Ağdam', current_project: 'Digər layihələr', current_geofence: 'Manual sector key', entered_at: '2026-07-16 22:45', duration: '13 saat 01 dəqiqə', duration_minutes: 781, last_position_at: '2026-07-17 11:46', wialon_id: '20481108' },
+    ];
+
+    const donutSvg = document.getElementById('donutSvg');
+    const donutTotal = document.getElementById('donutTotal');
+    const geofenceLegend = document.getElementById('geofenceLegend');
+    const geofenceStats = document.getElementById('geofenceStats');
+    const geofenceRows = document.getElementById('geofenceRows');
+    const homeProjectSelect = document.getElementById('homeProjectSelect');
+    const activeProjectBadge = document.getElementById('activeProjectBadge');
+    const geofenceSearch = document.getElementById('geofenceSearch');
+    const ownershipFilter = document.getElementById('geofenceOwnershipFilter');
+    const pageSizeSelect = document.getElementById('geofencePageSize');
+    const geofencePrev = document.getElementById('geofencePrev');
+    const geofenceNext = document.getElementById('geofenceNext');
+    const geofencePageInfo = document.getElementById('geofencePageInfo');
+    const tableMeta = document.getElementById('tableMeta');
+    const previewModal = document.getElementById('previewModal');
+    const previewModalTitle = document.getElementById('previewModalTitle');
+    const previewModalRows = document.getElementById('previewModalRows');
+    const previewModalMeta = document.getElementById('previewModalMeta');
+    const kpiTotal = document.getElementById('kpiTotal');
+    const kpiAboveMinimum = document.getElementById('kpiAboveMinimum');
+    const kpiActiveProjects = document.getElementById('kpiActiveProjects');
+    const kpiTopCount = document.getElementById('kpiTopCount');
+    const kpiTopLabel = document.getElementById('kpiTopLabel');
+    const tableTitle = document.getElementById('tableTitle');
+    let tablePage = 1;
+    const previewProjectParam = new URLSearchParams(window.location.search).get('project');
+
+    if (previewProjectParam && [...homeProjectSelect.options].some(option => option.value === previewProjectParam)) {
+        homeProjectSelect.value = previewProjectParam;
+    }
+
+    const polarToCartesian = (cx, cy, radius, angleInDegrees) => {
+        const angleInRadians = (angleInDegrees - 90) * Math.PI / 180;
+        return {
+            x: cx + (radius * Math.cos(angleInRadians)),
+            y: cy + (radius * Math.sin(angleInRadians)),
+        };
+    };
+
+    const donutPath = (cx, cy, outerRadius, innerRadius, startAngle, endAngle) => {
+        const outerStart = polarToCartesian(cx, cy, outerRadius, endAngle);
+        const outerEnd = polarToCartesian(cx, cy, outerRadius, startAngle);
+        const innerStart = polarToCartesian(cx, cy, innerRadius, startAngle);
+        const innerEnd = polarToCartesian(cx, cy, innerRadius, endAngle);
+        const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+
+        return [
+            'M', outerStart.x, outerStart.y,
+            'A', outerRadius, outerRadius, 0, largeArcFlag, 0, outerEnd.x, outerEnd.y,
+            'L', innerStart.x, innerStart.y,
+            'A', innerRadius, innerRadius, 0, largeArcFlag, 1, innerEnd.x, innerEnd.y,
+            'Z',
+        ].join(' ');
+    };
+
+    const durationTone = minutes => {
+        if (minutes >= 720) return { className: 'foreign-geofence-duration--danger', label: '12 saat+' };
+        if (minutes >= 360) return { className: 'foreign-geofence-duration--orange', label: '6 saat+' };
+        if (minutes >= 180) return { className: 'foreign-geofence-duration--warning', label: '3 saat+' };
+        return { className: 'foreign-geofence-duration--soft', label: '< 3 saat' };
+    };
+
+    const projectLabel = () => homeProjectSelect.value === 'all' ? 'Bütün layihələr' : homeProjectSelect.value;
+    const projectUnits = () => homeProjectSelect.value === 'all'
+        ? units
+        : units.filter(unit => unit.home_project === homeProjectSelect.value);
+    const groupedSummary = () => {
+        const filteredUnits = projectUnits();
+        const total = filteredUnits.length;
+        const grouped = new Map();
+
+        filteredUnits.forEach(unit => {
+            const key = `${unit.current_project}|${unit.current_geofence}`;
+            const current = grouped.get(key) || {
+                label: unit.current_project,
+                geofence: unit.current_geofence,
+                count: 0,
+                units: [],
+            };
+            current.count += 1;
+            current.units.push(unit);
+            grouped.set(key, current);
+        });
+
+        return [...grouped.values()]
+            .sort((a, b) => b.count - a.count)
+            .map((group, index) => ({
+                ...group,
+                color: palette[index % palette.length],
+                percent: total > 0 ? Math.round((group.count / total) * 100) : 0,
+            }));
+    };
+
+    const unitsForGroup = group => group ? group.units : projectUnits();
+
+    const openModal = group => {
+        const selectedUnits = unitsForGroup(group);
+        previewModalTitle.textContent = group ? `${group.label} — ${projectLabel()}` : `Geozonadan çıxma halları — ${projectLabel()}`;
+        previewModalRows.innerHTML = selectedUnits.length ? selectedUnits.map(unit => `
+            <tr>
+                <td class="foreign-geofence-equipment">${unit.equipment}</td>
+                <td>${unit.registration_number}</td>
+                <td>${unit.vehicle_type}</td>
+                <td>${unit.vendor}</td>
+                <td>${unit.home_project}</td>
+                <td>${unit.current_project} / ${unit.current_geofence}</td>
+                <td>${unit.entered_at}</td>
+                <td>${unit.duration}</td>
+                <td>${unit.last_position_at}</td>
+                <td>${unit.wialon_id}</td>
+            </tr>
+        `).join('') : '<tr><td colspan="10" class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</td></tr>';
+        previewModalMeta.textContent = `Static preview rows: ${selectedUnits.length} | project_id=${homeProjectSelect.value}`;
+        previewModal.classList.add('is-open');
+        previewModal.setAttribute('aria-hidden', 'false');
+    };
+
+    const setActive = index => {
+        document.querySelectorAll('.donut-segment, .foreign-geofence-legend-row, .foreign-geofence-stat-row').forEach(element => {
+            element.classList.toggle('is-active', Number(element.dataset.index) === index);
+        });
+    };
+
+    const renderDonut = groups => {
+        const total = groups.reduce((sum, group) => sum + group.count, 0);
+        let startAngle = 0;
+        donutSvg.innerHTML = '';
+
+        if (donutTotal) {
+            donutTotal.textContent = String(total);
+        }
+
+        if (total === 0) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', donutPath(210, 210, 204, 135, 0, 359.99));
+            path.setAttribute('fill', '#e2e8f0');
+            donutSvg.appendChild(path);
+            return;
+        }
+
+        groups.forEach((group, index) => {
+            const slice = group.count / total * 360;
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', donutPath(210, 210, 204, 135, startAngle, startAngle + slice));
+            path.setAttribute('fill', group.color);
+            path.setAttribute('class', 'donut-segment');
+            path.dataset.index = String(index);
+            path.addEventListener('mouseenter', () => setActive(index));
+            path.addEventListener('mouseleave', () => setActive(-1));
+            path.addEventListener('click', () => openModal(group));
+            donutSvg.appendChild(path);
+            startAngle += slice;
+        });
+    };
+
+    const renderSummary = groups => {
+        const total = groups.reduce((sum, group) => sum + group.count, 0);
+        const max = Math.max(1, ...groups.map(group => group.count));
+        activeProjectBadge.title = projectLabel();
+        activeProjectBadge.innerHTML = `<span>Ev layihəsi: ${projectLabel()}</span>`;
+        tableTitle.textContent = homeProjectSelect.value === 'all'
+            ? 'Geozonadan çıxma halları'
+            : `Geozonadan çıxma halları — ${projectLabel()}`;
+        kpiTotal.textContent = String(total);
+        kpiAboveMinimum.textContent = String(total);
+        kpiActiveProjects.textContent = String(groups.length);
+        kpiTopCount.textContent = String(groups[0]?.count || 0);
+        kpiTopLabel.textContent = groups[0]?.label || 'Məlumat yoxdur';
+
+        if (groups.length === 0) {
+            geofenceLegend.innerHTML = '<div class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</div>';
+            geofenceStats.innerHTML = '<tr><td colspan="3" class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</td></tr>';
+            document.getElementById('showAll').disabled = true;
+            return;
+        }
+
+        document.getElementById('showAll').disabled = false;
+        geofenceLegend.innerHTML = groups.map((group, index) => `
+            <button type="button" class="foreign-geofence-legend-row" data-index="${index}" title="${group.label}">
+                <span class="foreign-geofence-dot" style="background:${group.color}"></span>
+                <span class="foreign-geofence-legend-name">${group.label}</span>
+                <span class="foreign-geofence-legend-count">${group.count}</span>
+                <span class="foreign-geofence-legend-percent">${group.percent}%</span>
+            </button>
+        `).join('');
+        geofenceStats.innerHTML = groups.map((group, index) => `
+            <tr class="foreign-geofence-stat-row" data-index="${index}" title="${group.label}">
+                <td>
+                    <div style="font-weight:800;" title="${group.label}">${group.label}</div>
+                    <div class="foreign-geofence-progress"><span style="width:${Math.max(3, Math.round(group.count / max * 100))}%"></span></div>
+                </td>
+                <td style="text-align:right;font-weight:900;">${group.count}</td>
+                <td style="text-align:right;color:var(--fleet-muted);font-weight:800;">${group.percent}%</td>
+            </tr>
+        `).join('');
+
+        document.querySelectorAll('.foreign-geofence-legend-row, .foreign-geofence-stat-row').forEach(element => {
+            const index = Number(element.dataset.index);
+            element.addEventListener('mouseenter', () => setActive(index));
+            element.addEventListener('mouseleave', () => setActive(-1));
+            element.addEventListener('click', () => openModal(groups[index]));
+        });
+    };
+
+    const renderRows = () => {
+        const query = geofenceSearch.value.trim().toLowerCase();
+        const ownership = ownershipFilter.value;
+        const visibleUnits = projectUnits().filter(unit => {
+            const matchesOwnership = ownership === 'all' || unit.ownership === ownership;
+            const haystack = Object.values(unit).join(' ').toLowerCase();
+            return matchesOwnership && haystack.includes(query);
+        });
+        const perPage = Number(pageSizeSelect.value || 20);
+        const lastPage = Math.max(1, Math.ceil(visibleUnits.length / perPage));
+        tablePage = Math.min(Math.max(tablePage, 1), lastPage);
+        const pageUnits = visibleUnits.slice((tablePage - 1) * perPage, tablePage * perPage);
+
+        geofenceRows.innerHTML = pageUnits.length ? pageUnits.map(unit => {
+            const tone = durationTone(unit.duration_minutes);
+            return `
+                <tr>
+                    <td class="foreign-geofence-equipment" title="${unit.equipment}">${unit.equipment}</td>
+                    <td>${unit.registration_number}</td>
+                    <td>${unit.vehicle_type}</td>
+                    <td>${unit.ownership}</td>
+                    <td><span class="foreign-geofence-clamp" title="${unit.home_project}">${unit.home_project}</span></td>
+                    <td><span class="foreign-geofence-clamp" title="${unit.current_project}">${unit.current_project}</span></td>
+                    <td><span class="foreign-geofence-clamp" title="${unit.current_geofence}">${unit.current_geofence}</span></td>
+                    <td>${unit.entered_at}</td>
+                    <td><span class="foreign-geofence-duration ${tone.className}">${unit.duration}</span></td>
+                    <td><span class="foreign-geofence-status ${tone.className}">${tone.label}</span></td>
+                </tr>
+            `;
+        }).join('') : '<tr><td colspan="10" class="foreign-geofence-empty">Seçilmiş layihə və dövr üzrə geozonadan çıxma halı aşkarlanmadı</td></tr>';
+        tableMeta.textContent = `Cəmi: ${visibleUnits.length} | Göstərilən: ${pageUnits.length} | Səhifə: ${tablePage}`;
+        geofencePageInfo.textContent = `${tablePage} / ${lastPage}`;
+        geofencePrev.disabled = tablePage <= 1;
+        geofenceNext.disabled = tablePage >= lastPage;
+    };
+
+    const renderAll = () => {
+        const groups = groupedSummary();
+        renderDonut(groups);
+        renderSummary(groups);
+        renderRows();
+    };
+
+    document.getElementById('showAll').addEventListener('click', () => openModal(null));
+    document.getElementById('previewModalClose').addEventListener('click', () => {
+        previewModal.classList.remove('is-open');
+        previewModal.setAttribute('aria-hidden', 'true');
+    });
+    previewModal.addEventListener('click', event => {
+        if (event.target === previewModal) {
+            previewModal.classList.remove('is-open');
+            previewModal.setAttribute('aria-hidden', 'true');
+        }
+    });
+    geofenceSearch.addEventListener('input', () => {
+        tablePage = 1;
+        renderRows();
+    });
+    ownershipFilter.addEventListener('change', () => {
+        tablePage = 1;
+        renderRows();
+    });
+    homeProjectSelect.addEventListener('change', () => {
+        tablePage = 1;
+        geofenceRows.innerHTML = '<tr><td colspan="10" class="foreign-geofence-empty">Məlumatlar yüklənir...</td></tr>';
+        window.setTimeout(renderAll, 140);
+    });
+    pageSizeSelect.addEventListener('change', () => {
+        tablePage = 1;
+        renderRows();
+    });
+    geofencePrev.addEventListener('click', () => {
+        tablePage -= 1;
+        renderRows();
+    });
+    geofenceNext.addEventListener('click', () => {
+        tablePage += 1;
+        renderRows();
+    });
+    document.getElementById('geofenceRefresh').addEventListener('click', () => renderAll());
+    document.getElementById('geofenceExport').addEventListener('click', () => alert(`Static preview: Excel export keeps project_id=${homeProjectSelect.value}.`));
+    document.getElementById('tableExport').addEventListener('click', () => alert(`Static preview: table export keeps project_id=${homeProjectSelect.value}.`));
+    document.getElementById('previewModalExport').addEventListener('click', () => alert('Static preview export action.'));
+
+    renderAll();
+</script>
+</body>
+</html>

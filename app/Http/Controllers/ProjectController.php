@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\Project;
 use App\Models\ProjectWialonGeofenceGroup;
 use App\Models\ProjectWialonGroup;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -17,7 +18,22 @@ class ProjectController extends Controller
     public function index(): View
     {
         return view('projects.index', [
-            'projects' => Project::query()->withCount(['equipment', 'geofences', 'wialonGroups', 'wialonGeofenceGroups'])->orderBy('name')->paginate(20),
+            'projects' => Project::query()
+                ->where('active', true)
+                ->withCount([
+                    'equipment',
+                    'equipment as nwc_equipment_count' => fn (Builder $query) => $query->where('ownership_type', Equipment::OWNERSHIP_NWC),
+                    'equipment as icare_equipment_count' => fn (Builder $query) => $query->where('ownership_type', Equipment::OWNERSHIP_ICARE),
+                    'equipment as online_equipment_count' => fn (Builder $query) => $query->where('last_synced_at', '>=', now()->subMinutes(15)),
+                    'equipment as offline_equipment_count' => fn (Builder $query) => $query->where(function (Builder $query): void {
+                        $query->whereNull('last_synced_at')->orWhere('last_synced_at', '<', now()->subMinutes(15));
+                    }),
+                    'geofences',
+                    'wialonGroups',
+                    'wialonGeofenceGroups',
+                ])
+                ->orderBy('name')
+                ->paginate(20),
         ]);
     }
 

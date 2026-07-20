@@ -15,7 +15,14 @@
                         </thead>
                         <tbody>
                             @foreach ($rows as $type)
-                                <tr class="{{ $loop->iteration > 10 ? 'expandable-extra d-none' : '' }}">
+                                <tr
+                                    class="{{ $loop->iteration > 10 ? 'expandable-extra d-none' : '' }} dashboard-drilldown-trigger"
+                                    role="button"
+                                    tabindex="0"
+                                    data-drilldown-title="{{ $ownershipLabel ?? '' }} — {{ $type['name'] }}"
+                                    data-drilldown-ownership="{{ $ownership ?? 'all' }}"
+                                    data-drilldown-equipment-type-id="{{ $type['id'] ?? '' }}"
+                                >
                                     <td>{{ $type['name'] }}</td>
                                     <td class="text-end">{{ $type['total'] }}</td>
                                 </tr>
@@ -26,10 +33,9 @@
                 @if ($hasMore)
                     <button
                         type="button"
-                        class="btn btn-link dashboard-expand-toggle mt-2"
-                        data-expand-toggle="{{ $expandId }}"
-                        data-show-label="Hamısını göstər"
-                        data-hide-label="Gizlət"
+                        class="btn btn-link dashboard-expand-toggle mt-2 dashboard-drilldown-trigger"
+                        data-drilldown-title="{{ $ownershipLabel ?? '' }}"
+                        data-drilldown-ownership="{{ $ownership ?? 'all' }}"
                     >Hamısını göstər</button>
                 @endif
             </div>

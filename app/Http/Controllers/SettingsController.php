@@ -34,7 +34,7 @@ class SettingsController extends Controller
             'auto_sync_geofences_enabled' => ['nullable', 'boolean'],
             'auto_sync_geofences_interval_minutes' => ['required', 'integer', 'in:360,720,1440,10080'],
             'auto_sync_daily_enabled' => ['nullable', 'boolean'],
-            'auto_sync_daily_time' => ['required', 'date_format:H:i'],
+            'auto_sync_daily_interval_minutes' => ['required', 'integer', 'in:60,180,360,720,1440'],
             'auto_sync_daily_recent_days' => ['required', 'integer', 'min:1', 'max:7'],
         ]);
 

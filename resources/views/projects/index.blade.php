@@ -19,7 +19,11 @@
                         <th>{{ __('app.code') }}</th>
                         <th class="text-end">Wialon qrupları</th>
                         <th class="text-end">Geozona qruplari</th>
+                        <th class="text-end">NWC</th>
+                        <th class="text-end">İCARƏ</th>
                         <th class="text-end">{{ __('app.equipment') }}</th>
+                        <th class="text-end">Online</th>
+                        <th class="text-end">Offline</th>
                         <th class="text-end">{{ __('app.geofences') }}</th>
                         <th>{{ __('app.status') }}</th>
                         <th class="text-end"></th>
@@ -35,7 +39,11 @@
                             <td>{{ $project->code }}</td>
                             <td class="text-end">{{ $project->wialon_groups_count }}</td>
                             <td class="text-end">{{ $project->wialon_geofence_groups_count }}</td>
+                            <td class="text-end">{{ $project->nwc_equipment_count }}</td>
+                            <td class="text-end">{{ $project->icare_equipment_count }}</td>
                             <td class="text-end">{{ $project->equipment_count }}</td>
+                            <td class="text-end">{{ $project->online_equipment_count }}</td>
+                            <td class="text-end">{{ $project->offline_equipment_count }}</td>
                             <td class="text-end">{{ $project->geofences_count }}</td>
                             <td><span class="badge text-bg-{{ $project->active ? 'success' : 'secondary' }}">{{ $project->active ? __('app.active') : __('app.inactive') }}</span></td>
                             <td class="text-end">

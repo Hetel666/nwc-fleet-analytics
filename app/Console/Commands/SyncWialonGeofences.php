@@ -3,9 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Models\Geofence;
+use App\Models\Project;
 use App\Models\ProjectWialonGeofenceGroup;
+use App\Services\GeofenceNameNormalizer;
 use App\Services\WialonService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -15,9 +18,11 @@ class SyncWialonGeofences extends Command
 
     protected $description = 'Import project geofences from mapped Wialon geofence groups.';
 
-    public function handle(WialonService $wialon): int
+    public function handle(WialonService $wialon, GeofenceNameNormalizer $normalizer): int
     {
         $count = 0;
+        $projects = Project::query()->get()->keyBy('name');
+        $overrides = config('wialon_projects.geofence_zone_project_overrides', []);
 
         foreach (ProjectWialonGeofenceGroup::query()->with('project')->get() as $mapping) {
             try {
@@ -40,13 +45,19 @@ class SyncWialonGeofences extends Command
                     continue;
                 }
 
+                $wialonGeofenceId = $mapping->wialon_resource_id.':'.$zoneId;
+                $projectId = $this->projectIdForZone($mapping, $wialonGeofenceId, $projects, $overrides);
+
+                if ($projectId === null) {
+                    continue;
+                }
+
                 Geofence::updateOrCreate(
+                    ['wialon_geofence_id' => $wialonGeofenceId],
                     [
-                        'project_id' => $mapping->project_id,
-                        'wialon_geofence_id' => $mapping->wialon_resource_id.':'.$zoneId,
-                    ],
-                    [
+                        'project_id' => $projectId,
                         'name' => $zone['n'] ?? 'Geofence '.$zoneId,
+                        'normalized_name' => $normalizer->normalize($zone['n'] ?? 'Geofence '.$zoneId),
                         'geometry_json' => $this->geometry($zone),
                         'active' => true,
                     ]
@@ -61,6 +72,23 @@ class SyncWialonGeofences extends Command
         $this->info("Synced {$count} Wialon geofences.");
 
         return self::SUCCESS;
+    }
+
+    private function projectIdForZone(
+        ProjectWialonGeofenceGroup $mapping,
+        string $wialonGeofenceId,
+        Collection $projects,
+        array $overrides
+    ): ?int {
+        $overrideProjectName = $overrides[$wialonGeofenceId] ?? null;
+
+        if (is_string($overrideProjectName) && $overrideProjectName !== '') {
+            $project = $projects->get($overrideProjectName);
+
+            return $project instanceof Project ? (int) $project->id : null;
+        }
+
+        return $mapping->project_id ? (int) $mapping->project_id : null;
     }
 
     private function geometry(array $zone): ?array

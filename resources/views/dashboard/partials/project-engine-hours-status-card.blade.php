@@ -3,20 +3,29 @@
     $total = (int) ($summary['total'] ?? 0);
     $missingData = (int) ($summary['missing_data'] ?? 0);
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
+    $title = $title ?? null;
 @endphp
 
 <section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column">
     <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
         <div class="min-w-0">
-            <h2 class="h5 dashboard-work-status-title fw-bold mb-0">
-                Project üzrə:
-                <span style="color: {{ $ownershipColor }}">{{ $ownershipLabel }}</span>
+            <h2 class="h5 dashboard-work-status-title fw-bold mb-0 dashboard-card-title-text">
+                @if ($title)
+                    {{ $title }}
+                @else
+                    Project üzrə:
+                    <span style="color: {{ $ownershipColor }}">{{ $ownershipLabel }}</span>
+                @endif
             </h2>
+            <input type="text" class="form-control form-control-sm dashboard-title-input mt-1 d-none" value="{{ $title ?: 'Project üzrə: '.$ownershipLabel }}" maxlength="120" aria-label="Dashboard başlığı">
         </div>
         <div class="d-flex align-items-center gap-1 flex-shrink-0">
             <a href="{{ $exportUrl }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
                 <i class="bi bi-download"></i>
             </a>
+            <button type="button" class="btn btn-sm dashboard-visibility-toggle" title="Bloku gizlət" aria-label="Bloku gizlət">
+                <i class="bi bi-eye-slash"></i>
+            </button>
             <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
                 <i class="bi bi-grip-vertical"></i>
             </button>
@@ -42,8 +51,16 @@
                             @php
                                 $count = (int) ($summary[$key] ?? 0);
                                 $percent = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+                                $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
                             @endphp
-                            <tr>
+                            <tr
+                                class="dashboard-drilldown-trigger"
+                                role="button"
+                                tabindex="0"
+                                data-drilldown-title="{{ ($title ?: 'Project üzrə: '.$ownershipLabel).' — '.$categoryLabels[$key] }}"
+                                data-drilldown-ownership="{{ $drilldownOwnership }}"
+                                data-drilldown-work-category="{{ $key }}"
+                            >
                                 <td>
                                     <span class="dashboard-work-status-label">
                                         <span class="dashboard-color-dot" style="background: {{ $categoryColors[$key] }}"></span>
@@ -62,13 +79,13 @@
                     </tbody>
                 </table>
                 @if ($missingData > 0)
-                    <div class="small text-secondary mt-2">Məlumatı olmayan texnika: {{ number_format($missingData, 0, '.', ' ') }}</div>
+                    <div class="small text-secondary mt-2">1 saatdan az işləyən kateqoriyasına məlumatı olmayan {{ number_format($missingData, 0, '.', ' ') }} texnika daxildir.</div>
                 @endif
             </div>
         </div>
         <div class="dashboard-work-status-note small pt-3 mt-3 d-flex align-items-center gap-2">
             <i class="bi bi-info-circle"></i>
-            <span>Hesablamalar faktiki işləmə saatları əsasında aparılıb.</span>
+            <span>Hesablamalar Asia/Baku vaxtına əsasən aparılır. Göstəricilər texnika-gün qeydləri üzrə hesablanıb; overtime gündüz statusu ilə üst-üstə düşə bilər.</span>
         </div>
         <div class="dashboard-work-status-legend mt-3">
             @foreach ($categoryKeys as $key)
@@ -84,7 +101,7 @@
     @else
         <div class="dashboard-empty flex-grow-1">{{ __('app.no_data') }}</div>
         @if ($missingData > 0)
-            <div class="small text-secondary mt-2">Məlumatı olmayan texnika: {{ number_format($missingData, 0, '.', ' ') }}</div>
+            <div class="small text-secondary mt-2">1 saatdan az işləyən kateqoriyasına məlumatı olmayan {{ number_format($missingData, 0, '.', ' ') }} texnika daxildir.</div>
         @endif
     @endif
 </section>

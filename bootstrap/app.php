@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -21,10 +22,15 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_AWS_ELB
         );
 
-        $middleware->web(append: [
-            App\Http\Middleware\SecurityHeaders::class,
-            App\Http\Middleware\SetLocale::class,
-        ]);
+        $middleware->web(
+            append: [
+                App\Http\Middleware\SecurityHeaders::class,
+                App\Http\Middleware\SetLocale::class,
+            ],
+            replace: [
+                Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class => App\Http\Middleware\ValidateCsrfToken::class,
+            ],
+        );
 
         $middleware->alias([
             'active' => App\Http\Middleware\EnsureActiveUser::class,
@@ -32,5 +38,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (TokenMismatchException $exception, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json(['message' => __('app.session_expired')], 419);
+            }
+
+            return redirect()
+                ->route('login')
+                ->withErrors(['email' => __('app.session_expired')]);
+        });
     })->create();

@@ -86,6 +86,25 @@ class WialonService
 
     public function getUnitGroups(array $groupIds = []): array
     {
+        if ($groupIds !== []) {
+            $groups = [];
+
+            foreach (array_values(array_unique(array_map('strval', $groupIds))) as $groupId) {
+                $response = $this->request('core/search_item', [
+                    'id' => (int) $groupId,
+                    'flags' => -1,
+                ]);
+
+                $item = $response['item'] ?? null;
+
+                if (is_array($item) && $item !== []) {
+                    $groups[] = $item;
+                }
+            }
+
+            return $groups;
+        }
+
         $response = $this->request('core/search_items', [
             'spec' => [
                 'itemsType' => 'avl_unit_group',
@@ -99,14 +118,7 @@ class WialonService
             'to' => 0,
         ]);
 
-        $items = $response['items'] ?? [];
-        if ($groupIds === []) {
-            return $items;
-        }
-
-        $allowed = array_flip(array_map('strval', $groupIds));
-
-        return array_values(array_filter($items, fn (array $item): bool => isset($allowed[(string) ($item['id'] ?? '')])));
+        return $response['items'] ?? [];
     }
 
     public function getResource(int|string $resourceId): array
@@ -231,7 +243,7 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-        $sid = $this->loginByToken();
+        $sid = $this->getSessionId();
         $this->cleanupReportResult($sid);
 
         $payload = [
@@ -303,7 +315,7 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-        $sid = $this->loginByToken();
+        $sid = $this->getSessionId();
         $this->cleanupReportResult($sid);
 
         $payload = [
@@ -372,25 +384,125 @@ class WialonService
         }
     }
 
-    public function findReportTemplateIdByName(int|string $resourceId, string $templateName): ?int
+    public function getReportResources(): array
     {
-        $resource = $this->getResource($resourceId);
+        $response = $this->request('core/search_items', [
+            'spec' => [
+                'itemsType' => 'avl_resource',
+                'propName' => 'sys_name',
+                'propValueMask' => '*',
+                'sortType' => 'sys_name',
+            ],
+            'force' => 1,
+            'flags' => -1,
+            'from' => 0,
+            'to' => 0,
+        ]);
+
+        return $response['items'] ?? [];
+    }
+
+    public function findReportTemplateByName(int|string|null $resourceId, string $templateName): ?array
+    {
         $target = $this->normalizeReportTemplateName($templateName);
 
         if ($target === '') {
             return null;
         }
 
-        $candidates = [];
-        $this->collectReportTemplateCandidates($resource, $candidates);
+        $resources = $resourceId !== null && (string) $resourceId !== ''
+            ? [$this->getResource($resourceId)]
+            : $this->getReportResources();
 
-        foreach ($candidates as $candidate) {
-            if ($this->normalizeReportTemplateName((string) ($candidate['name'] ?? '')) === $target) {
-                return (int) $candidate['id'];
+        foreach ($resources as $resource) {
+            $candidates = [];
+            $this->collectReportTemplateCandidates($resource, $candidates);
+
+            foreach ($candidates as $candidate) {
+                if ($this->normalizeReportTemplateName((string) ($candidate['name'] ?? '')) !== $target) {
+                    continue;
+                }
+
+                return [
+                    ...$candidate,
+                    'resource_id' => (int) ($resource['id'] ?? $resourceId ?? 0),
+                    'resource_name' => (string) ($resource['nm'] ?? $resource['name'] ?? $resource['n'] ?? ''),
+                ];
             }
         }
 
         return null;
+    }
+
+    public function findReportTemplateIdByName(int|string $resourceId, string $templateName): ?int
+    {
+        return $this->findReportTemplateByName($resourceId, $templateName)['id'] ?? null;
+    }
+
+    public function executeReport(
+        int|string $resourceId,
+        int|string $templateId,
+        int|string $objectId,
+        int $from,
+        int $to,
+        int $intervalFlags = 0,
+        ?string $sid = null,
+        bool $remoteExec = false,
+        ?int $requestTimeout = null
+    ): array {
+        $previousTimeout = $this->requestTimeoutOverride;
+        $previousDeadline = $this->requestDeadlineAt;
+        $this->requestTimeoutOverride = $requestTimeout;
+        $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
+
+        try {
+        $payload = [
+            'reportResourceId' => (int) $resourceId,
+            'reportTemplateId' => (int) $templateId,
+            'reportTemplate' => null,
+            'reportObjectId' => (int) $objectId,
+            'reportObjectSecId' => 0,
+            'interval' => [
+                'from' => $from,
+                'to' => $to,
+                'flags' => $intervalFlags,
+            ],
+        ];
+
+        if ($remoteExec) {
+            $payload['remoteExec'] = 1;
+            $payload['reportObjectIdList'] = [];
+        }
+
+        $sessionId = $sid ?? $this->getSessionId();
+        $result = $this->request('report/exec_report', $payload, $sessionId);
+
+        return $remoteExec ? $this->waitForRemoteReportResult($sessionId) : $result;
+        } finally {
+            $this->requestTimeoutOverride = $previousTimeout;
+            $this->requestDeadlineAt = $previousDeadline;
+        }
+    }
+
+    public function selectReportResultRows(int $tableIndex, array $config, ?string $sid = null): array
+    {
+        $rows = $this->request('report/select_result_rows', [
+            'tableIndex' => $tableIndex,
+            'config' => $config,
+        ], $sid ?? $this->getSessionId());
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    public function getReportResultRows(int $tableIndex, int $indexFrom, int $indexTo, ?string $sid = null): array
+    {
+        $rows = $this->request('report/get_result_rows', [
+            'tableIndex' => $tableIndex,
+            'indexFrom' => $indexFrom,
+            'indexTo' => $indexTo,
+        ], $sid ?? $this->getSessionId());
+
+        return is_array($rows) ? $rows : [];
     }
 
     private function getSelectedRowsForTable(string $sid, int $tableIndex, array $table, int $rowCount, int $chunkSize): array
@@ -467,6 +579,9 @@ class WialonService
             $candidates[] = [
                 'id' => (int) $id,
                 'name' => (string) $name,
+                'type' => $node['ct'] ?? $node['bind'] ?? $node['tp'] ?? null,
+                'tables' => $node['tbl'] ?? $node['tables'] ?? [],
+                'raw_keys' => array_keys($node),
             ];
         }
 
@@ -517,7 +632,7 @@ class WialonService
         return [];
     }
 
-    private function cleanupReportResult(string $sid): void
+    public function cleanupReportResult(string $sid): void
     {
         try {
             $this->request('report/cleanup_result', [], $sid);

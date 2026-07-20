@@ -86,29 +86,28 @@ class AutoSyncFleetData extends Command
 
     private function dailyTaskDue(): bool
     {
-        $time = $this->validTime((string) $this->setting('auto_sync_daily_time', '02:10'));
-        $now = now(config('app.timezone'));
+        $interval = max(60, (int) $this->setting('auto_sync_daily_interval_minutes', 180));
+        $lastRunAt = $this->setting('auto_sync_daily_last_run_at');
 
-        if ($now->format('H:i') < $time) {
-            return false;
+        if (! $lastRunAt) {
+            return true;
         }
 
-        return $this->setting('auto_sync_daily_last_run_date') !== $now->toDateString();
+        return Carbon::parse($lastRunAt)->addMinutes($interval)->isPast();
     }
 
     private function runDailyStats(): bool
     {
-        $days = max(1, min(7, (int) $this->setting('auto_sync_daily_recent_days', 1)));
+        $days = max(1, min(7, (int) $this->setting('auto_sync_daily_recent_days', 3)));
         $success = true;
         $messages = [];
 
-        for ($offset = $days; $offset >= 1; $offset--) {
+        for ($offset = $days - 1; $offset >= 0; $offset--) {
             $date = now(config('app.timezone'))->subDays($offset)->toDateString();
-            $dailyOk = $this->runArtisanCommand('fleet:sync-daily', ['--date' => $date]);
+            $reportOk = $this->runArtisanCommand('fleet:sync-report-stats', ['--date' => $date, '--force' => true]);
             $aggregateOk = $this->runArtisanCommand('fleet:aggregate-daily', ['--date' => $date]);
-            $reportOk = $this->runArtisanCommand('fleet:sync-report-stats', ['--date' => $date]);
-            $success = $success && $dailyOk['ok'] && $aggregateOk['ok'] && $reportOk['ok'];
-            $messages[] = $date.': '.trim($dailyOk['output'].' '.$aggregateOk['output'].' '.$reportOk['output']);
+            $success = $success && $aggregateOk['ok'] && $reportOk['ok'];
+            $messages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
         }
 
         $this->storeTaskResult('daily', $success, implode(' | ', array_filter($messages)));
@@ -182,8 +181,4 @@ class AutoSyncFleetData extends Command
         return Setting::query()->where('key', $key)->value('value') ?? $default;
     }
 
-    private function validTime(string $time): string
-    {
-        return preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) ? $time : '02:10';
-    }
 }

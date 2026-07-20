@@ -22,7 +22,7 @@ class SyncDailyStats extends Command
         $date = Carbon::parse($this->option('date') ?: now()->subDay()->toDateString());
         $count = 0;
 
-        Equipment::query()->where('active', true)->orderBy('id')->chunk(50, function ($equipment) use ($wialon, $date, &$count): void {
+        Equipment::query()->where('active', true)->visibleInDashboard()->orderBy('id')->chunk(50, function ($equipment) use ($wialon, $date, &$count): void {
             foreach ($equipment as $item) {
                 try {
                     $stats = $wialon->calculateUnitDailyData($item->wialon_unit_id, $date, $item->calculation_mode);

@@ -48,7 +48,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1' => 2,
+                'less_than_1' => 1,
                 'from_1_to_7' => 1,
                 'from_7_to_10' => 1,
                 'overtime' => 1,
@@ -414,12 +414,18 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
     public function test_average_metrics_by_ownership_use_engine_hours_and_mileage_from_wialon_report(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT1', 'active' => true]);
-        $type = EquipmentType::create(['name' => 'Truck']);
+        $excavator = EquipmentType::create(['name' => 'Excavator']);
+        $dumpTruck = EquipmentType::create(['name' => 'Dump Truck']);
+        $pickup = EquipmentType::create(['name' => 'Pickup']);
 
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC first');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC second');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC without row');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE first');
+        $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC excavator');
+        $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC zero excavator');
+        $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC invalid excavator');
+        $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_NWC, 'NWC dump');
+        $this->equipment($project, $pickup, Equipment::OWNERSHIP_NWC, 'NWC pickup');
+        $this->equipment($project, $excavator, Equipment::OWNERSHIP_ICARE, 'ICARE excavator');
+        $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'ICARE dump');
+        $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'ICARE invalid dump');
 
         ProjectWialonGroup::create([
             'project_id' => $project->id,
@@ -461,11 +467,16 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                             ],
                             'rows' => (string) $objectId === '601701930'
                                 ? [
-                                    ['c' => ['NWC first', '', '', '10.00', '120.5 km']],
-                                    ['c' => ['NWC second', '', '', '8.00', '79,5']],
+                                    ['c' => ['NWC excavator', '', '', '10.00', '12 km']],
+                                    ['c' => ['NWC zero excavator', '', '', '00:00:00', '5 km']],
+                                    ['c' => ['NWC invalid excavator', '', '', '-', '7 km']],
+                                    ['c' => ['NWC dump', '', '', '99.00', '120.5 km']],
+                                    ['c' => ['NWC pickup', '', '', '100.00', '300 km']],
                                 ]
                                 : [
-                                    ['c' => ['ICARE first', '', '', '7.40', '55']],
+                                    ['c' => ['ICARE excavator', '', '', '07:24:00', '1 km']],
+                                    ['c' => ['ICARE dump', '', '', '8.00', '55']],
+                                    ['c' => ['ICARE invalid dump', '', '', '3.00', '']],
                                 ],
                         ],
                     ],
@@ -479,10 +490,14 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'date_to' => '2026-07-11',
         ]);
 
-        $this->assertSame(3, $result[Equipment::OWNERSHIP_NWC]['count']);
-        $this->assertSame(6.0, $result[Equipment::OWNERSHIP_NWC]['avg_hours']);
-        $this->assertSame(66.7, $result[Equipment::OWNERSHIP_NWC]['avg_mileage']);
-        $this->assertSame(1, $result[Equipment::OWNERSHIP_ICARE]['count']);
+        $this->assertSame(5, $result[Equipment::OWNERSHIP_NWC]['count']);
+        $this->assertSame(2, $result[Equipment::OWNERSHIP_NWC]['engine_hours_equipment_count']);
+        $this->assertSame(1, $result[Equipment::OWNERSHIP_NWC]['mileage_equipment_count']);
+        $this->assertSame(5.0, $result[Equipment::OWNERSHIP_NWC]['avg_hours']);
+        $this->assertSame(120.5, $result[Equipment::OWNERSHIP_NWC]['avg_mileage']);
+        $this->assertSame(3, $result[Equipment::OWNERSHIP_ICARE]['count']);
+        $this->assertSame(1, $result[Equipment::OWNERSHIP_ICARE]['engine_hours_equipment_count']);
+        $this->assertSame(1, $result[Equipment::OWNERSHIP_ICARE]['mileage_equipment_count']);
         $this->assertSame(7.4, $result[Equipment::OWNERSHIP_ICARE]['avg_hours']);
         $this->assertSame(55.0, $result[Equipment::OWNERSHIP_ICARE]['avg_mileage']);
     }

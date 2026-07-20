@@ -10,6 +10,7 @@ class Geofence extends Model
 {
     protected $fillable = [
         'name',
+        'normalized_name',
         'project_id',
         'wialon_geofence_id',
         'geometry_json',

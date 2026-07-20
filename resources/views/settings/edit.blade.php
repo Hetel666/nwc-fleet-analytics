@@ -77,12 +77,18 @@
                             </label>
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label">Baslama vaxti</label>
-                                    <input type="time" name="auto_sync_daily_time" value="{{ old('auto_sync_daily_time', $settings['auto_sync_daily_time'] ?? '02:10') }}" class="form-control">
+                                    <label class="form-label">Interval</label>
+                                    <select name="auto_sync_daily_interval_minutes" class="form-select">
+                                        @foreach ([60, 180, 360, 720, 1440] as $minutes)
+                                            <option value="{{ $minutes }}" @selected((string) old('auto_sync_daily_interval_minutes', $settings['auto_sync_daily_interval_minutes'] ?? 180) === (string) $minutes)>
+                                                {{ $syncIntervalOptions[$minutes] }}
+                                            </option>
+                                        @endforeach
+                                    </select>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Son nece gun yenilensin</label>
-                                    <input type="number" min="1" max="7" name="auto_sync_daily_recent_days" value="{{ old('auto_sync_daily_recent_days', $settings['auto_sync_daily_recent_days'] ?? 1) }}" class="form-control">
+                                    <input type="number" min="1" max="7" name="auto_sync_daily_recent_days" value="{{ old('auto_sync_daily_recent_days', $settings['auto_sync_daily_recent_days'] ?? 3) }}" class="form-control">
                                 </div>
                             </div>
                         </div>

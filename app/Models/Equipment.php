@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -15,6 +16,8 @@ class Equipment extends Model
     public const MODE_IGNITION = 'ignition';
     public const MODE_MILEAGE = 'mileage';
 
+    public const DASHBOARD_EXCLUSION_GENERATOR_GROUP = 'generator_group';
+
     protected $table = 'equipments';
 
     protected $fillable = [
@@ -23,10 +26,15 @@ class Equipment extends Model
         'wialon_unit_id',
         'equipment_type_id',
         'project_id',
+        'project_wialon_group_id',
+        'matched_wialon_group_id',
+        'matched_wialon_group_name',
         'ownership_type',
         'calculation_mode',
         'planned_daily_hours',
         'active',
+        'excluded_from_dashboard',
+        'dashboard_exclusion_reason',
         'last_synced_at',
         'last_position_json',
     ];
@@ -35,10 +43,47 @@ class Equipment extends Model
     {
         return [
             'active' => 'boolean',
+            'excluded_from_dashboard' => 'boolean',
             'planned_daily_hours' => 'decimal:2',
             'last_synced_at' => 'datetime',
             'last_position_json' => 'array',
         ];
+    }
+
+    public function scopeVisibleInDashboard(Builder $query): Builder
+    {
+        $column = $query->getModel()->qualifyColumn('excluded_from_dashboard');
+
+        return $query->where(function (Builder $query) use ($column): void {
+            $query->where($column, false)
+                ->orWhereNull($column);
+        });
+    }
+
+    public function scopeClassifiedForDashboard(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereNotNull($query->getModel()->qualifyColumn('project_wialon_group_id'))
+                ->orWhereNotNull($query->getModel()->qualifyColumn('matched_wialon_group_id'));
+        });
+    }
+
+    public static function isGeneratorGroup(?string $groupName): bool
+    {
+        return str_contains(mb_strtolower(trim((string) $groupName)), 'generator');
+    }
+
+    public static function isExcludedGeneratorUnit(array $unit): bool
+    {
+        foreach (($unit['groups'] ?? []) as $group) {
+            $groupName = is_array($group) ? ($group['name'] ?? $group['nm'] ?? '') : (string) $group;
+
+            if (self::isGeneratorGroup($groupName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function type(): BelongsTo
@@ -51,8 +96,18 @@ class Equipment extends Model
         return $this->belongsTo(Project::class);
     }
 
+    public function projectWialonGroup(): BelongsTo
+    {
+        return $this->belongsTo(ProjectWialonGroup::class);
+    }
+
     public function dailyStats(): HasMany
     {
         return $this->hasMany(EquipmentDailyStat::class);
+    }
+
+    public function foreignGeofenceIntervals(): HasMany
+    {
+        return $this->hasMany(UnitForeignGeofenceInterval::class, 'unit_id');
     }
 }

@@ -1,0 +1,385 @@
+<?php
+
+namespace App\Services;
+
+use App\Jobs\FinalizeHistoricalRecalculationJob;
+use App\Jobs\RunHistoricalRecalculationTaskJob;
+use App\Models\Equipment;
+use App\Models\HistoricalRecalculation;
+use App\Models\HistoricalRecalculationTask;
+use App\Models\Project;
+use App\Models\ProjectWialonGroup;
+use App\Models\User;
+use Carbon\Carbon;
+use Carbon\CarbonPeriod;
+use Illuminate\Bus\Batch;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
+
+class HistoricalRecalculationService
+{
+    public function preview(array $payload): array
+    {
+        $dates = $this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']);
+        $targets = $this->targets($payload);
+        $aggregateTasks = $this->needsAggregation($payload['operation'])
+            ? max(1, $this->selectedProjectIds($payload)->count() ?: 1)
+            : 0;
+
+        return [
+            'days' => $dates->count(),
+            'project_groups' => $targets->count(),
+            'fetch_tasks' => $this->needsFetch($payload['operation']) ? $dates->count() * $targets->count() : 0,
+            'aggregate_tasks' => $aggregateTasks,
+            'total_tasks' => ($this->needsFetch($payload['operation']) ? $dates->count() * $targets->count() : 0) + $aggregateTasks,
+        ];
+    }
+
+    public function createRun(array $payload, ?User $user): HistoricalRecalculation
+    {
+        $payload = $this->normalizePayload($payload);
+        $signature = $this->signature($payload);
+
+        $duplicate = HistoricalRecalculation::query()
+            ->where('signature', $signature)
+            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
+            ->latest()
+            ->first();
+
+        if ($duplicate) {
+            return $duplicate;
+        }
+
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'signature' => $signature,
+            'status' => HistoricalRecalculation::STATUS_PENDING,
+            'operation' => $payload['operation'],
+            'scope' => $payload['scope'],
+            'date_from' => $payload['date_from'],
+            'date_to' => $payload['date_to'],
+            'timezone' => $payload['timezone'],
+            'force' => $payload['force'],
+            'project_ids' => $payload['project_ids'],
+            'requested_by' => $user?->id,
+            'last_heartbeat_at' => now(config('app.timezone')),
+        ]);
+
+        $this->createTasks($run, $payload);
+        $this->dispatch($run);
+
+        return $run->refresh();
+    }
+
+    public function dispatch(HistoricalRecalculation $run): void
+    {
+        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $fetchTasks = $run->tasks()
+            ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+            ->where('status', HistoricalRecalculationTask::STATUS_PENDING)
+            ->pluck('id');
+
+        $run->forceFill([
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'started_at' => $run->started_at ?: now(config('app.timezone')),
+            'completed_at' => null,
+            'last_heartbeat_at' => now(config('app.timezone')),
+        ])->save();
+
+        if ($fetchTasks->isEmpty()) {
+            FinalizeHistoricalRecalculationJob::dispatch($run->id)->onQueue($queue);
+            return;
+        }
+
+        $jobs = $fetchTasks
+            ->map(fn (int $taskId): RunHistoricalRecalculationTaskJob => (new RunHistoricalRecalculationTaskJob($taskId))->onQueue($queue))
+            ->all();
+
+        $runId = $run->id;
+
+        $batch = Bus::batch($jobs)
+            ->name('Historical recalculation '.$run->uuid)
+            ->allowFailures()
+            ->finally(function (Batch $batch) use ($runId, $queue): void {
+                FinalizeHistoricalRecalculationJob::dispatch($runId)->onQueue($queue);
+            })
+            ->dispatch();
+
+        $run->forceFill(['batch_id' => $batch->id])->save();
+    }
+
+    public function cancel(HistoricalRecalculation $run): void
+    {
+        if ($run->isTerminal()) {
+            return;
+        }
+
+        if ($run->batch_id && ($batch = Bus::findBatch($run->batch_id))) {
+            $batch->cancel();
+        }
+
+        $run->tasks()
+            ->whereIn('status', [HistoricalRecalculationTask::STATUS_PENDING, HistoricalRecalculationTask::STATUS_RUNNING])
+            ->update([
+                'status' => HistoricalRecalculationTask::STATUS_CANCELLED,
+                'completed_at' => now(config('app.timezone')),
+            ]);
+
+        $run->forceFill([
+            'status' => HistoricalRecalculation::STATUS_CANCELLED,
+            'completed_at' => now(config('app.timezone')),
+            'last_heartbeat_at' => now(config('app.timezone')),
+        ])->save();
+
+        $this->refreshProgress($run);
+    }
+
+    public function retryFailed(HistoricalRecalculation $run): void
+    {
+        if ($run->status === HistoricalRecalculation::STATUS_CANCELLED) {
+            return;
+        }
+
+        $run->tasks()
+            ->where('status', HistoricalRecalculationTask::STATUS_FAILED)
+            ->update([
+                'status' => HistoricalRecalculationTask::STATUS_PENDING,
+                'error_message' => null,
+                'completed_at' => null,
+                'last_heartbeat_at' => null,
+            ]);
+
+        $this->dispatch($run->refresh());
+    }
+
+    public function markFetchTaskCompleted(HistoricalRecalculationTask $task, int $equipmentCount): void
+    {
+        $task->forceFill([
+            'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+            'equipment_count' => $equipmentCount,
+            'completed_at' => now(config('app.timezone')),
+            'last_heartbeat_at' => now(config('app.timezone')),
+            'error_message' => null,
+        ])->save();
+
+        $this->refreshProgress($task->run);
+    }
+
+    public function markTaskFailed(HistoricalRecalculationTask $task, string $message): void
+    {
+        $task->forceFill([
+            'status' => HistoricalRecalculationTask::STATUS_FAILED,
+            'error_message' => mb_substr($message, 0, 4000),
+            'completed_at' => now(config('app.timezone')),
+            'last_heartbeat_at' => now(config('app.timezone')),
+        ])->save();
+
+        $this->refreshProgress($task->run);
+    }
+
+    public function finalize(int $runId): void
+    {
+        $run = HistoricalRecalculation::query()->with('tasks')->findOrFail($runId);
+
+        if ($run->status === HistoricalRecalculation::STATUS_CANCELLED) {
+            return;
+        }
+
+        foreach ($run->tasks->where('operation', HistoricalRecalculation::OPERATION_RECALCULATE) as $task) {
+            $this->runAggregateTask($run, $task);
+        }
+
+        $this->refreshProgress($run->refresh());
+
+        $failed = (int) $run->tasks()->where('status', HistoricalRecalculationTask::STATUS_FAILED)->count();
+        $completed = (int) $run->tasks()->where('status', HistoricalRecalculationTask::STATUS_COMPLETED)->count();
+        $total = max(1, (int) $run->tasks()->count());
+
+        $status = $failed === 0
+            ? HistoricalRecalculation::STATUS_COMPLETED
+            : ($completed > 0 ? HistoricalRecalculation::STATUS_COMPLETED_WITH_ERRORS : HistoricalRecalculation::STATUS_FAILED);
+
+        $run->forceFill([
+            'status' => $status,
+            'completed_at' => now(config('app.timezone')),
+            'last_heartbeat_at' => now(config('app.timezone')),
+            'error_summary' => $failed > 0 ? "{$failed} of {$total} tasks failed." : null,
+        ])->save();
+
+        Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+    }
+
+    public function refreshProgress(HistoricalRecalculation $run): void
+    {
+        $counts = $run->tasks()
+            ->selectRaw('status, COUNT(*) as total, COALESCE(SUM(equipment_count), 0) as equipment_count')
+            ->groupBy('status')
+            ->get()
+            ->keyBy('status');
+
+        $run->forceFill([
+            'total_tasks' => (int) $run->tasks()->count(),
+            'completed_tasks' => (int) ($counts[HistoricalRecalculationTask::STATUS_COMPLETED]->total ?? 0),
+            'failed_tasks' => (int) ($counts[HistoricalRecalculationTask::STATUS_FAILED]->total ?? 0),
+            'cancelled_tasks' => (int) ($counts[HistoricalRecalculationTask::STATUS_CANCELLED]->total ?? 0),
+            'processed_objects' => (int) $run->tasks()->sum('equipment_count'),
+            'last_heartbeat_at' => now(config('app.timezone')),
+        ])->save();
+    }
+
+    private function createTasks(HistoricalRecalculation $run, array $payload): void
+    {
+        if ($this->needsFetch($payload['operation'])) {
+            foreach ($this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']) as $date) {
+                foreach ($this->targets($payload) as $target) {
+                    HistoricalRecalculationTask::query()->updateOrCreate(
+                        [
+                            'historical_recalculation_id' => $run->id,
+                            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                            'stat_date' => $date,
+                            'project_id' => (int) $target->project_id,
+                            'ownership_type' => $target->ownership_type,
+                        ],
+                        ['status' => HistoricalRecalculationTask::STATUS_PENDING]
+                    );
+                }
+            }
+        }
+
+        if ($this->needsAggregation($payload['operation'])) {
+            $projectIds = $this->selectedProjectIds($payload);
+            $aggregateScopes = $projectIds->isEmpty() ? collect([null]) : $projectIds;
+
+            foreach ($aggregateScopes as $projectId) {
+                HistoricalRecalculationTask::query()->updateOrCreate(
+                    [
+                        'historical_recalculation_id' => $run->id,
+                        'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
+                        'stat_date' => null,
+                        'project_id' => $projectId,
+                        'ownership_type' => null,
+                    ],
+                    ['status' => HistoricalRecalculationTask::STATUS_PENDING]
+                );
+            }
+        }
+
+        $this->refreshProgress($run);
+    }
+
+    private function runAggregateTask(HistoricalRecalculation $run, HistoricalRecalculationTask $task): void
+    {
+        if ($task->status === HistoricalRecalculationTask::STATUS_COMPLETED) {
+            return;
+        }
+
+        $task->forceFill([
+            'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+            'attempts' => $task->attempts + 1,
+            'started_at' => $task->started_at ?: now(config('app.timezone')),
+            'last_heartbeat_at' => now(config('app.timezone')),
+            'error_message' => null,
+        ])->save();
+
+        try {
+            $options = [
+                '--from' => $run->date_from->toDateString(),
+                '--to' => $run->date_to->toDateString(),
+            ];
+
+            if ($task->project_id) {
+                $options['--project'] = $task->project_id;
+            } else {
+                $options['--all-projects'] = true;
+            }
+
+            Artisan::call('fleet:aggregate-statistics', $options);
+
+            $task->forceFill([
+                'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+                'completed_at' => now(config('app.timezone')),
+                'last_heartbeat_at' => now(config('app.timezone')),
+            ])->save();
+        } catch (\Throwable $exception) {
+            $this->markTaskFailed($task, $exception->getMessage());
+        }
+    }
+
+    private function normalizePayload(array $payload): array
+    {
+        $payload['timezone'] = $payload['timezone'] ?? config('historical_recalculation.timezone');
+        $payload['date_from'] = Carbon::parse($payload['date_from'], $payload['timezone'])->toDateString();
+        $payload['date_to'] = Carbon::parse($payload['date_to'], $payload['timezone'])->toDateString();
+        $payload['force'] = (bool) ($payload['force'] ?? false);
+        $payload['project_ids'] = $this->selectedProjectIds($payload)->values()->all();
+
+        return $payload;
+    }
+
+    private function signature(array $payload): string
+    {
+        return sha1(json_encode([
+            'date_from' => $payload['date_from'],
+            'date_to' => $payload['date_to'],
+            'timezone' => $payload['timezone'],
+            'operation' => $payload['operation'],
+            'scope' => $payload['scope'],
+            'project_ids' => $payload['project_ids'],
+            'force' => $payload['force'],
+        ]));
+    }
+
+    private function selectedProjectIds(array $payload): Collection
+    {
+        if (($payload['scope'] ?? null) !== HistoricalRecalculation::SCOPE_SELECTED_PROJECTS) {
+            return collect();
+        }
+
+        return collect($payload['project_ids'] ?? [])
+            ->map(fn ($id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+    }
+
+    private function targets(array $payload): Collection
+    {
+        $projectIds = $this->selectedProjectIds($payload);
+
+        return ProjectWialonGroup::query()
+            ->whereHas('project', fn ($query) => $query->where('active', true))
+            ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('project_id', $projectIds))
+            ->whereIn('ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
+            ->get(['project_id', 'ownership_type'])
+            ->unique(fn (ProjectWialonGroup $group): string => $group->project_id.'|'.$group->ownership_type)
+            ->values();
+    }
+
+    private function dates(string $from, string $to, string $timezone): Collection
+    {
+        return collect(CarbonPeriod::create(
+            Carbon::parse($from, $timezone)->startOfDay(),
+            Carbon::parse($to, $timezone)->startOfDay()
+        ))->map(fn (Carbon $date): string => $date->toDateString())->values();
+    }
+
+    private function needsFetch(string $operation): bool
+    {
+        return in_array($operation, [
+            HistoricalRecalculation::OPERATION_FETCH,
+            HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+        ], true);
+    }
+
+    private function needsAggregation(string $operation): bool
+    {
+        return in_array($operation, [
+            HistoricalRecalculation::OPERATION_RECALCULATE,
+            HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+        ], true);
+    }
+}

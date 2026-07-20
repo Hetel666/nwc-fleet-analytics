@@ -7,7 +7,6 @@
     <title>@yield('title', __('app.app_name'))</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
     <style>
         :root {
             --fleet-blue: #1f6feb;
@@ -107,11 +106,6 @@
         .chart-box {
             height: 260px;
         }
-        .map-box {
-            height: 310px;
-            border-radius: 8px;
-            overflow: hidden;
-        }
         .form-control,
         .form-select,
         .btn {
@@ -170,6 +164,9 @@
                 </a>
                 <a class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}" href="{{ route('users.index') }}">
                     <i class="bi bi-people"></i><span>{{ __('app.users') }}</span>
+                </a>
+                <a class="nav-link {{ request()->routeIs('admin.historical-recalculations.*') ? 'active' : '' }}" href="{{ route('admin.historical-recalculations.index') }}">
+                    <i class="bi bi-clock-history"></i><span>Tarixi məlumatların yenilənməsi</span>
                 </a>
                 <a class="nav-link {{ request()->routeIs('settings.*') ? 'active' : '' }}" href="{{ route('settings.edit') }}">
                     <i class="bi bi-gear"></i><span>{{ __('app.settings') }}</span>
@@ -232,7 +229,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 @stack('scripts')
 </body>
 </html>
