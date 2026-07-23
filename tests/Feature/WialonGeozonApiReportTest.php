@@ -68,7 +68,7 @@ class WialonGeozonApiReportTest extends TestCase
         $this->assertDatabaseCount('unit_foreign_geofence_intervals', 0);
     }
 
-    public function test_foreign_geofence_visit_is_saved_and_dashboard_uses_threshold(): void
+    public function test_foreign_geofence_visit_is_saved_with_threshold_without_entering_current_widget(): void
     {
         [$homeProject, $group, $equipment] = $this->fixture();
         $foreignProject = Project::create(['name' => 'Kəlbəcər yol', 'active' => true]);
@@ -89,7 +89,7 @@ class WialonGeozonApiReportTest extends TestCase
         ]);
 
         $calculator = app(GeofenceReportViolationCalculator::class);
-        $calculator->processGroupReport(
+        $belowThreshold = $calculator->processGroupReport(
             $group,
             [$this->record('Kəlbəcər yol', '19', 10799, $equipment->wialon_unit_id)],
             $this->context(),
@@ -97,9 +97,11 @@ class WialonGeozonApiReportTest extends TestCase
             true
         );
 
+        $this->assertSame(1, $belowThreshold['violations_under_threshold']);
+        $this->assertSame(0, $belowThreshold['violations_at_least_threshold']);
         $this->assertSame(0, app(GeofenceViolationService::class)->summary($this->dashboardFilters())['total']);
 
-        $calculator->processGroupReport(
+        $atThreshold = $calculator->processGroupReport(
             $group,
             [$this->record('Kəlbəcər yol', '19', 10800, $equipment->wialon_unit_id, '2026-07-17 14:00:00')],
             $this->context(),
@@ -109,8 +111,19 @@ class WialonGeozonApiReportTest extends TestCase
 
         $summary = app(GeofenceViolationService::class)->summary($this->dashboardFilters());
 
-        $this->assertSame(1, $summary['total']);
-        $this->assertSame(['Kəlbəcər yol'], $summary['labels']);
+        $this->assertSame(0, $atThreshold['violations_under_threshold']);
+        $this->assertSame(1, $atThreshold['violations_at_least_threshold']);
+        $this->assertDatabaseCount('unit_foreign_geofence_intervals', 2);
+        $this->assertSame(
+            [10799, 10800],
+            UnitForeignGeofenceInterval::query()->orderBy('duration_seconds')->pluck('duration_seconds')->all()
+        );
+        $this->assertSame(
+            [UnitForeignGeofenceInterval::STATUS_CLOSED],
+            UnitForeignGeofenceInterval::query()->distinct()->pluck('status')->all()
+        );
+        $this->assertSame(0, $summary['total']);
+        $this->assertSame([], $summary['labels']);
     }
 
     public function test_repeat_sync_does_not_create_duplicate_records(): void

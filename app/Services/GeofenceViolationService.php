@@ -18,8 +18,7 @@ class GeofenceViolationService
 {
     public function __construct(
         private ForeignProjectGeofenceMonitoringService $monitoring,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{labels: array<int, string>, counts: array<int, int>, project_ids: array<int, int|null>, geofence_ids: array<int, int|null>, total: int, rows: array<int, array<string, mixed>>}
@@ -124,25 +123,29 @@ class GeofenceViolationService
         }
 
         return $intervals
-            ->filter(fn (UnitForeignGeofenceInterval $interval): bool => $this->intervalPassesMinimumDuration($interval))
+            ->filter(fn (UnitForeignGeofenceInterval $interval): bool => $this->monitoring->intervalPassesDashboardFilters($interval))
             ->values();
     }
 
     /**
      * Base current selection used by Dashboard, modal, Excel and diagnostics.
      *
+     * The current-state widget reads open position-monitoring intervals only.
+     * Closed Wialon report intervals remain historical records and are not
+     * mixed into this dataset.
+     *
      * @return Collection<int, UnitForeignGeofenceInterval>
      */
     public function baseIntervals(array $filters = []): Collection
     {
-        return $this->reportIntervalQuery($filters)
-            ->orderByDesc('duration_seconds')
+        return $this->currentIntervalQuery($filters)
             ->orderByDesc('entered_at')
             ->orderByDesc('id')
             ->get()
             ->filter(fn (UnitForeignGeofenceInterval $interval): bool => $this->intervalIsEligible($interval))
             ->filter(fn (UnitForeignGeofenceInterval $interval): bool => ! filled($filters['current_geozone_key'] ?? null) || $this->sectorKey($interval) === (string) $filters['current_geozone_key'])
-            ->unique(fn (UnitForeignGeofenceInterval $interval): string => $this->unitKey($interval).'|'.$this->sectorKey($interval))
+            ->unique(fn (UnitForeignGeofenceInterval $interval): string => $this->unitKey($interval))
+            ->sortByDesc(fn (UnitForeignGeofenceInterval $interval): int => $this->monitoring->effectiveDurationSeconds($interval))
             ->values();
     }
 
@@ -232,7 +235,7 @@ class GeofenceViolationService
         return $this->currentIntervals($filters);
     }
 
-    private function reportIntervalQuery(array $filters): Builder
+    private function currentIntervalQuery(array $filters): Builder
     {
         $from = Carbon::parse($filters['date_from'] ?? $filters['from'] ?? now(config('app.timezone'))->startOfDay(), config('app.timezone'))->startOfDay();
         $to = Carbon::parse($filters['date_to'] ?? $filters['to'] ?? now(config('app.timezone'))->endOfDay(), config('app.timezone'))->endOfDay();
@@ -252,15 +255,14 @@ class GeofenceViolationService
                 'foreignProject:id,name',
                 'foreignGeofence:id,name,project_id,active',
             ])
-            ->where('source', GeofenceReportViolationCalculator::SOURCE)
-            ->where('status', UnitForeignGeofenceInterval::STATUS_CLOSED)
+            ->where('status', UnitForeignGeofenceInterval::STATUS_OPEN)
             ->where('entered_at', '<=', $to)
-            ->where(function (Builder $query) use ($from): void {
-                $query->where('left_at', '>=', $from)
-                    ->orWhereNull('left_at');
-            })
+            ->where('last_position_at', '>=', $from)
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('home_project_id', $projectId))
-            ->when($ownershipType, fn (Builder $query, string $ownershipType) => $query->where('ownership_type', $ownershipType))
+            ->when($ownershipType, fn (Builder $query, string $ownershipType) => $query->whereHas(
+                'unit',
+                fn (Builder $query) => $query->where('ownership_type', $ownershipType)
+            ))
             ->when($filters['current_geozone_project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('foreign_project_id', $projectId))
             ->when($filters['current_geozone_id'] ?? null, fn (Builder $query, int $geofenceId) => $query->where('foreign_geofence_id', $geofenceId))
             ->when(filled($filters['unit'] ?? null), function (Builder $query) use ($filters): void {
@@ -294,7 +296,7 @@ class GeofenceViolationService
     private function row(UnitForeignGeofenceInterval $interval, ?int $number = null): array
     {
         $unit = $interval->unit;
-        $durationSeconds = (int) ($interval->duration_seconds ?? 0);
+        $durationSeconds = $this->monitoring->effectiveDurationSeconds($interval);
 
         return [
             'number' => $number,
@@ -322,7 +324,7 @@ class GeofenceViolationService
             return true;
         }
 
-        return (int) ($interval->duration_seconds ?? 0) >= (int) config('fleet.foreign_geofence.min_minutes', 180) * 60;
+        return $this->monitoring->intervalPassesMinimumDuration($interval);
     }
 
     private function unitKey(UnitForeignGeofenceInterval $interval): string

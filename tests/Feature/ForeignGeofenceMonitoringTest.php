@@ -304,6 +304,24 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $this->assertSame(1, UnitForeignGeofenceInterval::query()->where('status', UnitForeignGeofenceInterval::STATUS_OPEN)->count());
     }
 
+    public function test_current_widget_counts_a_unit_only_once_when_legacy_open_duplicates_exist(): void
+    {
+        [$home] = $this->projectsWithGeofences();
+        $unit = $this->equipment($home, 'Excavator');
+
+        $interval = $this->monitoring->processUnitPosition($unit, $this->position(25, 25, '2026-07-17 10:00:00'));
+        $this->monitoring->processUnitPosition($unit, $this->position(25, 25, '2026-07-17 13:01:00'));
+
+        $duplicate = $interval->replicate();
+        $duplicate->entered_at = Carbon::parse('2026-07-17 10:01:00');
+        $duplicate->last_position_at = Carbon::parse('2026-07-17 13:01:00');
+        $duplicate->save();
+        Carbon::setTestNow('2026-07-17 13:01:00');
+
+        $this->assertSame(2, UnitForeignGeofenceInterval::query()->where('status', UnitForeignGeofenceInterval::STATUS_OPEN)->count());
+        $this->assertSame(1, app(GeofenceViolationService::class)->summary($this->filters())['total']);
+    }
+
     public function test_project_filter_uses_home_project_and_current_geozone_filter_uses_foreign_project(): void
     {
         [$home, $foreign, $third] = $this->projectsWithGeofences();
@@ -385,9 +403,13 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $kalbajarGeofence = Geofence::query()->where('project_id', $kalbajar->id)->firstOrFail();
         $qazaxGeofence = Geofence::query()->where('project_id', $qazax->id)->firstOrFail();
 
-        $this->reportInterval($lacinUnitInKalbajar, $lacin, $kalbajar, $kalbajarGeofence);
-        $this->reportInterval($lacinUnitInQazax, $lacin, $qazax, $qazaxGeofence);
-        $this->reportInterval($fuzuliUnitInKalbajar, $fuzuli, $kalbajar, $kalbajarGeofence);
+        $this->monitoring->processUnitPosition($lacinUnitInKalbajar, $this->position(25, 25, '2026-07-17 08:00:00'));
+        $this->monitoring->processUnitPosition($lacinUnitInQazax, $this->position(45, 45, '2026-07-17 08:00:00'));
+        $this->monitoring->processUnitPosition($fuzuliUnitInKalbajar, $this->position(25, 25, '2026-07-17 08:00:00'));
+        $this->monitoring->processUnitPosition($lacinUnitInKalbajar, $this->position(25, 25, '2026-07-17 12:00:00'));
+        $this->monitoring->processUnitPosition($lacinUnitInQazax, $this->position(45, 45, '2026-07-17 12:00:00'));
+        $this->monitoring->processUnitPosition($fuzuliUnitInKalbajar, $this->position(25, 25, '2026-07-17 12:00:00'));
+        Carbon::setTestNow('2026-07-17 12:00:00');
 
         $service = app(GeofenceViolationService::class);
         $filters = $this->filters();
@@ -415,6 +437,21 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $this->assertContains('Laçın unit Kalbajar', $excelRows[0]);
         $this->assertNotContains('Füzuli unit Kalbajar', $excelRows[0]);
         $this->assertSame(0, $service->summary([...$filters, 'project_id' => 999999])['total']);
+    }
+
+    public function test_closed_report_intervals_are_not_mixed_into_current_widget(): void
+    {
+        [$home, $foreign] = $this->projectsWithGeofences();
+        $unit = $this->equipment($home, 'Excavator');
+        $foreignGeofence = Geofence::query()->where('project_id', $foreign->id)->firstOrFail();
+
+        $this->reportInterval($unit, $home, $foreign, $foreignGeofence);
+
+        $service = app(GeofenceViolationService::class);
+
+        $this->assertSame(0, $service->summary($this->filters())['total']);
+        $this->assertSame(0, $service->paginate($this->filters())->total());
+        $this->assertCount(0, $service->exportRows($this->filters()));
     }
 
     /**

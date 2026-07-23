@@ -383,10 +383,13 @@ class ForeignProjectGeofenceMonitoringService
 
     public function effectiveDurationSeconds(UnitForeignGeofenceInterval $interval): int
     {
-        $lastPositionAt = $interval->last_position_at ?: $interval->entered_at;
-        $upperBound = $this->isStale($interval)
-            ? $lastPositionAt
-            : now(config('app.timezone'));
+        if ($interval->status === UnitForeignGeofenceInterval::STATUS_CLOSED && $interval->duration_seconds !== null) {
+            return max(0, (int) $interval->duration_seconds);
+        }
+
+        $upperBound = $interval->left_at
+            ?: $interval->last_position_at
+            ?: $interval->entered_at;
 
         return (int) max(0, $interval->entered_at->diffInSeconds($upperBound));
     }
