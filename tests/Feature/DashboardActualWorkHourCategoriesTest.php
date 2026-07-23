@@ -9,7 +9,6 @@ use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Services\DashboardService;
 use App\Services\WialonService;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
@@ -100,16 +99,16 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ], $result);
     }
 
-    public function test_single_day_actual_work_hour_categories_are_loaded_from_wialon_report(): void
+    public function test_single_day_actual_work_hour_categories_use_prepared_local_stats(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Imported']);
 
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC no report row');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC middle');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC regular');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE less');
+        $nwcMiddle = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC middle');
+        $nwcRegular = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC regular');
+        $nwcOvertime = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
+        $icareLess = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE less');
 
         ProjectWialonGroup::create([
             'project_id' => $project->id,
@@ -124,52 +123,19 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
-        config(['fleet.wialon.actual_work_report_template_id' => 9]);
+        $this->stats($project, $nwcMiddle, [5.25]);
+        $this->stats($project, $nwcRegular, [8.5]);
+        $this->stats($project, $nwcOvertime, [11]);
+        $this->stats($project, $icareLess, [0.5]);
 
-        $this->app->instance(WialonService::class, new class extends WialonService
-        {
-            public function __construct()
-            {
-            }
-
-            public function getReportTablesRows(
-                int|string $resourceId,
-                int|string $templateId,
-                int|string $objectId,
-                int $from,
-                int $to,
-                int $chunkSize = 500,
-                int $intervalFlags = 0,
-                bool $remoteExec = false,
-                ?int $requestTimeout = null
-            ): array {
-                return [
-                    'tables' => [
-                        [
-                            'table' => [
-                                'label' => 'Engine hours',
-                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
-                                'header_type' => ['', 'user_column', 'user_column', 'duration'],
-                            ],
-                            'rows' => (string) $objectId === '601701935'
-                                ? [
-                                    ['c' => ['NWC middle', '', '', '5.25']],
-                                    ['c' => ['NWC regular', '', '', '8.50']],
-                                    ['c' => ['NWC overtime', '', '', '11.00']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE less', '', '', '0.50']],
-                                ],
-                        ],
-                    ],
-                ];
-            }
+        $this->mock(WialonService::class, function ($mock): void {
+            $mock->shouldReceive('getReportTablesRows')->never();
         });
 
         $result = app(DashboardService::class)->getActualWorkHourCategories([
             'project_id' => $project->id,
-            'date_from' => '2026-07-09',
-            'date_to' => '2026-07-09',
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-01',
         ]);
 
         $this->assertSame([
@@ -188,17 +154,17 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ], $result);
     }
 
-    public function test_date_range_actual_work_hour_categories_are_loaded_from_wialon_report(): void
+    public function test_date_range_actual_work_hour_categories_use_prepared_local_stats(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Imported']);
 
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC no report row');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC middle');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC regular');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE less');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE regular');
+        $nwcMiddle = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC middle');
+        $nwcRegular = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC regular');
+        $nwcOvertime = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
+        $icareLess = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE less');
+        $icareRegular = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE regular');
 
         ProjectWialonGroup::create([
             'project_id' => $project->id,
@@ -213,54 +179,15 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
-        config(['fleet.wialon.actual_work_report_template_id' => 9]);
+        $this->stats($project, $nwcMiddle, [5, 5]);
+        $this->stats($project, $nwcRegular, [10, 10]);
+        $this->stats($project, $nwcOvertime, [11, 11]);
+        $this->stats($project, $icareLess, [0.75, 0.75]);
+        $this->stats($project, $icareRegular, [7, 7]);
 
-        $wialon = new class extends WialonService
-        {
-            public array $calls = [];
-
-            public function __construct()
-            {
-            }
-
-            public function getReportTablesRows(
-                int|string $resourceId,
-                int|string $templateId,
-                int|string $objectId,
-                int $from,
-                int $to,
-                int $chunkSize = 500,
-                int $intervalFlags = 0,
-                bool $remoteExec = false,
-                ?int $requestTimeout = null
-            ): array {
-                $this->calls[] = compact('objectId', 'from', 'to', 'intervalFlags', 'remoteExec');
-
-                return [
-                    'tables' => [
-                        [
-                            'table' => [
-                                'label' => 'Engine hours',
-                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
-                                'header_type' => ['', 'user_column', 'user_column', 'duration'],
-                            ],
-                            'rows' => (string) $objectId === '601701935'
-                                ? [
-                                    ['c' => ['NWC middle', '', '', '10.00']],
-                                    ['c' => ['NWC regular', '', '', '20.00']],
-                                    ['c' => ['NWC overtime', '', '', '22.00']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE less', '', '', '1.50']],
-                                    ['c' => ['ICARE regular', '', '', '14.00']],
-                                ],
-                        ],
-                    ],
-                ];
-            }
-        };
-
-        $this->app->instance(WialonService::class, $wialon);
+        $this->mock(WialonService::class, function ($mock): void {
+            $mock->shouldReceive('getReportTablesRows')->never();
+        });
 
         $result = app(DashboardService::class)->getActualWorkHourCategories([
             'project_id' => $project->id,
@@ -283,34 +210,23 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             ],
         ], $result);
 
-        $this->assertCount(2, $wialon->calls);
-        $this->assertSame(
-            Carbon::parse('2026-07-01', config('app.timezone'))->startOfDay()->timestamp,
-            $wialon->calls[0]['from']
-        );
-        $this->assertSame(
-            Carbon::parse('2026-07-02', config('app.timezone'))->endOfDay()->timestamp,
-            $wialon->calls[0]['to']
-        );
-        $this->assertSame(16777216, $wialon->calls[0]['intervalFlags']);
-        $this->assertTrue($wialon->calls[0]['remoteExec']);
     }
 
-    public function test_project_work_hour_cards_use_engine_hours_report_and_track_missing_data(): void
+    public function test_project_work_hour_cards_use_prepared_local_stats_and_track_missing_data(): void
     {
         Cache::flush();
 
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Imported']);
 
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC zero');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC less');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC from one');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC seven');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC ten');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
+        $nwcZero = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC zero');
+        $nwcLess = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC less');
+        $nwcFromOne = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC from one');
+        $nwcSeven = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC seven');
+        $nwcTen = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC ten');
+        $nwcOvertime = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC missing');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE day');
+        $icareDay = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE day');
         $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE invalid');
 
         ProjectWialonGroup::create([
@@ -326,51 +242,17 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
-        $wialon = new class extends WialonService
-        {
-            public function __construct()
-            {
-            }
+        $this->stats($project, $nwcZero, [0]);
+        $this->stats($project, $nwcLess, [0.99]);
+        $this->stats($project, $nwcFromOne, [1]);
+        $this->stats($project, $nwcSeven, [7]);
+        $this->stats($project, $nwcTen, [10]);
+        $this->stats($project, $nwcOvertime, [10.01]);
+        $this->stats($project, $icareDay, [26.5]);
 
-            public function getReportTablesRows(
-                int|string $resourceId,
-                int|string $templateId,
-                int|string $objectId,
-                int $from,
-                int $to,
-                int $chunkSize = 500,
-                int $intervalFlags = 0,
-                bool $remoteExec = false,
-                ?int $requestTimeout = null
-            ): array {
-                return [
-                    'tables' => [
-                        [
-                            'table' => [
-                                'label' => 'Engine hours',
-                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours'],
-                                'header_type' => ['', 'user_column', 'user_column', 'duration'],
-                            ],
-                            'rows' => (string) $objectId === '601701935'
-                                ? [
-                                    ['c' => ['NWC zero', '', '', '00:00:00']],
-                                    ['c' => ['NWC less', '', '', '00:59:59']],
-                                    ['c' => ['NWC from one', '', '', '01:00:00']],
-                                    ['c' => ['NWC seven', '', '', '07:00:00']],
-                                    ['c' => ['NWC ten', '', '', '10:00:00']],
-                                    ['c' => ['NWC overtime', '', '', '10:00:01']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE day', '', '', '1 day 02:30:00']],
-                                    ['c' => ['ICARE invalid', '', '', 'invalid']],
-                                ],
-                        ],
-                    ],
-                ];
-            }
-        };
-
-        $this->app->instance(WialonService::class, $wialon);
+        $this->mock(WialonService::class, function ($mock): void {
+            $mock->shouldReceive('getReportTablesRows')->never();
+        });
 
         $result = app(DashboardService::class)->getProjectActualWorkHourCategoriesByOwnership([
             'project_id' => $project->id,
@@ -411,15 +293,15 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ])));
     }
 
-    public function test_average_metrics_by_ownership_use_engine_hours_and_mileage_from_wialon_report(): void
+    public function test_average_metrics_by_ownership_use_prepared_engine_hours_and_mileage_stats(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT1', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Truck']);
 
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC first');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC second');
+        $nwcFirst = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC first');
+        $nwcSecond = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC second');
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC without row');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE first');
+        $icareFirst = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE first');
 
         ProjectWialonGroup::create([
             'project_id' => $project->id,
@@ -434,43 +316,12 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
-        $this->app->instance(WialonService::class, new class extends WialonService
-        {
-            public function __construct()
-            {
-            }
+        $this->metricStat($project, $nwcFirst, 10.0, 120.5);
+        $this->metricStat($project, $nwcSecond, 8.0, 79.5);
+        $this->metricStat($project, $icareFirst, 7.4, 55.0);
 
-            public function getReportTablesRows(
-                int|string $resourceId,
-                int|string $templateId,
-                int|string $objectId,
-                int $from,
-                int $to,
-                int $chunkSize = 500,
-                int $intervalFlags = 0,
-                bool $remoteExec = false,
-                ?int $requestTimeout = null
-            ): array {
-                return [
-                    'tables' => [
-                        [
-                            'table' => [
-                                'label' => 'Engine hours',
-                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours', 'Mileage'],
-                                'header_type' => ['', 'user_column', 'user_column', 'duration', 'mileage'],
-                            ],
-                            'rows' => (string) $objectId === '601701930'
-                                ? [
-                                    ['c' => ['NWC first', '', '', '10.00', '120.5 km']],
-                                    ['c' => ['NWC second', '', '', '8.00', '79,5']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE first', '', '', '7.40', '55']],
-                                ],
-                        ],
-                    ],
-                ];
-            }
+        $this->mock(WialonService::class, function ($mock): void {
+            $mock->shouldReceive('getReportTablesRows')->never();
         });
 
         $result = app(DashboardService::class)->getAverageMetricsByOwnership([
@@ -512,5 +363,19 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'worked_hours' => $workedHours,
             ]);
         }
+    }
+
+    private function metricStat(Project $project, Equipment $equipment, float $hours, float $mileage): void
+    {
+        EquipmentDailyStat::create([
+            'stat_date' => '2026-07-01',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => $equipment->ownership_type,
+            'worked_hours' => $hours,
+            'distance_km' => $mileage,
+            'calculation_source' => 'wialon_engine_hours_report',
+            'calculation_status' => 'success',
+        ]);
     }
 }

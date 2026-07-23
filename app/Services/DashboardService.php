@@ -2,9 +2,9 @@
 
 namespace App\Services;
 
-use App\Models\DailyUnitAggregate;
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
+use App\Models\EquipmentType;
 use App\Models\Geofence;
 use App\Models\GeofenceEvent;
 use App\Models\Project;
@@ -26,8 +26,11 @@ class DashboardService
 
     private array $wialonGeofenceOutsideRows = [];
 
-    public function __construct(private WialonService $wialon)
+    public function __construct(private WialonService $wialon) {}
+
+    private function shouldUseLiveWialonReports(): bool
     {
+        return false;
     }
 
     public function syncDailyEngineHoursReport(array $filters, bool $force = false): array
@@ -101,7 +104,7 @@ class DashboardService
                 $utilization = $item->planned_daily_hours > 0
                     ? min(100, ($workedHours / (float) $item->planned_daily_hours) * 100)
                     : 0;
-                $dailyStat = EquipmentDailyStat::updateOrCreate(
+                DB::table('equipment_daily_stats')->updateOrInsert(
                     ['stat_date' => $date, 'equipment_id' => $equipmentId],
                     [
                         'project_id' => $item->project_id,
@@ -111,10 +114,16 @@ class DashboardService
                         'utilization_percent' => round($utilization, 2),
                         'calculation_source' => 'wialon_engine_hours_report',
                         'calculation_status' => 'success',
+                        'updated_at' => now(),
+                        'created_at' => now(),
                     ]
                 );
+                $dailyStat = EquipmentDailyStat::query()
+                    ->where('stat_date', $date)
+                    ->where('equipment_id', $equipmentId)
+                    ->first();
 
-                DailyUnitAggregate::updateOrCreate(
+                DB::table('daily_unit_aggregates')->updateOrInsert(
                     ['date' => $date, 'unit_id' => $item->wialon_unit_id],
                     [
                         'equipment_id' => $equipmentId,
@@ -123,7 +132,9 @@ class DashboardService
                         'ownership_type' => $item->ownership_type,
                         'engine_hours' => $workedHours,
                         'mileage' => $distanceKm,
-                        'geofence_outside_hours' => round(((float) $dailyStat->outside_geofence_minutes) / 60, 2),
+                        'geofence_outside_hours' => round(((float) ($dailyStat?->outside_geofence_minutes ?? 0)) / 60, 2),
+                        'updated_at' => now(),
+                        'created_at' => now(),
                     ]
                 );
             }
@@ -257,7 +268,7 @@ class DashboardService
             ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
             ->leftJoin('equipment_daily_stats', function ($join) use ($filters): void {
                 $join->on('equipment_daily_stats.equipment_id', '=', 'equipments.id')
-                    ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']]);
+                    ->whereBetween('equipment_daily_stats.stat_date', $this->statDateBounds($filters));
 
                 if ($filters['project_id']) {
                     $join->where('equipment_daily_stats.project_id', $filters['project_id']);
@@ -474,6 +485,7 @@ class DashboardService
 
                 if (! isset($reportedEquipmentIds[(int) $item->id])) {
                     $result[$ownershipType][$projectId]['missing_data']++;
+
                     continue;
                 }
 
@@ -488,15 +500,11 @@ class DashboardService
             return $this->sortProjectActualWorkHourCategoryRows($result);
         }
 
-        if ($filters['project_id']) {
-            return $result;
-        }
-
         $rows = $this->equipmentQuery($filters)
             ->join('projects', 'projects.id', '=', 'equipments.project_id')
             ->leftJoin('equipment_daily_stats', function ($join) use ($filters): void {
                 $join->on('equipment_daily_stats.equipment_id', '=', 'equipments.id')
-                    ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']]);
+                    ->whereBetween('equipment_daily_stats.stat_date', $this->statDateBounds($filters));
 
                 if ($filters['project_id']) {
                     $join->where('equipment_daily_stats.project_id', $filters['project_id']);
@@ -528,6 +536,12 @@ class DashboardService
             $result[$ownershipType][$projectId] ??= $this->emptyProjectActualWorkHourCategoryRow($projectId, (string) $row->project_name);
 
             $statDays = (int) $row->stat_days;
+            if ($statDays <= 0) {
+                $result[$ownershipType][$projectId]['missing_data']++;
+
+                continue;
+            }
+
             $averageDailyHours = $statDays > 0 ? (float) $row->hours / $statDays : 0.0;
             $bucket = $this->actualWorkHourBucket($averageDailyHours);
 
@@ -570,7 +584,7 @@ class DashboardService
         $rows = $this->equipmentQuery($filters)
             ->leftJoin('equipment_daily_stats', function ($join) use ($filters): void {
                 $join->on('equipment_daily_stats.equipment_id', '=', 'equipments.id')
-                    ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']]);
+                    ->whereBetween('equipment_daily_stats.stat_date', $this->statDateBounds($filters));
 
                 if ($filters['project_id']) {
                     $join->where('equipment_daily_stats.project_id', $filters['project_id']);
@@ -852,6 +866,14 @@ class DashboardService
         ];
     }
 
+    private function statDateBounds(array $filters): array
+    {
+        return [
+            Carbon::parse($filters['from'], config('app.timezone'))->toDateString(),
+            Carbon::parse($filters['to'], config('app.timezone'))->endOfDay(),
+        ];
+    }
+
     private function normalizeExportRequest(array $filters, string $block): array
     {
         $block = trim($block) !== '' ? trim($block) : 'overview';
@@ -913,7 +935,7 @@ class DashboardService
             ? Project::query()->find($filters['project_id'])?->name
             : 'Bütün layihələr';
         $type = $filters['equipment_type_id']
-            ? \App\Models\EquipmentType::query()->find($filters['equipment_type_id'])?->name
+            ? EquipmentType::query()->find($filters['equipment_type_id'])?->name
             : 'Bütün növlər';
 
         return [
@@ -1301,7 +1323,7 @@ class DashboardService
     private function statsQuery(array $filters): Builder
     {
         return $this->applyDailyStatFilters(
-            EquipmentDailyStat::query()->whereBetween('stat_date', [$filters['from'], $filters['to']]),
+            EquipmentDailyStat::query()->whereBetween('stat_date', $this->statDateBounds($filters)),
             $filters
         );
     }
@@ -1315,7 +1337,7 @@ class DashboardService
         return $this->applyDailyStatFilters(
             EquipmentDailyStat::query()->whereBetween('stat_date', [
                 $from->copy()->subDays($days)->toDateString(),
-                $to->copy()->subDays($days)->toDateString(),
+                $to->copy()->subDays($days)->endOfDay(),
             ]),
             $filters
         );
@@ -1343,7 +1365,7 @@ class DashboardService
             ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
             ->join('equipment_daily_stats', 'equipment_daily_stats.equipment_id', '=', 'equipments.id')
             ->where('equipments.active', true)
-            ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
+            ->whereBetween('equipment_daily_stats.stat_date', $this->statDateBounds($filters))
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipment_daily_stats.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipment_daily_stats.ownership_type', $ownershipType))
@@ -1407,6 +1429,10 @@ class DashboardService
     private function getGeofenceOutsideRowsFromWialonReport(array $filters): ?array
     {
         if (! $filters['project_id']) {
+            return null;
+        }
+
+        if (! $this->shouldUseLiveWialonReports()) {
             return null;
         }
 
@@ -1487,6 +1513,7 @@ class DashboardService
                     'to' => $filters['to'],
                     'message' => $exception->getMessage(),
                 ]);
+
                 continue;
             }
 
@@ -1499,6 +1526,7 @@ class DashboardService
                     'ownership_type' => $ownershipType,
                     'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
                 ]);
+
                 continue;
             }
 
@@ -1690,12 +1718,14 @@ class DashboardService
                 }
 
                 $this->collectEngineReportRecords($children, $headers, $engineIndex, $records, $rowDate, $currentUnit);
+
                 continue;
             }
 
             if ($children !== []) {
                 $unit = $this->isReportGrouping($firstCell) ? (string) $firstCell : $currentUnit;
                 $this->collectEngineReportRecords($children, $headers, $engineIndex, $records, $currentDate, $unit);
+
                 continue;
             }
 
@@ -1737,12 +1767,14 @@ class DashboardService
                 } else {
                     $this->collectGeofenceReportRecords($children, $headers, $records, $rowDate, $currentUnit);
                 }
+
                 continue;
             }
 
             if ($children !== []) {
                 $unit = $this->isReportGrouping($firstCell) ? (string) $firstCell : $currentUnit;
                 $this->collectGeofenceReportRecords($children, $headers, $records, $currentDate, $unit);
+
                 continue;
             }
 
@@ -2093,6 +2125,10 @@ class DashboardService
             return $this->wialonActualWorkReportData[$cacheKey];
         }
 
+        if (! $this->shouldUseLiveWialonReports()) {
+            return $this->wialonActualWorkReportData[$cacheKey] = null;
+        }
+
         $settings = $this->wialonActualWorkReportSettings();
 
         if ($settings === null) {
@@ -2185,6 +2221,7 @@ class DashboardService
                     'to' => $filters['to'],
                     'message' => $exception->getMessage(),
                 ]);
+
                 continue;
             }
 
@@ -2196,6 +2233,7 @@ class DashboardService
                     'ownership_type' => $ownershipType,
                     'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
                 ]);
+
                 continue;
             }
 
@@ -2339,6 +2377,10 @@ class DashboardService
                 'period_days' => $periodDays,
                 'source' => $cachedReportData['source'] ?? 'cache',
             ];
+        }
+
+        if (! $this->shouldUseLiveWialonReports()) {
+            return $this->wialonEngineHoursReportData[$cacheKey] = null;
         }
 
         $intervalData = $this->getIntervalWialonEngineHours(
@@ -2502,7 +2544,7 @@ class DashboardService
         $equipmentIds = array_keys($hoursByEquipmentId);
 
         $rows = EquipmentDailyStat::query()
-            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
+            ->whereBetween('stat_date', $this->statDateBounds($filters))
             ->where('project_id', $filters['project_id'])
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('ownership_type', $ownershipType))
             ->whereIn('equipment_id', $equipmentIds)
@@ -2603,6 +2645,7 @@ class DashboardService
                     'to' => $filters['to'],
                     'message' => $exception->getMessage(),
                 ]);
+
                 continue;
             }
 
@@ -2617,6 +2660,7 @@ class DashboardService
                     'to' => $filters['to'],
                     'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
                 ]);
+
                 continue;
             }
 
@@ -2709,6 +2753,7 @@ class DashboardService
                         'date' => $day->toDateString(),
                         'message' => $exception->getMessage(),
                     ]);
+
                     continue;
                 }
 
@@ -2722,6 +2767,7 @@ class DashboardService
                         'date' => $day->toDateString(),
                         'tables' => collect($report['tables'] ?? [])->map(fn (array $item): string => (string) (($item['table']['label'] ?? null) ?: ($item['table']['name'] ?? '')))->all(),
                     ]);
+
                     continue;
                 }
 
