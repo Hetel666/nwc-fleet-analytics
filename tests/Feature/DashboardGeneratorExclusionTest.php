@@ -3,12 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\Equipment;
-use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\GeofenceEvent;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Services\DashboardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class DashboardGeneratorExclusionTest extends TestCase
@@ -58,17 +59,17 @@ class DashboardGeneratorExclusionTest extends TestCase
         $this->assertSame(130.0, $overview['total_distance']);
         $this->assertSame(46.7, $overview['utilization']);
         $this->assertSame([
-            ['label' => Equipment::OWNERSHIP_ICARE, 'count' => 1],
             ['label' => Equipment::OWNERSHIP_NWC, 'count' => 2],
+            ['label' => Equipment::OWNERSHIP_ICARE, 'count' => 1],
         ], $overview['ownership_share']);
 
         $types = $dashboard->getEquipmentTypeDistributionByOwnership($filters);
         $this->assertSame([
-            ['name' => 'Empty Electric Generator', 'total' => 1],
-            ['name' => 'Excavator', 'total' => 1],
+            ['id' => $emptyElectricGenerator->id, 'name' => 'Empty Electric Generator', 'total' => 1],
+            ['id' => $excavator->id, 'name' => 'Excavator', 'total' => 1],
         ], $types[Equipment::OWNERSHIP_NWC]);
         $this->assertSame([
-            ['name' => 'Dump Truck', 'total' => 1],
+            ['id' => $dumpTruck->id, 'name' => 'Dump Truck', 'total' => 1],
         ], $types[Equipment::OWNERSHIP_ICARE]);
 
         $categories = $dashboard->getActualWorkHourCategories($filters);
@@ -104,12 +105,26 @@ class DashboardGeneratorExclusionTest extends TestCase
         string $name,
         bool $excluded = false
     ): Equipment {
+        $group = ProjectWialonGroup::query()->firstOrCreate(
+            [
+                'project_id' => $project->id,
+                'ownership_type' => $ownershipType,
+            ],
+            [
+                'wialon_group_id' => $ownershipType === Equipment::OWNERSHIP_NWC ? '601701903' : '601701922',
+                'name' => $project->name.' '.$ownershipType,
+            ]
+        );
+
         return Equipment::create([
             'name' => $name,
             'wialon_unit_id' => uniqid('unit-', true),
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'matched_wialon_group_id' => (string) $group->wialon_group_id,
             'ownership_type' => $ownershipType,
+            'active' => true,
             'excluded_from_dashboard' => $excluded,
             'dashboard_exclusion_reason' => $excluded ? Equipment::DASHBOARD_EXCLUSION_GENERATOR_GROUP : null,
         ]);
@@ -117,7 +132,7 @@ class DashboardGeneratorExclusionTest extends TestCase
 
     private function dailyStat(Project $project, Equipment $equipment, float $hours, float $distance, float $utilization): void
     {
-        EquipmentDailyStat::create([
+        DB::table('equipment_daily_stats')->insert([
             'stat_date' => '2026-07-01',
             'equipment_id' => $equipment->id,
             'project_id' => $project->id,
@@ -125,6 +140,8 @@ class DashboardGeneratorExclusionTest extends TestCase
             'worked_hours' => $hours,
             'distance_km' => $distance,
             'utilization_percent' => $utilization,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

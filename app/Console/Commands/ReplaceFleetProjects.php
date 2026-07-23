@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Equipment;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Services\DashboardDataVersion;
 use App\Services\WialonGroupClassificationService;
 use Database\Seeders\FleetProjectSeeder;
 use Illuminate\Console\Command;
@@ -19,7 +20,7 @@ class ReplaceFleetProjects extends Command
 
     protected $description = 'Replace the local project directory with the configured Wialon project groups.';
 
-    public function handle(WialonGroupClassificationService $classification): int
+    public function handle(WialonGroupClassificationService $classification, DashboardDataVersion $dataVersion): int
     {
         if (app()->isProduction() && ! $this->option('force')) {
             $this->error('Operation cancelled. Use --force to replace projects in production.');
@@ -94,7 +95,7 @@ class ReplaceFleetProjects extends Command
             ->whereNull('matched_wialon_group_id')
             ->count();
 
-        $this->clearProjectCaches();
+        $this->clearProjectCaches($dataVersion);
 
         $this->table(['Metric', 'Value'], collect($result)->map(fn ($value, $key): array => [$key, $value])->all());
         $this->line('Expected active projects: 30');
@@ -140,10 +141,10 @@ class ReplaceFleetProjects extends Command
         return $path;
     }
 
-    private function clearProjectCaches(): void
+    private function clearProjectCaches(DashboardDataVersion $dataVersion): void
     {
         Cache::forget('dashboard:projects');
         Cache::forget('dashboard:ownership-statistics');
-        Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+        $dataVersion->bump();
     }
 }

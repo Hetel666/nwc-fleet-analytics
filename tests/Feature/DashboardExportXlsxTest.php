@@ -3,11 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Equipment;
-use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -20,21 +21,32 @@ class DashboardExportXlsxTest extends TestCase
         $user = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
         $project = Project::create(['name' => 'Export Project', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Truck']);
+        $group = ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701903',
+            'name' => 'Export NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
         $equipment = Equipment::create([
             'name' => 'Unit <script>alert(1)</script>',
             'wialon_unit_id' => '1001',
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'matched_wialon_group_id' => (string) $group->wialon_group_id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
         ]);
 
-        EquipmentDailyStat::create([
+        DB::table('equipment_daily_stats')->insert([
             'stat_date' => '2026-07-11',
             'equipment_id' => $equipment->id,
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'worked_hours' => 5.5,
             'distance_km' => 12.3,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $response = $this->actingAs($user)->get(route('dashboard.export', [
@@ -55,7 +67,7 @@ class DashboardExportXlsxTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'xlsx-test-');
         file_put_contents($path, $content);
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $this->assertTrue($zip->open($path));
         $this->assertNotFalse($zip->locateName('xl/workbook.xml'));
         $this->assertNotFalse($zip->locateName('xl/worksheets/sheet1.xml'));

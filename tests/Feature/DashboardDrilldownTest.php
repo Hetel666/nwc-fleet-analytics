@@ -8,6 +8,7 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -137,7 +138,7 @@ class DashboardDrilldownTest extends TestCase
             'active' => true,
         ]);
 
-        EquipmentDailyStat::query()->create([
+        DB::table('equipment_daily_stats')->insert([
             'stat_date' => '2026-07-15',
             'equipment_id' => $overtime->id,
             'project_id' => $project->id,
@@ -146,15 +147,19 @@ class DashboardDrilldownTest extends TestCase
             'distance_km' => 20,
             'first_message_at' => '2026-07-15 11:00:00',
             'last_message_at' => '2026-07-15 20:00:00',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
-        EquipmentDailyStat::query()->create([
+        DB::table('equipment_daily_stats')->insert([
             'stat_date' => '2026-07-15',
             'equipment_id' => $normal->id,
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'worked_hours' => 6,
             'distance_km' => 10,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $this->actingAs($user)

@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Equipment;
 use App\Models\ProjectWialonGroup;
-use App\Services\DashboardService;
+use App\Services\WialonDashboardDatasetSyncService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Console\Command;
@@ -24,7 +24,7 @@ class SyncWialonReportStats extends Command
 
     protected $description = 'Store daily Engine hours and Mileage from Wialon group reports.';
 
-    public function handle(DashboardService $dashboard): int
+    public function handle(WialonDashboardDatasetSyncService $sync): int
     {
         $from = Carbon::parse($this->option('date') ?: $this->option('from') ?: now(config('app.timezone'))->subDay())
             ->toDateString();
@@ -84,8 +84,8 @@ class SyncWialonReportStats extends Command
                     ];
 
                     $result = $rootGroups
-                        ? $dashboard->syncDailyOwnershipEngineHoursReport($filters, (bool) $this->option('force'))
-                        : $dashboard->syncDailyEngineHoursReport($filters, (bool) $this->option('force'));
+                        ? $sync->syncDailyOwnershipEngineHoursReport($filters, (bool) $this->option('force'))
+                        : $sync->syncDailyEngineHoursReport($filters, (bool) $this->option('force'));
 
                     if ($result['status'] === 'skipped') {
                         $skipped++;

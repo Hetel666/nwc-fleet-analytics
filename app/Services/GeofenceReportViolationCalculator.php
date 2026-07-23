@@ -14,9 +14,10 @@ class GeofenceReportViolationCalculator
 {
     public const SOURCE = 'wialon_report_api';
 
-    public function __construct(private GeofenceNameNormalizer $normalizer)
-    {
-    }
+    public function __construct(
+        private GeofenceNameNormalizer $normalizer,
+        private DashboardDataVersion $dataVersion
+    ) {}
 
     /**
      * @param  array<int, array<string, mixed>>  $records
@@ -77,6 +78,10 @@ class GeofenceReportViolationCalculator
                     UnitForeignGeofenceInterval::query()->create($violation);
                     $saved++;
                 }
+            }
+
+            if (($saved + $updated) > 0) {
+                $this->dataVersion->bump();
             }
         }
 
@@ -388,6 +393,7 @@ class GeofenceReportViolationCalculator
             foreach ($sorted as $row) {
                 if ($current === null) {
                     $current = $row;
+
                     continue;
                 }
 
@@ -406,6 +412,7 @@ class GeofenceReportViolationCalculator
                         ...($row['source_group_ids_json'] ?? []),
                     ])->filter()->unique()->values()->all();
                     $current['unique_key'] = $this->uniqueKey($current);
+
                     continue;
                 }
 

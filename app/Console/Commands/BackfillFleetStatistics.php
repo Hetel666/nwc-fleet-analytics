@@ -6,7 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\ProjectWialonGroup;
 use App\Models\StatisticBackfillItem;
-use App\Services\DashboardService;
+use App\Services\WialonDashboardDatasetSyncService;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Console\Command;
@@ -29,7 +29,7 @@ class BackfillFleetStatistics extends Command
 
     protected $description = 'Backfill daily Engine hours and Mileage statistics from Wialon reports.';
 
-    public function handle(DashboardService $dashboard): int
+    public function handle(WialonDashboardDatasetSyncService $sync): int
     {
         $startedAt = microtime(true);
         $from = Carbon::parse($this->option('from') ?: '2026-01-01', config('app.timezone'))->toDateString();
@@ -103,12 +103,14 @@ class BackfillFleetStatistics extends Command
                         }
 
                         $this->line("{$date} project {$target->project_id} {$target->ownership_type}: ready, skipped.");
+
                         continue;
                     }
 
                     if ($dryRun) {
                         $summary['skipped']++;
                         $this->line("{$date} project {$target->project_id} {$target->ownership_type}: would be processed.");
+
                         continue;
                     }
 
@@ -144,7 +146,7 @@ class BackfillFleetStatistics extends Command
                         ])->save();
 
                         try {
-                            $result = $dashboard->syncDailyEngineHoursReport([
+                            $result = $sync->syncDailyEngineHoursReport([
                                 'date_from' => $date,
                                 'date_to' => $date,
                                 'project_id' => (int) $target->project_id,

@@ -4,12 +4,13 @@ namespace App\Console\Commands;
 
 use App\Models\Equipment;
 use App\Models\EquipmentType;
+use App\Services\DashboardDataVersion;
 use App\Services\ForeignProjectGeofenceMonitoringService;
-use App\Services\WialonService;
 use App\Services\WialonGroupClassificationService;
+use App\Services\WialonService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -22,7 +23,8 @@ class SyncWialonUnits extends Command
     public function handle(
         WialonService $wialon,
         WialonGroupClassificationService $classification,
-        ForeignProjectGeofenceMonitoringService $foreignGeofences
+        ForeignProjectGeofenceMonitoringService $foreignGeofences,
+        DashboardDataVersion $dataVersion
     ): int {
         try {
             $units = $wialon->getUnits(full: true);
@@ -53,7 +55,7 @@ class SyncWialonUnits extends Command
                     'lat' => $unit['pos']['y'] ?? null,
                     'lng' => $unit['pos']['x'] ?? null,
                     'speed' => $unit['pos']['s'] ?? null,
-                    'time' => isset($unit['pos']['t']) ? \Illuminate\Support\Carbon::createFromTimestamp((int) $unit['pos']['t'])->toDateTimeString() : null,
+                    'time' => isset($unit['pos']['t']) ? Carbon::createFromTimestamp((int) $unit['pos']['t'])->toDateTimeString() : null,
                 ] : null;
 
                 $equipment->fill([
@@ -103,7 +105,9 @@ class SyncWialonUnits extends Command
             }
         }
 
-        Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+        if ($count > 0) {
+            $dataVersion->bump();
+        }
 
         $this->info("Synced {$count} Wialon units.");
 

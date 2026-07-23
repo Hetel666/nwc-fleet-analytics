@@ -7,7 +7,6 @@ use App\Jobs\RunHistoricalRecalculationTaskJob;
 use App\Models\Equipment;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
-use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Carbon\Carbon;
@@ -16,7 +15,6 @@ use Illuminate\Bus\Batch;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class HistoricalRecalculationService
@@ -91,6 +89,7 @@ class HistoricalRecalculationService
 
         if ($fetchTasks->isEmpty()) {
             FinalizeHistoricalRecalculationJob::dispatch($run->id)->onQueue($queue);
+
             return;
         }
 
@@ -209,7 +208,7 @@ class HistoricalRecalculationService
             'error_summary' => $failed > 0 ? "{$failed} of {$total} tasks failed." : null,
         ])->save();
 
-        Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+        app(DashboardDataVersion::class)->bump();
     }
 
     public function refreshProgress(HistoricalRecalculation $run): void

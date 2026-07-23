@@ -3,11 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Equipment;
-use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\DashboardDailyAverageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class DashboardDailyAverageServiceTest extends TestCase
@@ -148,7 +148,7 @@ class DashboardDailyAverageServiceTest extends TestCase
 
     private function stat(Equipment $equipment, string $date, float $hours, float $distance): void
     {
-        EquipmentDailyStat::query()->create([
+        DB::table('equipment_daily_stats')->insert([
             'stat_date' => $date,
             'equipment_id' => $equipment->id,
             'project_id' => $equipment->project_id,
@@ -156,6 +156,8 @@ class DashboardDailyAverageServiceTest extends TestCase
             'worked_hours' => $hours,
             'distance_km' => $distance,
             'calculation_status' => 'success',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

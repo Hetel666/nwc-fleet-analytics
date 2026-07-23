@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\DailyUnitAggregate;
 use App\Models\EquipmentDailyStat;
+use App\Services\DashboardDataVersion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -16,7 +17,7 @@ class BuildDailyUnitAggregates extends Command
 
     protected $description = 'Build daily unit aggregate rows for dashboard and export queries.';
 
-    public function handle(): int
+    public function handle(DashboardDataVersion $dataVersion): int
     {
         $from = $this->option('date') ?: $this->option('from') ?: now()->subDay()->toDateString();
         $to = $this->option('date') ?: $this->option('to') ?: $from;
@@ -62,6 +63,10 @@ class BuildDailyUnitAggregates extends Command
             });
 
         $this->info("Built {$count} daily aggregate rows for {$fromDate} - {$toDate}.");
+
+        if ($count > 0) {
+            $dataVersion->bump();
+        }
 
         return self::SUCCESS;
     }

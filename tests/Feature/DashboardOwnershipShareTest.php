@@ -56,11 +56,11 @@ class DashboardOwnershipShareTest extends TestCase
         ]);
 
         $this->assertSame([
-            ['name' => 'Excavator', 'total' => 2],
-            ['name' => 'Truck', 'total' => 1],
+            ['id' => $excavator->id, 'name' => 'Excavator', 'total' => 2],
+            ['id' => $truck->id, 'name' => 'Truck', 'total' => 1],
         ], $result[Equipment::OWNERSHIP_NWC]);
         $this->assertSame([
-            ['name' => 'Crane', 'total' => 2],
+            ['id' => $crane->id, 'name' => 'Crane', 'total' => 2],
         ], $result[Equipment::OWNERSHIP_ICARE]);
     }
 
@@ -83,17 +83,33 @@ class DashboardOwnershipShareTest extends TestCase
             'project_id' => $project->id,
             'project_wialon_group_id' => $group->id,
             'ownership_type' => $group->ownership_type,
+            'matched_wialon_group_id' => (string) $group->wialon_group_id,
+            'active' => true,
         ]);
     }
 
     private function equipmentWithoutGroup(Project $project, EquipmentType $type, string $ownershipType, string $name): Equipment
     {
+        $group = ProjectWialonGroup::query()->firstOrCreate(
+            [
+                'project_id' => $project->id,
+                'ownership_type' => $ownershipType,
+            ],
+            [
+                'wialon_group_id' => $ownershipType === Equipment::OWNERSHIP_NWC ? '601701935' : '601701936',
+                'name' => $project->name.' '.$ownershipType,
+            ]
+        );
+
         return Equipment::create([
             'name' => $name,
             'wialon_unit_id' => uniqid('unit-', true),
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'matched_wialon_group_id' => (string) $group->wialon_group_id,
             'ownership_type' => $ownershipType,
+            'active' => true,
         ]);
     }
 }

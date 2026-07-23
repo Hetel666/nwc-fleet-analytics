@@ -2,9 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Models\DailyUnitAggregate;
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
-use App\Models\DailyUnitAggregate;
+use App\Services\DashboardDataVersion;
 use App\Services\WialonService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -17,7 +18,7 @@ class SyncDailyStats extends Command
 
     protected $description = 'Calculate and store daily fleet statistics from Wialon messages.';
 
-    public function handle(WialonService $wialon): int
+    public function handle(WialonService $wialon, DashboardDataVersion $dataVersion): int
     {
         $date = Carbon::parse($this->option('date') ?: now()->subDay()->toDateString());
         $count = 0;
@@ -80,6 +81,10 @@ class SyncDailyStats extends Command
         });
 
         $this->info("Calculated daily stats for {$count} equipment records.");
+
+        if ($count > 0) {
+            $dataVersion->bump();
+        }
 
         return self::SUCCESS;
     }

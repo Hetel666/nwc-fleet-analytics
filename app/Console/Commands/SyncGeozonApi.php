@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
+use App\Services\DashboardDataVersion;
 use App\Services\GeofenceReportViolationCalculator;
 use App\Services\WialonGeozonReportParser;
 use App\Services\WialonGeozonReportService;
@@ -32,7 +32,8 @@ class SyncGeozonApi extends Command
     public function handle(
         WialonGeozonReportService $reports,
         WialonGeozonReportParser $parser,
-        GeofenceReportViolationCalculator $calculator
+        GeofenceReportViolationCalculator $calculator,
+        DashboardDataVersion $dataVersion
     ): int {
         [$from, $to] = $this->period();
         $groups = $this->groups();
@@ -61,7 +62,9 @@ class SyncGeozonApi extends Command
                 ];
 
                 if ((bool) $this->option('force')) {
-                    $this->deleteExistingGroupPeriod($group, $from, $to);
+                    if ($this->deleteExistingGroupPeriod($group, $from, $to) > 0) {
+                        $dataVersion->bump();
+                    }
                 }
 
                 $result = $calculator->processGroupReport(
@@ -137,9 +140,9 @@ class SyncGeozonApi extends Command
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
     }
 
-    private function deleteExistingGroupPeriod(ProjectWialonGroup $group, CarbonImmutable $from, CarbonImmutable $to): void
+    private function deleteExistingGroupPeriod(ProjectWialonGroup $group, CarbonImmutable $from, CarbonImmutable $to): int
     {
-        UnitForeignGeofenceInterval::query()
+        return UnitForeignGeofenceInterval::query()
             ->where('source', GeofenceReportViolationCalculator::SOURCE)
             ->where('source_group_id', (string) $group->wialon_group_id)
             ->where('report_from', $from)
