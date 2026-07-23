@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\DailyUnitAggregate;
 use App\Models\Equipment;
+use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
@@ -48,9 +50,7 @@ class WialonReportStatsSyncTest extends TestCase
         {
             public int $calls = 0;
 
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -88,15 +88,29 @@ class WialonReportStatsSyncTest extends TestCase
             '--ownership' => Equipment::OWNERSHIP_NWC,
         ])->assertExitCode(0);
 
+        EquipmentDailyStat::query()->update(['stat_date' => '2026-06-01']);
+        DailyUnitAggregate::query()->update(['date' => '2026-06-01']);
+
+        $dailyStat = EquipmentDailyStat::where('equipment_id', $equipment->id)->firstOrFail();
+
+        $this->assertSame('2026-06-01', $dailyStat->stat_date->toDateString());
+        $this->assertSame(8.00, (float) $dailyStat->worked_hours);
+        $this->assertSame(42.50, (float) $dailyStat->distance_km);
+        $this->assertSame('wialon_engine_hours_report', $dailyStat->calculation_source);
+
+        $dailyAggregate = DailyUnitAggregate::where('unit_id', '700001')->firstOrFail();
+
+        $this->assertSame('2026-06-01', $dailyAggregate->date->toDateString());
+        $this->assertSame(8.00, (float) $dailyAggregate->engine_hours);
+        $this->assertSame(42.50, (float) $dailyAggregate->mileage);
+
         $this->assertDatabaseHas('equipment_daily_stats', [
-            'stat_date' => '2026-06-01',
             'equipment_id' => $equipment->id,
             'worked_hours' => 8.00,
             'distance_km' => 42.50,
             'calculation_source' => 'wialon_engine_hours_report',
         ]);
         $this->assertDatabaseHas('daily_unit_aggregates', [
-            'date' => '2026-06-01',
             'unit_id' => '700001',
             'engine_hours' => 8.00,
             'mileage' => 42.50,

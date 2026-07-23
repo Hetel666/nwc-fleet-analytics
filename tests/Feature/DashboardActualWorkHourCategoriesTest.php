@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Equipment;
-use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
@@ -12,6 +11,7 @@ use App\Services\WialonService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class DashboardActualWorkHourCategoriesTest extends TestCase
@@ -20,6 +20,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
     public function test_actual_work_hour_categories_use_average_daily_values_and_count_each_unit_once(): void
     {
+        config(['fleet.wialon.actual_work_report_resource_id' => 0]);
+
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Excavator']);
 
@@ -64,6 +66,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
     public function test_actual_work_hour_categories_respect_equipment_type_and_ownership_filters(): void
     {
+        config(['fleet.wialon.actual_work_report_resource_id' => 0]);
+
         $project = Project::create(['name' => 'Fuzuli Agdam yol', 'active' => true]);
         $excavator = EquipmentType::create(['name' => 'Excavator']);
         $truck = EquipmentType::create(['name' => 'Truck']);
@@ -128,9 +132,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->app->instance(WialonService::class, new class extends WialonService
         {
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -219,9 +221,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         {
             public array $calls = [];
 
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -328,9 +328,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $wialon = new class extends WialonService
         {
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -436,9 +434,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->app->instance(WialonService::class, new class extends WialonService
         {
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -504,12 +500,18 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
     private function stats(Project $project, Equipment $equipment, array $hours): void
     {
         foreach ($hours as $index => $workedHours) {
-            EquipmentDailyStat::create([
+            DB::table('equipment_daily_stats')->insert([
                 'stat_date' => '2026-07-'.str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT),
                 'equipment_id' => $equipment->id,
                 'project_id' => $project->id,
                 'ownership_type' => $equipment->ownership_type,
                 'worked_hours' => $workedHours,
+                'distance_km' => 0,
+                'utilization_percent' => 0,
+                'geofence_exit_count' => 0,
+                'outside_geofence_minutes' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
     }
