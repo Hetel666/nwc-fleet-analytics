@@ -8,8 +8,8 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Services\DashboardService;
+use App\Services\FleetEfficiencyService;
 use App\Services\WialonService;
-use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
@@ -48,16 +48,18 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1' => 1,
-                'from_1_to_7' => 1,
-                'from_7_to_10' => 1,
-                'overtime' => 1,
+                'less_than_1_hour' => 4,
+                'less_than_7_hours' => 2,
+                'between_7_and_10_hours' => 2,
+                'over_10_hours' => 2,
+                'overtime' => 0,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1' => 1,
-                'from_1_to_7' => 0,
-                'from_7_to_10' => 1,
-                'overtime' => 1,
+                'less_than_1_hour' => 2,
+                'less_than_7_hours' => 0,
+                'between_7_and_10_hours' => 2,
+                'over_10_hours' => 2,
+                'overtime' => 0,
             ],
         ], $result);
     }
@@ -86,15 +88,17 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1' => 0,
-                'from_1_to_7' => 1,
-                'from_7_to_10' => 0,
+                'less_than_1_hour' => 0,
+                'less_than_7_hours' => 1,
+                'between_7_and_10_hours' => 0,
+                'over_10_hours' => 0,
                 'overtime' => 0,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1' => 0,
-                'from_1_to_7' => 0,
-                'from_7_to_10' => 0,
+                'less_than_1_hour' => 0,
+                'less_than_7_hours' => 0,
+                'between_7_and_10_hours' => 0,
+                'over_10_hours' => 0,
                 'overtime' => 0,
             ],
         ], $result);
@@ -103,7 +107,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
     public function test_single_day_actual_work_hour_categories_are_loaded_from_wialon_report(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
-        $type = EquipmentType::create(['name' => 'Imported']);
+        $type = EquipmentType::create(['name' => 'Excavator']);
 
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC no report row');
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC middle');
@@ -128,9 +132,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->app->instance(WialonService::class, new class extends WialonService
         {
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -174,15 +176,17 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1' => 1,
-                'from_1_to_7' => 1,
-                'from_7_to_10' => 1,
-                'overtime' => 1,
+                'less_than_1_hour' => 4,
+                'less_than_7_hours' => 0,
+                'between_7_and_10_hours' => 0,
+                'over_10_hours' => 0,
+                'overtime' => 0,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1' => 1,
-                'from_1_to_7' => 0,
-                'from_7_to_10' => 0,
+                'less_than_1_hour' => 1,
+                'less_than_7_hours' => 0,
+                'between_7_and_10_hours' => 0,
+                'over_10_hours' => 0,
                 'overtime' => 0,
             ],
         ], $result);
@@ -191,7 +195,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
     public function test_date_range_actual_work_hour_categories_are_loaded_from_wialon_report(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
-        $type = EquipmentType::create(['name' => 'Imported']);
+        $type = EquipmentType::create(['name' => 'Excavator']);
 
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC no report row');
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC middle');
@@ -219,9 +223,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         {
             public array $calls = [];
 
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -270,48 +272,70 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1' => 1,
-                'from_1_to_7' => 1,
-                'from_7_to_10' => 1,
-                'overtime' => 1,
+                'less_than_1_hour' => 8,
+                'less_than_7_hours' => 0,
+                'between_7_and_10_hours' => 0,
+                'over_10_hours' => 0,
+                'overtime' => 0,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1' => 1,
-                'from_1_to_7' => 0,
-                'from_7_to_10' => 1,
+                'less_than_1_hour' => 4,
+                'less_than_7_hours' => 0,
+                'between_7_and_10_hours' => 0,
+                'over_10_hours' => 0,
                 'overtime' => 0,
             ],
         ], $result);
 
-        $this->assertCount(2, $wialon->calls);
-        $this->assertSame(
-            Carbon::parse('2026-07-01', config('app.timezone'))->startOfDay()->timestamp,
-            $wialon->calls[0]['from']
-        );
-        $this->assertSame(
-            Carbon::parse('2026-07-02', config('app.timezone'))->endOfDay()->timestamp,
-            $wialon->calls[0]['to']
-        );
-        $this->assertSame(16777216, $wialon->calls[0]['intervalFlags']);
-        $this->assertTrue($wialon->calls[0]['remoteExec']);
+        $this->assertCount(0, $wialon->calls);
     }
 
-    public function test_project_work_hour_cards_use_engine_hours_report_and_track_missing_data(): void
+    public function test_project_work_hour_cards_use_stored_daily_stats_and_track_missing_data(): void
     {
         Cache::flush();
 
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
-        $type = EquipmentType::create(['name' => 'Imported']);
+        $type = EquipmentType::create(['name' => 'Excavator']);
 
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC zero');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC less');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC from one');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC seven');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC ten');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
+        $nwcZero = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC zero');
+        $nwcLess = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC less');
+        $nwcFromOne = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC from one');
+        $nwcSeven = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC seven');
+        $nwcTen = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC ten');
+        $nwcOvertime = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC overtime');
         $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC missing');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE day');
+        $icareDay = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE day');
         $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE invalid');
+
+        $dailyStat = function (Equipment $equipment, float $hours, ?float $overtimeHours = 0.0) use ($project): void {
+            $dataAvailable = $overtimeHours !== null;
+            EquipmentDailyStat::create([
+                'stat_date' => '2026-07-01',
+                'equipment_id' => $equipment->id,
+                'project_id' => $project->id,
+                'ownership_type' => $equipment->ownership_type,
+                'worked_hours' => $hours,
+                'daytime_hours' => $hours,
+                'overtime_hours' => $overtimeHours,
+                'total_hours' => $overtimeHours === null ? null : $hours + $overtimeHours,
+                'day_status' => app(FleetEfficiencyService::class)->daytimeStatusForHours($hours),
+                'has_overtime' => $overtimeHours === null ? null : $overtimeHours > 0,
+                'data_available' => $dataAvailable,
+                'daytime_data_available' => true,
+                'overtime_data_available' => $dataAvailable,
+                'distance_km' => 0,
+                'calculation_source' => 'wialon_shift_report',
+                'calculation_status' => $dataAvailable ? 'ok' : 'shift_unknown',
+            ]);
+        };
+
+        $dailyStat($nwcZero, 0);
+        $dailyStat($nwcLess, 0.99);
+        $dailyStat($nwcFromOne, 1);
+        $dailyStat($nwcSeven, 7);
+        $dailyStat($nwcTen, 10);
+        $dailyStat($nwcOvertime, 10.01, 0.5);
+        $dailyStat($icareDay, 26.5, 2.0);
 
         ProjectWialonGroup::create([
             'project_id' => $project->id,
@@ -328,9 +352,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $wialon = new class extends WialonService
         {
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -379,52 +401,56 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ]);
 
         $this->assertSame([
-            'less_than_1' => 2,
-            'from_1_to_7' => 1,
-            'from_7_to_10' => 2,
+            'less_than_1_hour' => 3,
+            'less_than_7_hours' => 1,
+            'between_7_and_10_hours' => 2,
+            'over_10_hours' => 1,
             'overtime' => 1,
-            'total' => 6,
+            'total' => 7,
             'missing_data' => 1,
         ], array_intersect_key($result[Equipment::OWNERSHIP_NWC][0], array_flip([
-            'less_than_1',
-            'from_1_to_7',
-            'from_7_to_10',
+            'less_than_1_hour',
+            'less_than_7_hours',
+            'between_7_and_10_hours',
+            'over_10_hours',
             'overtime',
             'total',
             'missing_data',
         ])));
 
         $this->assertSame([
-            'less_than_1' => 0,
-            'from_1_to_7' => 0,
-            'from_7_to_10' => 0,
+            'less_than_1_hour' => 1,
+            'less_than_7_hours' => 0,
+            'between_7_and_10_hours' => 0,
+            'over_10_hours' => 1,
             'overtime' => 1,
-            'total' => 1,
+            'total' => 2,
             'missing_data' => 1,
         ], array_intersect_key($result[Equipment::OWNERSHIP_ICARE][0], array_flip([
-            'less_than_1',
-            'from_1_to_7',
-            'from_7_to_10',
+            'less_than_1_hour',
+            'less_than_7_hours',
+            'between_7_and_10_hours',
+            'over_10_hours',
             'overtime',
             'total',
             'missing_data',
         ])));
     }
 
-    public function test_average_metrics_by_ownership_use_engine_hours_and_mileage_from_wialon_report(): void
+    public function test_average_metrics_by_ownership_use_prepared_engine_hours_and_mileage_stats(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT1', 'active' => true]);
         $excavator = EquipmentType::create(['name' => 'Excavator']);
         $dumpTruck = EquipmentType::create(['name' => 'Dump Truck']);
         $pickup = EquipmentType::create(['name' => 'Pickup']);
 
-        $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC excavator');
-        $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC zero excavator');
+        $nwcExcavator = $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC excavator');
+        $nwcZeroExcavator = $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC zero excavator');
         $this->equipment($project, $excavator, Equipment::OWNERSHIP_NWC, 'NWC invalid excavator');
-        $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_NWC, 'NWC dump');
+        $nwcDump = $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_NWC, 'NWC dump');
         $this->equipment($project, $pickup, Equipment::OWNERSHIP_NWC, 'NWC pickup');
-        $this->equipment($project, $excavator, Equipment::OWNERSHIP_ICARE, 'ICARE excavator');
-        $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'ICARE dump');
+        $icareExcavator = $this->equipment($project, $excavator, Equipment::OWNERSHIP_ICARE, 'ICARE excavator');
+        $icareDump = $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'ICARE dump');
         $this->equipment($project, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'ICARE invalid dump');
 
         ProjectWialonGroup::create([
@@ -440,48 +466,14 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
         ]);
 
-        $this->app->instance(WialonService::class, new class extends WialonService
-        {
-            public function __construct()
-            {
-            }
+        $this->metricStat($project, $nwcExcavator, '2026-07-01', 10.0, 12.0);
+        $this->metricStat($project, $nwcZeroExcavator, '2026-07-01', 0.0, 5.0);
+        $this->metricStat($project, $nwcDump, '2026-07-01', 99.0, 120.5);
+        $this->metricStat($project, $icareExcavator, '2026-07-01', 7.4, 1.0);
+        $this->metricStat($project, $icareDump, '2026-07-01', 8.0, 55.0);
 
-            public function getReportTablesRows(
-                int|string $resourceId,
-                int|string $templateId,
-                int|string $objectId,
-                int $from,
-                int $to,
-                int $chunkSize = 500,
-                int $intervalFlags = 0,
-                bool $remoteExec = false,
-                ?int $requestTimeout = null
-            ): array {
-                return [
-                    'tables' => [
-                        [
-                            'table' => [
-                                'label' => 'Engine hours',
-                                'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours', 'Mileage'],
-                                'header_type' => ['', 'user_column', 'user_column', 'duration', 'mileage'],
-                            ],
-                            'rows' => (string) $objectId === '601701930'
-                                ? [
-                                    ['c' => ['NWC excavator', '', '', '10.00', '12 km']],
-                                    ['c' => ['NWC zero excavator', '', '', '00:00:00', '5 km']],
-                                    ['c' => ['NWC invalid excavator', '', '', '-', '7 km']],
-                                    ['c' => ['NWC dump', '', '', '99.00', '120.5 km']],
-                                    ['c' => ['NWC pickup', '', '', '100.00', '300 km']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE excavator', '', '', '07:24:00', '1 km']],
-                                    ['c' => ['ICARE dump', '', '', '8.00', '55']],
-                                    ['c' => ['ICARE invalid dump', '', '', '3.00', '']],
-                                ],
-                        ],
-                    ],
-                ];
-            }
+        $this->mock(WialonService::class, function ($mock): void {
+            $mock->shouldReceive('getReportTablesRows')->never();
         });
 
         $result = app(DashboardService::class)->getAverageMetricsByOwnership([
@@ -510,6 +502,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
             'ownership_type' => $ownershipType,
+            'matched_wialon_group_id' => $ownershipType === Equipment::OWNERSHIP_ICARE ? '601701933' : '601701930',
+            'active' => true,
         ]);
     }
 
@@ -525,7 +519,31 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'project_id' => $project->id,
                 'ownership_type' => $equipment->ownership_type,
                 'worked_hours' => $workedHours,
+                'daytime_hours' => $workedHours,
+                'overtime_hours' => 0,
+                'total_hours' => $workedHours,
+                'day_status' => app(FleetEfficiencyService::class)->daytimeStatusForHours((float) $workedHours),
+                'has_overtime' => false,
+                'data_available' => true,
+                'daytime_data_available' => true,
+                'overtime_data_available' => true,
+                'calculation_source' => 'wialon_shift_report',
+                'calculation_status' => 'ok',
             ]);
         }
+    }
+
+    private function metricStat(Project $project, Equipment $equipment, string $date, float $workedHours, float $distanceKm): void
+    {
+        EquipmentDailyStat::create([
+            'stat_date' => $date,
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => $equipment->ownership_type,
+            'worked_hours' => $workedHours,
+            'distance_km' => $distanceKm,
+            'calculation_source' => 'wialon_engine_hours_report',
+            'calculation_status' => 'ok',
+        ]);
     }
 }
