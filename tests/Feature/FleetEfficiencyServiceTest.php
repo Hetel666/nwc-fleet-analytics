@@ -8,6 +8,7 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\FleetEfficiencyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class FleetEfficiencyServiceTest extends TestCase
@@ -123,6 +124,30 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame('Məlumat yoxdur', $missingRows[0][12]);
     }
 
+    public function test_date_filter_includes_both_boundaries_and_datetime_values(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+        $equipment = $this->equipment('Excavator 01', $type, $project);
+
+        $this->rawStat($equipment, '2026-06-30 23:59:59', 9);
+        $this->rawStat($equipment, '2026-07-01 12:30:00', 5);
+        $this->rawStat($equipment, '2026-07-03 23:59:59', 8);
+        $this->rawStat($equipment, '2026-07-04 00:00:00', 9);
+
+        $rows = app(FleetEfficiencyService::class)->dailyRows([
+            'from' => '2026-07-01',
+            'to' => '2026-07-03',
+        ]);
+
+        $this->assertSame(
+            ['2026-07-01', '2026-07-02', '2026-07-03'],
+            $rows->pluck('date')->all()
+        );
+        $this->assertSame([true, false, true], $rows->pluck('data_available')->all());
+        $this->assertSame([5.0, 0.0, 8.0], $rows->pluck('total_hours')->all());
+    }
+
     private function equipment(string $name, EquipmentType $type, Project $project, string $ownership = Equipment::OWNERSHIP_NWC): Equipment
     {
         return Equipment::query()->create([
@@ -152,6 +177,20 @@ class FleetEfficiencyServiceTest extends TestCase
             'distance_km' => 0,
             'first_message_at' => $firstMessageAt,
             'last_message_at' => $lastMessageAt,
+        ]);
+    }
+
+    private function rawStat(Equipment $equipment, string $date, float $hours): void
+    {
+        DB::table('equipment_daily_stats')->insert([
+            'stat_date' => $date,
+            'equipment_id' => $equipment->id,
+            'project_id' => $equipment->project_id,
+            'ownership_type' => $equipment->ownership_type,
+            'worked_hours' => $hours,
+            'distance_km' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

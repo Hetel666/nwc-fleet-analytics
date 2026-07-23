@@ -8,6 +8,7 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\TopWorkingUnitsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class TopWorkingUnitsServiceTest extends TestCase
@@ -75,6 +76,26 @@ class TopWorkingUnitsServiceTest extends TestCase
         $this->assertSame('Backhoe Loader', $rows[0]['type']);
     }
 
+    public function test_date_filter_includes_both_boundaries_and_datetime_values(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+        $unit = $this->equipment('Loader 01', $loader, $project);
+
+        $this->rawStat($unit, '2026-06-30 23:59:59', 1);
+        $this->rawStat($unit, '2026-07-01 08:00:00', 2);
+        $this->rawStat($unit, '2026-07-03 23:59:59', 3);
+        $this->rawStat($unit, '2026-07-04 00:00:00', 4);
+
+        $rows = app(TopWorkingUnitsService::class)->least([
+            'from' => '2026-07-01',
+            'to' => '2026-07-03',
+        ], 20);
+
+        $this->assertSame(['2026-07-01', '2026-07-03'], array_column($rows, 'date'));
+        $this->assertSame([2.0, 3.0], array_column($rows, 'hours'));
+    }
+
     private function equipment(
         string $name,
         EquipmentType $type,
@@ -103,6 +124,21 @@ class TopWorkingUnitsServiceTest extends TestCase
             'worked_hours' => $hours,
             'distance_km' => 0,
             'calculation_status' => 'success',
+        ]);
+    }
+
+    private function rawStat(Equipment $equipment, string $date, float $hours): void
+    {
+        DB::table('equipment_daily_stats')->insert([
+            'stat_date' => $date,
+            'equipment_id' => $equipment->id,
+            'project_id' => $equipment->project_id,
+            'ownership_type' => $equipment->ownership_type,
+            'worked_hours' => $hours,
+            'distance_km' => 0,
+            'calculation_status' => 'success',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -13,7 +14,7 @@ use Illuminate\Support\Str;
 class FleetEfficiencyService
 {
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, array<int, array<string, mixed>>>
      */
     public function projectRowsByOwnership(array $filters): array
@@ -54,7 +55,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, int>
      */
     public function summaryForOwnership(array $filters, string $ownershipType): array
@@ -83,7 +84,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
     public function exportRows(array $filters): array
@@ -95,7 +96,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function paginate(array $filters): LengthAwarePaginator
     {
@@ -113,7 +114,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     public function dailyRows(array $filters): Collection
@@ -131,7 +132,8 @@ class FleetEfficiencyService
 
         $stats = EquipmentDailyStat::query()
             ->whereIn('equipment_id', $equipment->pluck('id')->all())
-            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
+            ->where('stat_date', '>=', $filters['from'])
+            ->where('stat_date', '<', CarbonImmutable::parse($filters['to'])->addDay()->toDateString())
             ->get()
             ->keyBy(fn (EquipmentDailyStat $stat): string => $stat->equipment_id.'|'.$stat->stat_date->toDateString());
 
@@ -153,8 +155,8 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $rows
-     * @param array<string, mixed> $filters
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     private function filterDailyRows(Collection $rows, array $filters): Collection
@@ -188,7 +190,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, Equipment>
      */
     private function eligibleEquipment(array $filters): Collection
@@ -351,7 +353,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function normalizeFilters(array $filters): array

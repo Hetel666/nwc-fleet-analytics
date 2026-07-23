@@ -25,7 +25,7 @@ class TopWorkingUnitsService
     /**
      * Builds the exact rows used by the dashboard and Excel export.
      *
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
     public function rows(array $filters, string $ranking, int $limit = 20): array
@@ -37,7 +37,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<int, mixed>>
      */
     public function exportRows(array $filters, string $ranking, int $limit = 20): array
@@ -66,7 +66,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, string>
      */
     public function exportColumns(array $filters): array
@@ -88,7 +88,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function detail(array $filters): ?array
     {
@@ -111,7 +111,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function paginateDetail(array $filters): LengthAwarePaginator
     {
@@ -148,7 +148,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     private function journalRows(array $filters, string $ranking): Collection
@@ -179,17 +179,19 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function baseQuery(array $filters): Builder
     {
         $filters = $this->normalizeFilters($filters);
+        $until = CarbonImmutable::parse($filters['to'])->addDay()->toDateString();
 
         return EquipmentDailyStat::query()
             ->join('equipments', 'equipments.id', '=', 'equipment_daily_stats.equipment_id')
             ->leftJoin('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
             ->leftJoin('projects', 'projects.id', '=', 'equipment_daily_stats.project_id')
-            ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
+            ->where('equipment_daily_stats.stat_date', '>=', $filters['from'])
+            ->where('equipment_daily_stats.stat_date', '<', $until)
             ->where('equipments.active', true)
             ->where(function (Builder $query): void {
                 $query->where('equipments.excluded_from_dashboard', false)
@@ -255,7 +257,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private function detailRow(array $row): array
@@ -345,7 +347,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function normalizeFilters(array $filters): array
@@ -374,7 +376,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function isRange(array $filters): bool
     {
