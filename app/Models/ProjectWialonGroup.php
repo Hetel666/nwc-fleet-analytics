@@ -12,7 +12,15 @@ class ProjectWialonGroup extends Model
         'wialon_group_id',
         'name',
         'ownership_type',
+        'is_active',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+        ];
+    }
 
     public function project(): BelongsTo
     {
