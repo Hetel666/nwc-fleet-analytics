@@ -44,6 +44,8 @@ return [
 
     'foreign_geofence' => [
         'min_minutes' => (int) env('FOREIGN_GEOFENCE_MIN_MINUTES', 180),
+        // Prefer the explicit input-position freshness limit, then fall back to the legacy stale interval limit.
+        'position_max_age_minutes' => (int) env('FOREIGN_GEOFENCE_POSITION_MAX_AGE_MINUTES', env('FOREIGN_GEOFENCE_STALE_AFTER_MINUTES', 30)),
         'stale_after_minutes' => (int) env('FOREIGN_GEOFENCE_STALE_AFTER_MINUTES', 30),
         'show_all' => (bool) env('FOREIGN_GEOFENCE_SHOW_ALL', false),
         'include_stale' => (bool) env('FOREIGN_GEOFENCE_INCLUDE_STALE', false),
