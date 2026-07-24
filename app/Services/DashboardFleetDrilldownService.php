@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\Geofence;
 use App\Models\Project;
+use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -29,31 +30,29 @@ class DashboardFleetDrilldownService
         private DashboardDailyAverageService $dailyAverages,
         private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
-    )
-    {
-    }
+        private DashboardDateRangePolicy $dateRangePolicy,
+    ) {}
 
     /**
-     * @param array<string, mixed> $input
+     * @param  array<string, mixed>  $input
      * @return array<string, mixed>
      */
     public function filters(array $input): array
     {
-        $from = Carbon::parse($input['date_from'] ?? $input['from'] ?? now(config('app.timezone'))->startOfMonth())->toDateString();
-        $to = Carbon::parse($input['date_to'] ?? $input['to'] ?? now(config('app.timezone')))->toDateString();
+        $range = $this->dateRangePolicy->normalize([
+            ...$input,
+            '_default_from' => now(config('app.timezone'))->startOfMonth(),
+            '_default_to' => now(config('app.timezone')),
+        ], 'modal');
         $projectId = $input['project_id'] ?? null;
         $projectId = $projectId === '' || $projectId === 'all' ? null : $projectId;
         $workCategory = $this->workCategory($input['work_category'] ?? $input['status'] ?? null);
         $dayStatus = $this->dayStatus($input['day_status'] ?? null);
         $sort = (string) ($input['sort'] ?? '');
 
-        if ($from > $to) {
-            [$from, $to] = [$to, $from];
-        }
-
         return [
-            'date_from' => $from,
-            'date_to' => $to,
+            'date_from' => $range['from'],
+            'date_to' => $range['to'],
             'ownership' => $this->normalizeOwnership($input['ownership'] ?? null),
             'project_id' => filled($projectId) ? (int) $projectId : null,
             'project_ids' => $this->integerArray($input['project_ids'] ?? []),
@@ -92,7 +91,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function getUnits(array $filters): LengthAwarePaginator
     {
@@ -126,7 +125,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function export(array $filters): array
@@ -150,13 +149,13 @@ class DashboardFleetDrilldownService
                     ),
                 ],
                 [
-                        'title' => 'Gündəlik detallar',
-                        'columns' => array_values($this->visibleColumns($detailColumns)),
-                        'rows' => $this->visibleExportRows(
-                            $this->dailyAverages->exportRowsForGroup($dailyAverageFilters, $filters['metric'], $filters['group_by']),
-                            array_keys($detailColumns),
-                            array_keys($this->visibleColumns($detailColumns))
-                        ),
+                    'title' => 'Gündəlik detallar',
+                    'columns' => array_values($this->visibleColumns($detailColumns)),
+                    'rows' => $this->visibleExportRows(
+                        $this->dailyAverages->exportRowsForGroup($dailyAverageFilters, $filters['metric'], $filters['group_by']),
+                        array_keys($detailColumns),
+                        array_keys($this->visibleColumns($detailColumns))
+                    ),
                 ],
             ];
 
@@ -215,7 +214,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function resultSummary(array $filters): array
@@ -230,7 +229,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, string>
      */
     public function columns(array $filters): array
@@ -239,7 +238,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, string> $columns
+     * @param  array<string, string>  $columns
      * @return array<string, string>
      */
     private function visibleColumns(array $columns): array
@@ -250,9 +249,9 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<int, array<int|string, mixed>> $rows
-     * @param array<int, string> $allKeys
-     * @param array<int, string> $visibleKeys
+     * @param  array<int, array<int|string, mixed>>  $rows
+     * @param  array<int, string>  $allKeys
+     * @param  array<int, string>  $visibleKeys
      * @return array<int, array<int, mixed>>
      */
     private function visibleExportRows(array $rows, array $allKeys, array $visibleKeys): array
@@ -263,9 +262,9 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<int|string, mixed> $row
-     * @param array<int, string> $allKeys
-     * @param array<int, string> $visibleKeys
+     * @param  array<int|string, mixed>  $row
+     * @param  array<int, string>  $allKeys
+     * @param  array<int, string>  $visibleKeys
      * @return array<int, mixed>
      */
     private function visibleExportRow(array $row, array $allKeys, array $visibleKeys): array
@@ -280,7 +279,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, string>
      */
     private function rawColumns(array $filters): array
@@ -327,7 +326,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, string>
      */
     public function filterSummary(array $filters): array
@@ -433,7 +432,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function title(array $filters): string
     {
@@ -463,7 +462,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function query(array $filters): Builder
     {
@@ -638,7 +637,6 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param mixed $value
      * @return array<int, int>
      */
     private function integerArray(mixed $value): array
@@ -652,7 +650,6 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param mixed $value
      * @return array<int, string>
      */
     private function vehicleTypes(mixed $value): array
@@ -701,7 +698,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function efficiencyFilters(array $filters): array
@@ -737,7 +734,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function dailyAverageFilters(array $filters): array
@@ -763,7 +760,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $input
+     * @param  array<string, mixed>  $input
      */
     private function equipmentTypeId(array $input): ?int
     {
@@ -788,7 +785,7 @@ class DashboardFleetDrilldownService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function filename(array $filters): string
     {

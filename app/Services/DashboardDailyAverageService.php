@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
+use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
@@ -14,6 +15,8 @@ use Illuminate\Support\Str;
 
 class DashboardDailyAverageService
 {
+    public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
+
     /**
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
@@ -62,7 +65,7 @@ class DashboardDailyAverageService
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     public function typeSummary(array $filters, string $metric): Collection
     {
@@ -325,7 +328,7 @@ class DashboardDailyAverageService
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     public function dailyAverages(array $filters, string $metric): Collection
     {
@@ -373,7 +376,7 @@ class DashboardDailyAverageService
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     public function journalRows(array $filters, string $metric): Collection
     {
@@ -449,7 +452,7 @@ class DashboardDailyAverageService
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     private function groupRows(array $filters, string $metric, string $groupBy): Collection
     {
@@ -519,7 +522,7 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $rows
+     * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<string, mixed>
      */
     private function metricChartDataFromRows(Collection $rows, string $metric): array
@@ -568,7 +571,7 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $rows
+     * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<string, mixed>
      */
     private function aggregateAverage(Collection $rows, string $metric): array
@@ -601,7 +604,7 @@ class DashboardDailyAverageService
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return \Illuminate\Support\Collection<int, Equipment>
+     * @return Collection<int, Equipment>
      */
     private function eligibleEquipment(array $filters, string $metric): Collection
     {
@@ -638,7 +641,7 @@ class DashboardDailyAverageService
 
     /**
      * @param  array<int, int>  $equipmentIds
-     * @return \Illuminate\Support\Collection<string, EquipmentDailyStat>
+     * @return Collection<string, EquipmentDailyStat>
      */
     private function statsFor(array $filters, array $equipmentIds): Collection
     {
@@ -687,12 +690,11 @@ class DashboardDailyAverageService
      */
     private function normalizedFilters(array $filters): array
     {
-        $from = CarbonImmutable::parse($filters['date_from'] ?? $filters['from'] ?? now())->toDateString();
-        $to = CarbonImmutable::parse($filters['date_to'] ?? $filters['to'] ?? $from)->toDateString();
-
-        if ($from > $to) {
-            [$from, $to] = [$to, $from];
-        }
+        $range = $this->dateRangePolicy->normalize([
+            ...$filters,
+            '_default_from' => now(config('app.timezone'))->toDateString(),
+            '_default_to' => $filters['from'] ?? $filters['date_from'] ?? now(config('app.timezone'))->toDateString(),
+        ], 'modal');
 
         $ownership = $filters['ownership_type'] ?? null;
         if (! in_array($ownership, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
@@ -700,8 +702,8 @@ class DashboardDailyAverageService
         }
 
         return [
-            'from' => $from,
-            'to' => $to,
+            'from' => $range['from'],
+            'to' => $range['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,
             'project_ids' => $this->integerArray($filters['project_ids'] ?? []),
             'equipment_type_id' => filled($filters['equipment_type_id'] ?? null) ? (int) $filters['equipment_type_id'] : null,
@@ -758,7 +760,7 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $summary
+     * @param  Collection<int, array<string, mixed>>  $summary
      * @return array<int, array<string, mixed>>
      */
     private function typeComparisonRows(Collection $summary, string $metric): array
@@ -880,7 +882,6 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param mixed $value
      * @return array<int, int>
      */
     private function integerArray(mixed $value): array
@@ -894,7 +895,6 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param mixed $value
      * @return array<int, string>
      */
     private function vehicleTypes(mixed $value): array
@@ -929,9 +929,9 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $rows
+     * @param  Collection<int, array<string, mixed>>  $rows
      * @param  array<string, mixed>  $filters
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     * @return Collection<int, array<string, mixed>>
      */
     private function sortJournalRows(Collection $rows, array $filters, string $metric): Collection
     {
@@ -948,7 +948,7 @@ class DashboardDailyAverageService
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      */
     private function journalSortValue(array $row, string $sort, string $metric): mixed
     {

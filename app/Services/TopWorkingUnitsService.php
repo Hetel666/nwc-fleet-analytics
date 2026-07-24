@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\EngineHoursReportUnitDay;
 use App\Models\Equipment;
+use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,6 +13,8 @@ use Illuminate\Support\Collection;
 
 class TopWorkingUnitsService
 {
+    public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
+
     public function least(array $filters, int $limit = 20): array
     {
         return $this->rows($filters, 'least', $limit);
@@ -23,7 +26,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
     public function rows(array $filters, string $ranking, int $limit = 20): array
@@ -35,7 +38,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<int, mixed>>
      */
     public function exportRows(array $filters, string $ranking, int $limit = 20): array
@@ -58,7 +61,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, string>
      */
     public function exportColumns(array $filters): array
@@ -78,7 +81,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function detail(array $filters): ?array
     {
@@ -101,7 +104,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function paginateDetail(array $filters): LengthAwarePaginator
     {
@@ -147,7 +150,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     private function journalRows(array $filters, string $ranking): Collection
@@ -178,7 +181,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function baseQuery(array $filters): Builder
     {
@@ -252,7 +255,7 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
     private function detailRow(array $row, int $number): array
@@ -332,25 +335,24 @@ class TopWorkingUnitsService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function normalizeFilters(array $filters): array
     {
-        $from = CarbonImmutable::parse($filters['date_from'] ?? $filters['from'] ?? now())->toDateString();
-        $to = CarbonImmutable::parse($filters['date_to'] ?? $filters['to'] ?? $from)->toDateString();
-
-        if ($from > $to) {
-            [$from, $to] = [$to, $from];
-        }
+        $range = $this->dateRangePolicy->normalize([
+            ...$filters,
+            '_default_from' => now(config('app.timezone'))->toDateString(),
+            '_default_to' => $filters['from'] ?? $filters['date_from'] ?? now(config('app.timezone'))->toDateString(),
+        ], 'modal');
 
         $ownership = $this->ownershipType($filters['ownership_type'] ?? $filters['ownership'] ?? null);
 
         $ranking = $filters['top_working_ranking'] ?? null;
 
         return [
-            'from' => $from,
-            'to' => $to,
+            'from' => $range['from'],
+            'to' => $range['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,
             'equipment_type_id' => filled($filters['equipment_type_id'] ?? null) ? (int) $filters['equipment_type_id'] : null,
             'ownership_type' => $ownership,

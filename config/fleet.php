@@ -63,6 +63,10 @@ return [
         'slow_generation_ms' => (int) env('DASHBOARD_SLOW_GENERATION_MS', 5000),
         'performance_logging_enabled' => (bool) env('DASHBOARD_PERFORMANCE_LOGGING_ENABLED', false),
         'slow_request_ms' => (int) env('DASHBOARD_SLOW_REQUEST_MS', 3000),
+        'max_period_days' => (int) env('DASHBOARD_MAX_PERIOD_DAYS', 0),
+        'modal_max_period_days' => (int) env('DASHBOARD_MODAL_MAX_PERIOD_DAYS', 0),
+        'export_sync_max_days' => (int) env('DASHBOARD_EXPORT_SYNC_MAX_DAYS', 0),
+        'reversed_date_range_mode' => env('DASHBOARD_REVERSED_DATE_RANGE_MODE', 'swap'),
     ],
 
     'geofence' => [

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
+use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
@@ -13,15 +14,23 @@ use Illuminate\Support\Collection;
 class FleetEfficiencyService
 {
     public const DAY_STATUS_LESS_THAN_1 = 'less_than_1_hour';
+
     public const DAY_STATUS_LESS_THAN_7 = 'less_than_7_hours';
+
     public const DAY_STATUS_BETWEEN_7_AND_10 = 'between_7_and_10_hours';
+
     public const DAY_STATUS_OVER_10 = 'over_10_hours';
+
     public const LEGACY_DAY_STATUS_OVER_10 = 'over_10_day_hours';
+
     public const STATUS_OVERTIME = 'overtime';
+
     public const STATUS_NO_DATA = 'no_data';
 
+    public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
+
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, array<int, array<string, mixed>>>
      */
     public function projectRowsByOwnership(array $filters): array
@@ -65,7 +74,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, int>
      */
     public function summaryForOwnership(array $filters, string $ownershipType): array
@@ -90,7 +99,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<int, mixed>>
      */
     public function exportRows(array $filters): array
@@ -104,7 +113,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function paginate(array $filters): LengthAwarePaginator
     {
@@ -123,7 +132,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     public function dailyRows(array $filters): Collection
@@ -173,8 +182,8 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $rows
-     * @param array<string, mixed> $filters
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     private function filterDailyRows(Collection $rows, array $filters): Collection
@@ -274,7 +283,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, Equipment>
      */
     private function eligibleEquipment(array $filters): Collection
@@ -426,7 +435,7 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, int> $summary
+     * @param  array<string, int>  $summary
      */
     private function daytimeTotal(array $summary): int
     {
@@ -459,21 +468,20 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     private function normalizeFilters(array $filters): array
     {
-        $from = Carbon::parse($filters['from'] ?? $filters['date_from'] ?? now()->toDateString())->toDateString();
-        $to = Carbon::parse($filters['to'] ?? $filters['date_to'] ?? $from)->toDateString();
-
-        if ($from > $to) {
-            [$from, $to] = [$to, $from];
-        }
+        $range = $this->dateRangePolicy->normalize([
+            ...$filters,
+            '_default_from' => now(config('app.timezone'))->toDateString(),
+            '_default_to' => $filters['from'] ?? $filters['date_from'] ?? now(config('app.timezone'))->toDateString(),
+        ], 'modal');
 
         return [
-            'from' => $from,
-            'to' => $to,
+            'from' => $range['from'],
+            'to' => $range['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,
             'project_ids' => $this->integerArray($filters['project_ids'] ?? []),
             'equipment_type_id' => filled($filters['equipment_type_id'] ?? null) ? (int) $filters['equipment_type_id'] : null,
@@ -576,8 +584,8 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $rows
-     * @param array<string, mixed> $filters
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
     private function sortRows(Collection $rows, array $filters): Collection
@@ -627,7 +635,6 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param mixed $value
      * @return array<int, int>
      */
     private function integerArray(mixed $value): array
@@ -641,7 +648,6 @@ class FleetEfficiencyService
     }
 
     /**
-     * @param mixed $value
      * @return array<int, string>
      */
     private function vehicleTypes(mixed $value): array

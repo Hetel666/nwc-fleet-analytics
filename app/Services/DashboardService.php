@@ -11,6 +11,7 @@ use App\Models\GeofenceEvent;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\Setting;
+use App\Support\DashboardDateRangePolicy;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -51,6 +52,7 @@ class DashboardService
         private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
         private DashboardPerformanceProfiler $performance,
+        private DashboardDateRangePolicy $dateRangePolicy,
     ) {}
 
     private function shouldUseLiveWialonReports(): bool
@@ -1057,24 +1059,23 @@ class DashboardService
 
     public function normalizeFilters(array $filters): array
     {
-        $from = Carbon::parse($filters['date_from'] ?? $filters['from'] ?? now()->startOfMonth())->toDateString();
-        $to = Carbon::parse($filters['date_to'] ?? $filters['to'] ?? now())->toDateString();
+        $range = $this->dateRangePolicy->normalize([
+            ...$filters,
+            '_default_from' => now(config('app.timezone'))->startOfMonth(),
+            '_default_to' => now(config('app.timezone')),
+        ], 'dashboard');
         $ownershipType = $filters['ownership_type'] ?? null;
 
         if (! in_array($ownershipType, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
             $ownershipType = null;
         }
 
-        if ($from > $to) {
-            [$from, $to] = [$to, $from];
-        }
-
         $projectId = $filters['project_id'] ?? null;
         $projectId = $projectId === '' || $projectId === 'all' ? null : $projectId;
 
         return [
-            'from' => $from,
-            'to' => $to,
+            'from' => $range['from'],
+            'to' => $range['to'],
             'project_id' => $projectId !== null ? (int) $projectId : null,
             'equipment_type_id' => isset($filters['equipment_type_id']) && $filters['equipment_type_id'] !== '' ? (int) $filters['equipment_type_id'] : null,
             'ownership_type' => $ownershipType,
