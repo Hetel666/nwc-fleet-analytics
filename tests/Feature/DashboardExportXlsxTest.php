@@ -7,6 +7,7 @@ use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\XlsxExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 use ZipArchive;
@@ -57,7 +58,7 @@ class DashboardExportXlsxTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'xlsx-test-');
         file_put_contents($path, $content);
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $this->assertTrue($zip->open($path));
         $this->assertNotFalse($zip->locateName('xl/workbook.xml'));
         $this->assertNotFalse($zip->locateName('xl/worksheets/sheet1.xml'));
@@ -66,5 +67,36 @@ class DashboardExportXlsxTest extends TestCase
         @unlink($path);
 
         $this->assertStringContainsString('Unit &lt;script&gt;alert(1)&lt;/script&gt;', $sheet);
+    }
+
+    public function test_xlsx_export_escapes_formula_like_text_values(): void
+    {
+        $content = app(XlsxExportService::class)->build([
+            'title' => 'Formula safety',
+            'filters' => [],
+            'sections' => [
+                [
+                    'title' => 'Rows',
+                    'columns' => ['A', 'B', 'C', 'D'],
+                    'rows' => [
+                        ['=SUM(1,1)', '+SUM(1,1)', '-SUM(1,1)', '@SUM(1,1)'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx-test-');
+        file_put_contents($path, $content);
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($path));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+        @unlink($path);
+
+        $this->assertStringContainsString("'=SUM(1,1)", $sheet);
+        $this->assertStringContainsString("'+SUM(1,1)", $sheet);
+        $this->assertStringContainsString("'-SUM(1,1)", $sheet);
+        $this->assertStringContainsString("'@SUM(1,1)", $sheet);
     }
 }

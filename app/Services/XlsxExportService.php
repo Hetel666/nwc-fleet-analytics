@@ -26,7 +26,7 @@ class XlsxExportService
             throw new RuntimeException('Could not create temporary XLSX file.');
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
 
         if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             @unlink($path);
@@ -86,18 +86,18 @@ class XlsxExportService
 
     private function worksheetXml(array $export): string
     {
-        $rows = [];
+        $sheetDataXml = '';
         $merges = [];
         $widths = [];
         $rowNumber = 1;
         $maxColumnCount = 2;
 
-        $this->appendRow($rows, $widths, $rowNumber, [$export['title'] ?? 'Dashboard'], 1);
+        $this->appendRow($sheetDataXml, $widths, $rowNumber, [$export['title'] ?? 'Dashboard'], 1);
         $merges[] = 'A1:B1';
         $rowNumber++;
 
         foreach (($export['filters'] ?? []) as $filter) {
-            $this->appendRow($rows, $widths, $rowNumber, [
+            $this->appendRow($sheetDataXml, $widths, $rowNumber, [
                 $filter[0] ?? '',
                 $filter[1] ?? '',
             ], 2);
@@ -112,21 +112,21 @@ class XlsxExportService
             $maxColumnCount = max($maxColumnCount, $columnCount);
             $startColumn = $this->cellReference($columnCount, $rowNumber);
 
-            $this->appendRow($rows, $widths, $rowNumber, [$section['title'] ?? ''], 3);
+            $this->appendRow($sheetDataXml, $widths, $rowNumber, [$section['title'] ?? ''], 3);
             $merges[] = "A{$rowNumber}:{$startColumn}";
             $rowNumber++;
 
-            $this->appendRow($rows, $widths, $rowNumber, $columns, 2);
+            $this->appendRow($sheetDataXml, $widths, $rowNumber, $columns, 2);
             $rowNumber++;
 
             $sectionRows = $section['rows'] ?? [];
 
             if ($sectionRows === []) {
-                $this->appendRow($rows, $widths, $rowNumber, [__('app.no_data')], 0);
+                $this->appendRow($sheetDataXml, $widths, $rowNumber, [__('app.no_data')], 0);
                 $rowNumber++;
             } else {
                 foreach ($sectionRows as $sectionRow) {
-                    $this->appendRow($rows, $widths, $rowNumber, array_values($sectionRow), 0);
+                    $this->appendRow($sheetDataXml, $widths, $rowNumber, array_values($sectionRow), 0);
                     $rowNumber++;
                 }
             }
@@ -155,12 +155,12 @@ class XlsxExportService
             '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'.
             '<sheetFormatPr defaultRowHeight="15"/>'.
             '<cols>'.$columnsXml.'</cols>'.
-            '<sheetData>'.implode('', $rows).'</sheetData>'.
+            '<sheetData>'.$sheetDataXml.'</sheetData>'.
             $mergeXml.
             '</worksheet>';
     }
 
-    private function appendRow(array &$rows, array &$widths, int $rowNumber, array $cells, int $style): void
+    private function appendRow(string &$sheetDataXml, array &$widths, int $rowNumber, array $cells, int $style): void
     {
         $cellXml = '';
 
@@ -173,7 +173,7 @@ class XlsxExportService
                 '</c>';
         }
 
-        $rows[] = '<row r="'.$rowNumber.'">'.$cellXml.'</row>';
+        $sheetDataXml .= '<row r="'.$rowNumber.'">'.$cellXml.'</row>';
     }
 
     private function cellText(mixed $value): string
@@ -190,7 +190,18 @@ class XlsxExportService
             return $value ? '1' : '0';
         }
 
-        return (string) $value;
+        $text = (string) $value;
+
+        return $this->safeCellText($text);
+    }
+
+    private function safeCellText(string $value): string
+    {
+        if ($value === '') {
+            return '';
+        }
+
+        return in_array($value[0], ['=', '+', '-', '@'], true) ? "'".$value : $value;
     }
 
     private function cellReference(int $column, int $row): string
@@ -242,7 +253,7 @@ class XlsxExportService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $sheets
+     * @param  array<int, array<string, mixed>>  $sheets
      */
     private function workbookXml(array $sheets): string
     {
@@ -259,7 +270,7 @@ class XlsxExportService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $sheets
+     * @param  array<int, array<string, mixed>>  $sheets
      */
     private function workbookRelsXml(array $sheets): string
     {
