@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Equipment;
 use App\Models\EquipmentType;
+use App\Models\GeofenceEvent;
 use App\Models\Project;
-use App\Models\ProjectWialonGroup;
 use App\Services\DashboardService;
 use App\Services\WialonService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,87 +15,21 @@ class DashboardGeofenceOutsideReportTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_geofence_outside_rows_are_merged_from_engine_and_geofence_report_tables(): void
+    public function test_geofence_outside_rows_are_loaded_from_local_events_without_wialon(): void
     {
-        config([
-            'fleet.wialon.geofence_outside_report_resource_id' => 601701680,
-            'fleet.wialon.geofence_outside_report_template_id' => 12,
-        ]);
-
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
         $type = EquipmentType::create(['name' => 'Excavator']);
 
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC A');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC B');
-        $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE A');
+        $nwcA = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC A');
+        $nwcB = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'NWC B');
+        $icareA = $this->equipment($project, $type, Equipment::OWNERSHIP_ICARE, 'ICARE A');
 
-        ProjectWialonGroup::create([
-            'project_id' => $project->id,
-            'wialon_group_id' => '601',
-            'name' => 'LOT3 NWC',
-            'ownership_type' => Equipment::OWNERSHIP_NWC,
-        ]);
-        ProjectWialonGroup::create([
-            'project_id' => $project->id,
-            'wialon_group_id' => '602',
-            'name' => 'LOT3 ICARE',
-            'ownership_type' => Equipment::OWNERSHIP_ICARE,
-        ]);
+        $this->event($project, $nwcB, '2026-07-03 09:00:00', 0);
+        $this->event($project, $icareA, '2026-07-04 09:00:00', 180);
+        $this->event($project, $nwcA, '2026-07-05 09:00:00', 390);
 
-        $this->app->instance(WialonService::class, new class extends WialonService
-        {
-            public function __construct()
-            {
-            }
-
-            public function getReportTablesRows(
-                int|string $resourceId,
-                int|string $templateId,
-                int|string $objectId,
-                int $from,
-                int $to,
-                int $chunkSize = 500,
-                int $intervalFlags = 0,
-                bool $remoteExec = false,
-                ?int $requestTimeout = null
-            ): array {
-                $isNwc = (string) $objectId === '601';
-
-                return [
-                    'tables' => [
-                        [
-                            'table' => [
-                                'label' => 'Engine hours',
-                                'header' => ['Grouping', 'Vendor', 'Custom column', 'Engine hours'],
-                                'header_type' => ['', '', '', 'duration'],
-                            ],
-                            'rows' => $isNwc
-                                ? [
-                                    ['c' => ['NWC A', 'NWC', '', '10:00:00']],
-                                    ['c' => ['NWC B', 'NWC', '', '5.5']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE A', 'ICARE', '', '4']],
-                                ],
-                        ],
-                        [
-                            'table' => [
-                                'label' => 'Geofence',
-                                'header' => ['Grouping', 'Name', 'Duration of stay'],
-                            ],
-                            'rows' => $isNwc
-                                ? [
-                                    ['c' => ['NWC A', 'Zone 1', '2:00:00']],
-                                    ['c' => ['NWC A', 'Zone 2', '1.5']],
-                                    ['c' => ['NWC B', 'Zone 1', '6']],
-                                ]
-                                : [
-                                    ['c' => ['ICARE A', 'Zone 1', '1']],
-                                ],
-                        ],
-                    ],
-                ];
-            }
+        $this->mock(WialonService::class, function ($mock): void {
+            $mock->shouldReceive('getReportTablesRows')->never();
         });
 
         $rows = app(DashboardService::class)->getGeofenceOutsideRows([
@@ -121,6 +55,17 @@ class DashboardGeofenceOutsideReportTest extends TestCase
                 'outside_hours' => 0.0,
             ],
         ], $rows);
+    }
+
+    private function event(Project $project, Equipment $equipment, string $exitAt, int $outsideMinutes): GeofenceEvent
+    {
+        return GeofenceEvent::create([
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'exit_at' => $exitAt,
+            'outside_minutes' => $outsideMinutes,
+            'status' => 'outside',
+        ]);
     }
 
     private function equipment(Project $project, EquipmentType $type, string $ownershipType, string $name): Equipment
