@@ -2,7 +2,11 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DashboardDrilldownController;
 use App\Http\Controllers\DashboardExportController;
+use App\Http\Controllers\DashboardLayoutController;
+use App\Http\Controllers\DashboardOwnershipExportController;
+use App\Http\Controllers\DashboardTopWorkingUnitsExportController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\EquipmentTypeController;
 use App\Http\Controllers\GeofenceController;
@@ -28,6 +32,12 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/dashboard/export', DashboardExportController::class)->name('dashboard.export');
+    Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->name('dashboard.drilldown.units');
+    Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->name('dashboard.drilldown.units.export');
+    Route::get('/dashboard/layout', [DashboardLayoutController::class, 'show'])->name('dashboard.layout');
+    Route::post('/dashboard/layout/save', [DashboardLayoutController::class, 'update'])->name('dashboard.layout.save');
+    Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->name('dashboard.ownership.export');
+    Route::get('/dashboard/top-working-units/export', DashboardTopWorkingUnitsExportController::class)->name('dashboard.top-working-units.export');
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
     Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');
