@@ -9,6 +9,7 @@ use App\Models\Geofence;
 use App\Models\GeofenceEvent;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Models\UnitForeignGeofenceInterval;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,7 +18,9 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardService
 {
-    public function __construct() {}
+    public function __construct(
+        private GeofenceViolationService $geofenceViolations,
+    ) {}
 
     public function getOverview(array $filters): array
     {
@@ -415,17 +418,19 @@ class DashboardService
 
     public function getGeofenceOutsideRows(array $filters, ?int $limit = 12): array
     {
-        $filters = $this->normalizeFilters($filters);
-        $fallbackRows = $this->getGeofenceEvents($filters)
-            ->map(fn (GeofenceEvent $event): array => [
-                'grouping' => $event->equipment?->name ?? '',
-                'vendor' => $event->equipment?->ownership_type ?? '',
-                'outside_hours' => round(((float) $event->outside_minutes) / 60, 2),
+        $rows = $this->geofenceViolations
+            ->currentIntervals($this->normalizeFilters($filters))
+            ->map(fn (UnitForeignGeofenceInterval $interval): array => [
+                'grouping' => $interval->unit?->name ?? '',
+                'vendor' => $interval->ownership_type ?: ($interval->unit?->ownership_type ?? ''),
+                'outside_hours' => round($this->geofenceViolations->durationSeconds($interval) / 3600, 2),
+                'current_project' => $interval->foreignProject?->name ?? $interval->foreign_project_name ?? '',
+                'current_geofence' => $interval->foreignGeofence?->name ?? $interval->foreign_geofence_name ?? '',
             ])
             ->values()
             ->all();
 
-        return $limit === null ? $fallbackRows : array_slice($fallbackRows, 0, $limit);
+        return $limit === null ? $rows : array_slice($rows, 0, $limit);
     }
 
     public function getUtilizationTrend(array $filters): array
