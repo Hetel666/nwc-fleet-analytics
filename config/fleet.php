@@ -61,6 +61,8 @@ return [
         'cache_minutes' => (int) env('DASHBOARD_CACHE_MINUTES', 10),
         'export_queue_threshold_rows' => (int) env('DASHBOARD_EXPORT_QUEUE_THRESHOLD_ROWS', 5000),
         'slow_generation_ms' => (int) env('DASHBOARD_SLOW_GENERATION_MS', 5000),
+        'performance_logging_enabled' => (bool) env('DASHBOARD_PERFORMANCE_LOGGING_ENABLED', false),
+        'slow_request_ms' => (int) env('DASHBOARD_SLOW_REQUEST_MS', 3000),
     ],
 
     'geofence' => [

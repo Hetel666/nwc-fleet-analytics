@@ -50,6 +50,7 @@ class DashboardService
         private DashboardDailyAverageService $dailyAverages,
         private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
+        private DashboardPerformanceProfiler $performance,
     ) {}
 
     private function shouldUseLiveWialonReports(): bool
@@ -830,41 +831,146 @@ class DashboardService
 
     public function getDashboard(array $filters): array
     {
-        $filters = $this->normalizeFilters($filters);
-        $cacheMinutes = max(0, (int) config('fleet.dashboard.cache_minutes', 10));
+        $this->performance->begin('dashboard.getDashboard', ['filters' => $filters]);
+        $result = null;
+        $normalizedFilters = $filters;
 
-        if ($cacheMinutes > 0) {
-            return Cache::remember(
-                $this->dashboardCacheKey($filters),
-                now()->addMinutes($cacheMinutes),
-                fn (): array => $this->buildDashboard($filters)
-            );
+        try {
+            $filters = $this->performance->measure('normalizeFilters', fn (): array => $this->normalizeFilters($filters));
+            $normalizedFilters = $filters;
+            $cacheMinutes = max(0, (int) config('fleet.dashboard.cache_minutes', 10));
+
+            if ($cacheMinutes > 0) {
+                $result = $this->performance->measure(
+                    'cache.lookup',
+                    fn (): array => Cache::remember(
+                        $this->dashboardCacheKey($filters),
+                        now()->addMinutes($cacheMinutes),
+                        fn (): array => $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters))
+                    )
+                );
+
+                return $result;
+            }
+
+            $result = $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters));
+
+            return $result;
+        } finally {
+            $this->performance->finish('dashboard.getDashboard', ['filters' => $normalizedFilters], $result);
         }
-
-        return $this->buildDashboard($filters);
     }
 
     private function buildDashboard(array $filters): array
     {
+        $dashboard = [];
+
+        foreach ($this->dashboardWidgetBuilders($filters) as $key => $builder) {
+            $dashboard[$key] = $this->performance->measure('widget.'.$key, $builder);
+        }
+
+        return $dashboard;
+    }
+
+    public function getDashboardProfileWidget(array $filters, string $widget): array
+    {
+        $this->performance->begin('dashboard.profileWidget', ['filters' => $filters, 'widget' => $widget], force: true);
+        $result = null;
+        $normalizedFilters = $filters;
+
+        try {
+            $filters = $this->performance->measure('normalizeFilters', fn (): array => $this->normalizeFilters($filters));
+            $normalizedFilters = $filters;
+            $builders = $this->dashboardWidgetBuilders($filters);
+
+            if (! array_key_exists($widget, $builders)) {
+                throw new \InvalidArgumentException('Unknown dashboard widget: '.$widget);
+            }
+
+            $result = $this->performance->measure('widget.'.$widget, $builders[$widget]);
+
+            return [
+                'widget' => $widget,
+                'filters' => $filters,
+                'result' => $result,
+            ];
+        } finally {
+            $this->performance->finish('dashboard.profileWidget', ['filters' => $normalizedFilters, 'widget' => $widget], $result, forceLog: true);
+        }
+    }
+
+    public function getDashboardProfile(array $filters): array
+    {
+        $this->performance->begin('dashboard.profile', ['filters' => $filters], force: true);
+        $result = null;
+        $normalizedFilters = $filters;
+
+        try {
+            $filters = $this->performance->measure('normalizeFilters', fn (): array => $this->normalizeFilters($filters));
+            $normalizedFilters = $filters;
+            $cacheMinutes = max(0, (int) config('fleet.dashboard.cache_minutes', 10));
+
+            if ($cacheMinutes > 0) {
+                $result = $this->performance->measure(
+                    'cache.lookup',
+                    fn (): array => Cache::remember(
+                        $this->dashboardCacheKey($filters),
+                        now()->addMinutes($cacheMinutes),
+                        fn (): array => $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters))
+                    )
+                );
+            } else {
+                $result = $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters));
+            }
+
+            return [
+                'filters' => $filters,
+                'result' => $result,
+            ];
+        } finally {
+            $this->performance->finish('dashboard.profile', ['filters' => $normalizedFilters], $result, forceLog: true);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function dashboardPerformanceProfile(): array
+    {
+        return $this->performance->lastProfile();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, callable>
+     */
+    private function dashboardWidgetBuilders(array $filters): array
+    {
         return [
-            'overview' => $this->getOverview($filters),
-            'workHourCategories' => $this->getWorkHourCategories($filters),
-            'equipmentTypes' => $this->getEquipmentTypeDistribution($filters),
-            'equipmentTypesByOwnership' => $this->getEquipmentTypeDistributionByOwnership([...$filters, '_include_type_id' => true]),
-            'averages' => $this->getAverageMetrics($filters),
-            'averageMetricsByOwnership' => $this->getAverageMetricsByOwnership($filters),
-            'dailyAverageDashboards' => [
-                'engine_hours' => $this->dailyAverages->dashboardData($filters, 'engine_hours'),
-                'mileage' => $this->dailyAverages->dashboardData($filters, 'mileage'),
+            'overview' => fn (): array => $this->getOverview($filters),
+            'workHourCategories' => fn (): array => $this->getWorkHourCategories($filters),
+            'equipmentTypes' => fn (): array => $this->getEquipmentTypeDistribution($filters),
+            'equipmentTypesByOwnership' => fn (): array => $this->getEquipmentTypeDistributionByOwnership([...$filters, '_include_type_id' => true]),
+            'averages' => fn (): array => $this->getAverageMetrics($filters),
+            'averageMetricsByOwnership' => fn (): array => $this->getAverageMetricsByOwnership($filters),
+            'dailyAverageDashboards' => fn (): array => [
+                'engine_hours' => $this->performance->measure(
+                    'widget.dailyAverageDashboards.engine_hours',
+                    fn (): array => $this->dailyAverages->dashboardData($filters, 'engine_hours')
+                ),
+                'mileage' => $this->performance->measure(
+                    'widget.dailyAverageDashboards.mileage',
+                    fn (): array => $this->dailyAverages->dashboardData($filters, 'mileage')
+                ),
             ],
-            'leastWorking' => $this->getLeastWorking($filters),
-            'mostWorking' => $this->getMostWorking($filters),
-            'projects' => $this->getProjectDistribution($filters),
-            'projectActualWorkHourCategoriesByOwnership' => $this->getProjectActualWorkHourCategoriesByOwnership($filters),
-            'projectOwnershipComparison' => $this->getProjectOwnershipComparison($filters),
-            'geofenceViolations' => $this->geofenceViolations->summary($filters),
-            'utilizationTrend' => $this->getUtilizationTrend($filters),
-            'utilizationTrendByOwnership' => $this->getUtilizationTrendByOwnership($filters),
+            'leastWorking' => fn (): array => $this->getLeastWorking($filters),
+            'mostWorking' => fn (): array => $this->getMostWorking($filters),
+            'projects' => fn (): array => $this->getProjectDistribution($filters),
+            'projectActualWorkHourCategoriesByOwnership' => fn (): array => $this->getProjectActualWorkHourCategoriesByOwnership($filters),
+            'projectOwnershipComparison' => fn (): array => $this->getProjectOwnershipComparison($filters),
+            'geofenceViolations' => fn (): array => $this->geofenceViolations->summary($filters),
+            'utilizationTrend' => fn (): array => $this->getUtilizationTrend($filters),
+            'utilizationTrendByOwnership' => fn (): array => $this->getUtilizationTrendByOwnership($filters),
         ];
     }
 
