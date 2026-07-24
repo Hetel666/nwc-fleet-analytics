@@ -72,10 +72,9 @@ class DashboardDailyAverageService
     public function typeSummary(array $filters, string $metric): Collection
     {
         $filters = $this->normalizedFilters($filters);
-        $dates = $this->dates($filters['from'], $filters['to']);
-        $daysCount = max(1, count($dates));
+        $daysCount = $this->daysCount($filters['from'], $filters['to']);
         $equipment = $this->eligibleEquipment($filters, $metric);
-        $stats = $this->statsFor($filters, $equipment->pluck('id')->all());
+        $aggregates = $this->metricAggregatesByEquipment($filters, $metric, $equipment->pluck('id')->all());
         $typeCodes = $filters['vehicle_types'] === []
             ? $this->allowedTypes($metric)
             : array_values(array_intersect($this->allowedTypes($metric), $filters['vehicle_types']));
@@ -90,24 +89,16 @@ class DashboardDailyAverageService
                 $units = $equipment
                     ->filter(fn (Equipment $item): bool => $item->ownership_type === $ownership && $this->typeCode($item->type?->name) === $typeCode)
                     ->values();
-                $total = 0.0;
-                $unitsWithData = [];
-
-                foreach ($units as $unit) {
-                    foreach ($dates as $date) {
-                        $value = $this->statMetricValue($stats->get($date.'|'.$unit->id), $metric);
-
-                        if ($value === null) {
-                            continue;
-                        }
-
-                        $total += $value;
-                        $unitsWithData[$unit->id] = true;
-                    }
-                }
+                $unitIdsWithData = $units
+                    ->filter(fn (Equipment $unit): bool => (int) ($aggregates->get($unit->id)['data_days'] ?? 0) > 0)
+                    ->pluck('id')
+                    ->all();
+                $unitsWithData = array_fill_keys($unitIdsWithData, true);
+                $total = $units->sum(fn (Equipment $unit): float => (float) ($aggregates->get($unit->id)['total_value'] ?? 0.0));
 
                 if ($filters['data_status'] === 'available') {
                     $units = $units->filter(fn (Equipment $unit): bool => isset($unitsWithData[$unit->id]))->values();
+                    $total = $units->sum(fn (Equipment $unit): float => (float) ($aggregates->get($unit->id)['total_value'] ?? 0.0));
                     $unitsWithData = array_fill_keys($units->pluck('id')->all(), true);
                 } elseif ($filters['data_status'] === 'missing') {
                     $units = $units->reject(fn (Equipment $unit): bool => isset($unitsWithData[$unit->id]))->values();
@@ -598,6 +589,46 @@ class DashboardDailyAverageService
         }
 
         return $valid;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  array<int, int>  $equipmentIds
+     * @return Collection<int, array{total_value: float, data_days: int}>
+     */
+    private function metricAggregatesByEquipment(array $filters, string $metric, array $equipmentIds): Collection
+    {
+        if ($equipmentIds === []) {
+            return collect();
+        }
+
+        $latestStats = EquipmentDailyStat::query()
+            ->selectRaw('MAX(id) as id, equipment_id, stat_date')
+            ->whereDate('stat_date', '>=', $filters['from'])
+            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereIn('equipment_id', $equipmentIds)
+            ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
+            ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('project_id', $projectIds))
+            ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('ownership_type', $ownership))
+            ->groupBy('equipment_id', 'stat_date');
+
+        $valueColumn = $metric === 'mileage' ? 'stats.distance_km' : 'stats.worked_hours';
+        $availableSql = $this->metricAvailableSql($metric);
+
+        return DB::query()
+            ->fromSub($latestStats, 'latest_stats')
+            ->join('equipment_daily_stats as stats', 'stats.id', '=', 'latest_stats.id')
+            ->selectRaw('stats.equipment_id')
+            ->selectRaw('SUM(CASE WHEN '.$availableSql.' THEN '.$valueColumn.' ELSE 0 END) as total_value')
+            ->selectRaw('SUM(CASE WHEN '.$availableSql.' THEN 1 ELSE 0 END) as data_days')
+            ->groupBy('stats.equipment_id')
+            ->get()
+            ->mapWithKeys(fn (object $row): array => [
+                (int) $row->equipment_id => [
+                    'total_value' => (float) $row->total_value,
+                    'data_days' => (int) $row->data_days,
+                ],
+            ]);
     }
 
     /**
