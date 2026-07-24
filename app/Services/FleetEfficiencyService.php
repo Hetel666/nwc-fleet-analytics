@@ -8,8 +8,10 @@ use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class FleetEfficiencyService
 {
@@ -120,11 +122,21 @@ class FleetEfficiencyService
         $filters = $this->normalizeFilters($filters);
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perPage = min(100, max(10, (int) ($filters['per_page'] ?? 50)));
-        $rows = $this->filterDailyRows($this->dailyRows($filters), $filters)->values();
+        $query = $this->dailyRowsQuery($filters);
+        $this->applyDailyRowFilters($query, $filters);
+        $total = (clone $query)->count();
+        $this->applyDailyRowSort($query, $filters);
+
+        $rows = $query
+            ->forPage($page, $perPage)
+            ->get()
+            ->map(fn (object $row): array => $this->dailyRowFromRecord($row))
+            ->values()
+            ->all();
 
         return new LengthAwarePaginator(
-            $rows->forPage($page, $perPage)->values()->all(),
-            $rows->count(),
+            $rows,
+            $total,
             $perPage,
             $page,
             ['path' => request()->url(), 'query' => request()->query()]
@@ -303,6 +315,309 @@ class FleetEfficiencyService
             ->filter(fn (Equipment $item): bool => $this->isAllowedType($item->type?->name))
             ->filter(fn (Equipment $item): bool => empty($filters['vehicle_types']) || in_array($this->typeCode($item->type?->name), $filters['vehicle_types'], true))
             ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function dailyRowsQuery(array $filters): Builder
+    {
+        $dates = collect(iterator_to_array(CarbonPeriod::create($filters['from'], $filters['to'])))
+            ->map(fn (Carbon $date): string => $date->toDateString())
+            ->values();
+
+        $equipmentQuery = Equipment::query()
+            ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
+            ->leftJoin('projects', 'projects.id', '=', 'equipments.project_id')
+            ->where('equipments.active', true)
+            ->visibleInDashboard()
+            ->classifiedForDashboard()
+            ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
+            ->whereIn(DB::raw("LOWER(REPLACE(REPLACE(equipment_types.name, '-', '_'), ' ', '_'))"), $this->sqlTypeAliases($filters))
+            ->when($filters['ownership_type'], fn ($query, string $ownership) => $query->where('equipments.ownership_type', $ownership))
+            ->when($filters['project_id'], fn ($query, int $projectId) => $query->where('equipments.project_id', $projectId))
+            ->when($filters['project_ids'], fn ($query, array $projectIds) => $query->whereIn('equipments.project_id', $projectIds))
+            ->when($filters['equipment_type_id'], fn ($query, int $typeId) => $query->where('equipments.equipment_type_id', $typeId))
+            ->select([
+                'equipments.id as equipment_id',
+                'equipments.wialon_unit_id',
+                'equipments.name',
+                'equipments.registration_number',
+                'equipments.ownership_type',
+                'equipments.project_id',
+                'equipment_types.name as type_name',
+                'projects.name as project_name',
+            ]);
+
+        $latestStats = EquipmentDailyStat::query()
+            ->selectRaw('MAX(id) as id, equipment_id, stat_date')
+            ->whereDate('stat_date', '>=', $filters['from'])
+            ->whereDate('stat_date', '<=', $filters['to'])
+            ->groupBy('equipment_id', 'stat_date');
+
+        return DB::query()
+            ->fromSub($equipmentQuery, 'equipment')
+            ->crossJoinSub($this->dateSeriesQuery($dates), 'dates')
+            ->leftJoinSub($latestStats, 'latest_stats', function ($join): void {
+                $join->on('latest_stats.equipment_id', '=', 'equipment.equipment_id')
+                    ->on('latest_stats.stat_date', '=', 'dates.stat_date');
+            })
+            ->leftJoin('equipment_daily_stats as stats', 'stats.id', '=', 'latest_stats.id')
+            ->select([
+                'dates.stat_date',
+                'equipment.equipment_id',
+                'equipment.wialon_unit_id',
+                'equipment.name',
+                'equipment.registration_number',
+                'equipment.type_name',
+                'equipment.ownership_type',
+                'equipment.project_id',
+                'equipment.project_name',
+                'stats.id as stat_id',
+                'stats.daytime_hours',
+                'stats.overtime_hours',
+                'stats.total_hours',
+                'stats.day_status',
+                'stats.has_overtime',
+                'stats.data_available',
+                'stats.calculation_source',
+                'stats.source_group_id',
+                'stats.source_intervals_json',
+            ]);
+    }
+
+    /**
+     * @param  Collection<int, string>  $dates
+     */
+    private function dateSeriesQuery(Collection $dates): Builder
+    {
+        $query = null;
+
+        foreach ($dates as $date) {
+            $dateQuery = DB::query()->selectRaw('? as stat_date', [$date]);
+            $query = $query ? $query->unionAll($dateQuery) : $dateQuery;
+        }
+
+        return $query ?? DB::query()->selectRaw('? as stat_date', [now(config('app.timezone'))->toDateString()])->whereRaw('1 = 0');
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, string>
+     */
+    private function sqlTypeAliases(array $filters): array
+    {
+        $requestedTypes = $filters['vehicle_types'] === []
+            ? config('fleet_efficiency.efficiency_vehicle_types', config('fleet_efficiency.allowed_vehicle_types', []))
+            : array_map(fn (string $type): string => str_replace('-', '_', $type), $filters['vehicle_types']);
+
+        $requestedTypes = collect($requestedTypes)
+            ->map(fn (string $type): string => FleetVehicleType::normalize($type))
+            ->unique()
+            ->values()
+            ->all();
+
+        return collect(FleetVehicleType::aliases())
+            ->filter(fn (string $target): bool => in_array($target, $requestedTypes, true))
+            ->keys()
+            ->merge($requestedTypes)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyDailyRowFilters(Builder $query, array $filters): void
+    {
+        $category = $filters['work_category'] ?? null;
+        $dayStatus = $filters['day_status'] ?? null;
+        $effectiveDayStatus = $dayStatus ?: (in_array($category, $this->dayStatusKeys(), true) ? $category : null);
+        $dataStatus = $filters['data_status'] ?? 'all';
+        $hasOvertime = $filters['has_overtime'] ?? 'all';
+        $availableSql = $this->dataAvailableSql();
+
+        if ($dataStatus === 'available') {
+            $query->whereRaw($availableSql);
+        }
+
+        if ($dataStatus === 'missing' || $category === self::STATUS_NO_DATA) {
+            $query->whereRaw('NOT '.$availableSql);
+        }
+
+        if ($category === self::STATUS_OVERTIME) {
+            $query->where('stats.overtime_hours', '>', 0);
+        }
+
+        if ($effectiveDayStatus) {
+            $this->applyDayStatusFilter($query, $effectiveDayStatus);
+        }
+
+        if ($hasOvertime === 'yes') {
+            $query->where('stats.overtime_hours', '>', 0);
+        }
+
+        if ($hasOvertime === 'no') {
+            $query->whereNotNull('stats.overtime_hours')
+                ->where('stats.overtime_hours', '<=', 0);
+        }
+
+        $this->applyRangeFilter($query, 'stats.daytime_hours', $filters['day_hours_min'] ?? null, $filters['day_hours_max'] ?? null);
+        $this->applyRangeFilter($query, 'stats.overtime_hours', $filters['overtime_hours_min'] ?? null, $filters['overtime_hours_max'] ?? null);
+        $this->applyRangeFilter($query, $this->totalHoursSql(), $filters['total_hours_min'] ?? null, $filters['total_hours_max'] ?? null, raw: true);
+        $this->applyTextFilter($query, 'equipment.name', $filters['unit_name'] ?? '');
+        $this->applyTextFilter($query, 'equipment.registration_number', $filters['registration_number'] ?? '');
+        $this->applyTextFilter($query, 'equipment.wialon_unit_id', $filters['wialon_id'] ?? '');
+
+        $search = trim((string) ($filters['search'] ?? ''));
+
+        if ($search !== '') {
+            $search = mb_strtolower($search);
+            $query->where(function (Builder $query) use ($search): void {
+                foreach (['equipment.name', 'equipment.registration_number', 'equipment.project_name', 'equipment.type_name', 'equipment.wialon_unit_id'] as $column) {
+                    $query->orWhereRaw('LOWER(COALESCE('.$column.", '')) LIKE ?", ['%'.$search.'%']);
+                }
+            });
+        }
+    }
+
+    private function applyDayStatusFilter(Builder $query, string $status): void
+    {
+        $availableSql = $this->dataAvailableSql();
+
+        match ($status) {
+            self::DAY_STATUS_LESS_THAN_1 => $query->where(function (Builder $query) use ($availableSql): void {
+                $query->whereRaw('NOT '.$availableSql)
+                    ->orWhere('stats.daytime_hours', '<', 1);
+            }),
+            self::DAY_STATUS_LESS_THAN_7 => $query->whereRaw($availableSql)
+                ->where('stats.daytime_hours', '>=', 1)
+                ->where('stats.daytime_hours', '<', 7),
+            self::DAY_STATUS_BETWEEN_7_AND_10 => $query->whereRaw($availableSql)
+                ->where('stats.daytime_hours', '>=', 7)
+                ->where('stats.daytime_hours', '<=', 10),
+            self::DAY_STATUS_OVER_10 => $query->whereRaw($availableSql)
+                ->where('stats.daytime_hours', '>', 10),
+            default => null,
+        };
+    }
+
+    private function applyRangeFilter(Builder $query, string $column, mixed $min, mixed $max, bool $raw = false): void
+    {
+        if ($min === null && $max === null) {
+            return;
+        }
+
+        $raw
+            ? $query->whereRaw($column.' IS NOT NULL')
+            : $query->whereNotNull($column);
+
+        if ($min !== null) {
+            $raw
+                ? $query->whereRaw($column.' >= ?', [(float) $min])
+                : $query->where($column, '>=', (float) $min);
+        }
+
+        if ($max !== null) {
+            $raw
+                ? $query->whereRaw($column.' <= ?', [(float) $max])
+                : $query->where($column, '<=', (float) $max);
+        }
+    }
+
+    private function applyTextFilter(Builder $query, string $column, mixed $value): void
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return;
+        }
+
+        $query->whereRaw('LOWER(COALESCE('.$column.", '')) LIKE ?", ['%'.mb_strtolower($value).'%']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyDailyRowSort(Builder $query, array $filters): void
+    {
+        $sort = $this->sort($filters['sort'] ?? null);
+        $direction = ($filters['direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
+
+        match ($sort) {
+            'date' => $query->orderBy('dates.stat_date', $direction),
+            'registration_number' => $query->orderByRaw('LOWER(COALESCE(equipment.registration_number, \'\')) '.$direction),
+            'vehicle_type' => $query->orderByRaw('LOWER(COALESCE(equipment.type_name, \'\')) '.$direction),
+            'project' => $query->orderByRaw('LOWER(COALESCE(equipment.project_name, \'\')) '.$direction),
+            'ownership' => $query->orderBy('equipment.ownership_type', $direction),
+            'daytime_hours' => $query->orderByRaw('COALESCE(stats.daytime_hours, -1) '.$direction),
+            'overtime_hours' => $query->orderByRaw('COALESCE(stats.overtime_hours, -1) '.$direction),
+            'total_hours' => $query->orderByRaw('COALESCE('.$this->totalHoursSql().', -1) '.$direction),
+            'wialon_id' => $query->orderBy('equipment.wialon_unit_id', $direction),
+            default => $query->orderByRaw('LOWER(COALESCE(equipment.name, \'\')) '.$direction),
+        };
+
+        $query
+            ->orderBy('dates.stat_date')
+            ->orderByRaw('LOWER(COALESCE(equipment.name, \'\'))')
+            ->orderBy('equipment.wialon_unit_id');
+    }
+
+    private function dataAvailableSql(): string
+    {
+        return '(stats.id IS NOT NULL AND stats.daytime_hours IS NOT NULL AND stats.overtime_hours IS NOT NULL AND (stats.data_available IS NULL OR stats.data_available != 0))';
+    }
+
+    private function totalHoursSql(): string
+    {
+        return '(CASE WHEN stats.daytime_hours IS NOT NULL AND stats.overtime_hours IS NOT NULL THEN stats.daytime_hours + stats.overtime_hours ELSE stats.total_hours END)';
+    }
+
+    private function dailyRowFromRecord(object $row): array
+    {
+        $daytimeHours = $row->daytime_hours === null ? null : max(0.0, (float) $row->daytime_hours);
+        $overtimeHours = $row->overtime_hours === null ? null : max(0.0, (float) $row->overtime_hours);
+        $totalHours = $daytimeHours !== null && $overtimeHours !== null
+            ? $daytimeHours + $overtimeHours
+            : ($row->total_hours === null ? null : max(0.0, (float) $row->total_hours));
+        $dataAvailable = $row->stat_id !== null
+            && $daytimeHours !== null
+            && $overtimeHours !== null
+            && $row->data_available !== false
+            && $row->data_available !== 0
+            && $row->data_available !== '0';
+        $daytimeStatus = $dataAvailable ? $this->daytimeStatus($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
+        $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
+        $sourceIntervals = is_string($row->source_intervals_json ?? null)
+            ? json_decode($row->source_intervals_json, true) ?: []
+            : [];
+
+        return [
+            'date' => Carbon::parse($row->stat_date)->toDateString(),
+            'equipment_id' => (int) $row->equipment_id,
+            'wialon_id' => $row->wialon_unit_id,
+            'name' => $row->name,
+            'registration_number' => $row->registration_number ?: '-',
+            'vehicle_type' => $this->displayType($row->type_name),
+            'ownership_type' => $row->ownership_type,
+            'ownership' => $this->ownershipLabel($row->ownership_type),
+            'project_id' => $row->project_id,
+            'project' => $row->project_name ?: '-',
+            'daytime_hours' => $daytimeHours === null ? null : round($daytimeHours, 2),
+            'overtime_hours' => $overtimeHours === null ? null : round($overtimeHours, 2),
+            'total_hours' => $totalHours === null ? null : round($totalHours, 2),
+            'daytime_status' => $daytimeStatus,
+            'daytime_status_label' => $this->statusLabel($daytimeStatus),
+            'has_overtime' => $hasOvertime,
+            'overtime_calculated' => $overtimeHours !== null,
+            'overtime_label' => $hasOvertime === null ? __('app.no_data') : ($hasOvertime ? 'BЙ™li' : 'Xeyr'),
+            'data_available' => $dataAvailable,
+            'data_status' => $dataAvailable ? 'MЙ™lumat var' : __('app.no_data'),
+            'source' => $row->calculation_source,
+            'source_group_id' => $row->source_group_id,
+            'source_intervals' => $sourceIntervals,
+        ];
     }
 
     private function dailyRow(Equipment $equipment, string $date, ?EquipmentDailyStat $stat): array

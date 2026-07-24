@@ -376,6 +376,56 @@ class DashboardDrilldownTest extends TestCase
             ->assertJsonMissing(['name' => 'LOT3 NWC previous date less than one']);
     }
 
+    public function test_efficiency_modal_uses_backend_pagination_without_losing_total(): void
+    {
+        $user = $this->user();
+        $project = Project::query()->create(['name' => 'Paged project', 'active' => true]);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+
+        for ($index = 1; $index <= 15; $index++) {
+            $unit = Equipment::query()->create([
+                'name' => sprintf('Paged Loader %02d', $index),
+                'wialon_unit_id' => (string) (92000 + $index),
+                'equipment_type_id' => $loader->id,
+                'project_id' => $project->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'matched_wialon_group_id' => '601701903',
+                'active' => true,
+            ]);
+
+            EquipmentDailyStat::query()->create([
+                'stat_date' => '2026-07-19',
+                'equipment_id' => $unit->id,
+                'project_id' => $project->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'worked_hours' => 0.5,
+                'daytime_hours' => 0.5,
+                'overtime_hours' => 0,
+                'total_hours' => 0.5,
+                'day_status' => 'less_than_1_hour',
+                'has_overtime' => false,
+                'data_available' => true,
+                'daytime_data_available' => true,
+                'overtime_data_available' => true,
+                'calculation_source' => 'wialon_shift_report',
+                'calculation_status' => 'ok',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                'date_from' => '2026-07-19',
+                'date_to' => '2026-07-19',
+                'project_id' => $project->id,
+                'ownership' => 'nwc',
+                'work_category' => 'less_than_1',
+                'per_page' => 10,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 15)
+            ->assertJsonCount(10, 'data');
+    }
+
     public function test_average_metric_drilldown_returns_formula_for_selected_vehicle_type(): void
     {
         $user = $this->user();
