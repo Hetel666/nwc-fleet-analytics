@@ -31,8 +31,7 @@ class TopWorkingUnitsService
      */
     public function rows(array $filters, string $ranking, int $limit = 20): array
     {
-        return $this->journalRows($filters, $ranking)
-            ->take($limit)
+        return $this->journalRows($filters, $ranking, $limit)
             ->values()
             ->all();
     }
@@ -153,29 +152,24 @@ class TopWorkingUnitsService
      * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
      */
-    private function journalRows(array $filters, string $ranking): Collection
+    private function journalRows(array $filters, string $ranking, ?int $limit = null): Collection
     {
         $filters = $this->normalizeFilters($filters);
         $showDate = $filters['from'] !== $filters['to'];
+        $query = $this->baseQuery($filters);
+        $this->applyRankingOrder($query, $ranking);
 
-        return $this->baseQuery($filters)
+        if ($limit !== null) {
+            $query->limit(max(0, $limit));
+        }
+
+        return $query
             ->get()
             ->map(fn ($row): array => $this->mapRow($row))
             ->map(function (array $row) use ($showDate): array {
                 $row['show_date'] = $showDate;
 
                 return $row;
-            })
-            ->sort(function (array $first, array $second) use ($ranking): int {
-                $hours = $first['hours'] <=> $second['hours'];
-
-                if ($hours !== 0) {
-                    return $ranking === 'least' ? $hours : -$hours;
-                }
-
-                return strcmp($first['date'], $second['date'])
-                    ?: strnatcasecmp($first['unit_name'], $second['unit_name'])
-                    ?: strcmp((string) $first['wialon_id'], (string) $second['wialon_id']);
             })
             ->values();
     }
@@ -224,6 +218,17 @@ class TopWorkingUnitsService
                 'equipments.wialon_unit_id',
                 'projects.name as project_name',
             ]);
+    }
+
+    private function applyRankingOrder(Builder $query, string $ranking): void
+    {
+        $direction = $ranking === 'least' ? 'asc' : 'desc';
+
+        $query
+            ->orderBy('engine_hours_report_unit_days.engine_hours', $direction)
+            ->orderBy('engine_hours_report_unit_days.stat_date')
+            ->orderByRaw('LOWER(equipments.name) ASC')
+            ->orderBy('equipments.wialon_unit_id');
     }
 
     private function mapRow(object $row): array

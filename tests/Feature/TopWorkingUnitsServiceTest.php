@@ -40,6 +40,31 @@ class TopWorkingUnitsServiceTest extends TestCase
         $this->assertSame(['2026-07-01', '2026-07-02'], array_column($rows, 'date'));
     }
 
+    public function test_it_limits_top_working_rows_in_sql_order(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+
+        for ($index = 1; $index <= 25; $index++) {
+            $unit = $this->equipment(sprintf('Loader %02d', $index), $loader, $project, Equipment::OWNERSHIP_NWC, (string) (1000 + $index));
+            $this->stat($unit, '2026-07-01', (float) $index);
+        }
+
+        $least = app(TopWorkingUnitsService::class)->least([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+        ], 20);
+        $most = app(TopWorkingUnitsService::class)->most([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+        ], 20);
+
+        $this->assertCount(20, $least);
+        $this->assertCount(20, $most);
+        $this->assertSame(range(1.0, 20.0), array_column($least, 'hours'));
+        $this->assertSame(range(25.0, 6.0), array_column($most, 'hours'));
+    }
+
     public function test_it_does_not_sum_days_between_each_other(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
