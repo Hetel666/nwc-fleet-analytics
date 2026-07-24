@@ -1623,6 +1623,266 @@
             text-align: left;
         }
     }
+
+    /* Enterprise visual refresh only: widget order, bindings and handlers stay unchanged. */
+    .dashboard-page {
+        animation: dashboardEnter .18s ease-out;
+    }
+    @keyframes dashboardEnter {
+        from {
+            opacity: 0;
+            transform: scale(.998);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+    #dashboardFilterForm.panel {
+        border-radius: 16px;
+        padding: 18px !important;
+        box-shadow: 0 18px 44px rgba(15, 23, 42, .055);
+    }
+    #dashboardFilterForm .form-label {
+        color: var(--fleet-muted);
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: 0;
+        margin-bottom: .4rem;
+    }
+    #dashboardFilterForm .form-control,
+    #dashboardFilterForm .form-select {
+        min-height: 42px;
+        border-color: var(--fleet-line);
+        background-color: var(--fleet-card);
+        color: var(--fleet-ink);
+        box-shadow: none;
+        transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+    #dashboardFilterForm .form-control:focus,
+    #dashboardFilterForm .form-select:focus {
+        border-color: rgba(37, 99, 235, .5);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+    }
+    .dashboard-period-button {
+        min-height: 34px;
+        border-radius: 10px;
+        font-weight: 700;
+        padding-inline: 14px;
+    }
+    .metric-card {
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        min-height: 120px;
+    }
+    .metric-card::after {
+        content: "";
+        position: absolute;
+        inset: auto 14px 12px 14px;
+        height: 26px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(37, 99, 235, .14), rgba(34, 197, 94, .08), rgba(14, 165, 233, .14));
+        opacity: .32;
+        pointer-events: none;
+    }
+    .metric-card .d-flex {
+        position: relative;
+        z-index: 1;
+    }
+    .metric-icon {
+        width: 58px;
+        height: 58px;
+        border-radius: 16px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .52);
+    }
+    .metric-title {
+        color: var(--fleet-muted);
+        font-size: .74rem;
+        font-weight: 750;
+        letter-spacing: 0;
+    }
+    .metric-value {
+        color: var(--fleet-ink);
+        font-size: 1.7rem;
+        letter-spacing: 0;
+    }
+    .dashboard-card,
+    .dashboard-average-type-card,
+    .foreign-geofence-card,
+    .foreign-geofence-kpi,
+    .foreign-geofence-table-card {
+        border-radius: 16px !important;
+        border-color: var(--fleet-line) !important;
+        background: var(--fleet-card) !important;
+        box-shadow: 0 18px 44px rgba(15, 23, 42, .055) !important;
+    }
+    .dashboard-card:hover,
+    .dashboard-average-type-card:hover,
+    .foreign-geofence-card:hover,
+    .foreign-geofence-kpi:hover,
+    .foreign-geofence-table-card:hover {
+        box-shadow: 0 22px 54px rgba(15, 23, 42, .075) !important;
+    }
+    .dashboard-card-title-text,
+    .foreign-geofence-card-title,
+    .foreign-geofence-table-title {
+        color: var(--fleet-ink);
+        font-weight: 800;
+        letter-spacing: 0;
+    }
+    .dashboard-card-body {
+        min-height: 0;
+    }
+    .dashboard-export-button,
+    .dashboard-visibility-toggle,
+    .dashboard-drag-handle,
+    .foreign-geofence-action {
+        border-radius: 10px !important;
+        transition: color .15s ease, background .15s ease, border-color .15s ease, transform .15s ease;
+    }
+    .dashboard-export-button:hover,
+    .dashboard-visibility-toggle:hover,
+    .dashboard-drag-handle:hover,
+    .foreign-geofence-action:hover {
+        transform: translateY(-1px);
+    }
+    .chart-box--donut,
+    .dashboard-work-status-chart,
+    .foreign-geofence-donut-wrap {
+        filter: drop-shadow(0 14px 26px rgba(15, 23, 42, .06));
+    }
+    .dashboard-scroll-table,
+    .dashboard-drilldown-table-wrapper,
+    .foreign-geofence-table-wrap,
+    .foreign-geofence-stat-wrap {
+        border: 1px solid var(--fleet-line);
+        border-radius: 14px;
+        background: var(--fleet-card);
+    }
+    .dashboard-scroll-table thead th,
+    .dashboard-drilldown-table thead th,
+    .foreign-geofence-detail-table thead th,
+    .foreign-geofence-stat-table thead th,
+    .table thead th {
+        color: var(--fleet-muted);
+        background: var(--fleet-card-soft);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        border-color: var(--fleet-line);
+    }
+    .dashboard-scroll-table tbody td,
+    .dashboard-drilldown-table tbody td,
+    .foreign-geofence-detail-table tbody td,
+    .foreign-geofence-stat-table tbody td,
+    .table tbody td {
+        border-color: var(--fleet-line);
+    }
+    .dashboard-scroll-table tbody tr,
+    .dashboard-drilldown-table tbody tr,
+    .foreign-geofence-detail-table tbody tr,
+    .foreign-geofence-stat-row,
+    .table tbody tr {
+        transition: background .15s ease, box-shadow .15s ease;
+    }
+    .dashboard-scroll-table tbody tr:hover,
+    .dashboard-drilldown-table tbody tr:hover,
+    .foreign-geofence-detail-table tbody tr:hover,
+    .foreign-geofence-stat-row:hover,
+    .table tbody tr:hover,
+    .dashboard-drilldown-trigger:hover {
+        background: var(--fleet-hover) !important;
+    }
+    .dashboard-average-info,
+    .dashboard-average-type-cell,
+    .dashboard-average-kpi,
+    .dashboard-average-day-card,
+    .foreign-geofence-empty,
+    .dashboard-empty {
+        border-color: var(--fleet-line);
+        background: var(--fleet-card-soft);
+        color: var(--fleet-muted);
+    }
+    .dashboard-average-type-row {
+        border-color: var(--fleet-line);
+        background: var(--fleet-card);
+        box-shadow: 0 10px 24px rgba(15, 23, 42, .035);
+    }
+    .dashboard-average-type-row:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 34px rgba(15, 23, 42, .055);
+    }
+    .dashboard-average-type-track,
+    .dashboard-average-bar {
+        background: color-mix(in srgb, var(--fleet-muted) 12%, transparent);
+    }
+    .dashboard-average-type-value,
+    .dashboard-average-value,
+    .foreign-geofence-kpi-value,
+    .foreign-geofence-center strong {
+        color: var(--fleet-ink);
+        letter-spacing: 0;
+    }
+    .foreign-geofence-shell {
+        border-radius: 18px;
+        background:
+            radial-gradient(circle at top left, rgba(37, 99, 235, .075), transparent 28%),
+            var(--fleet-card-soft);
+    }
+    .foreign-geofence-header {
+        padding-inline: 4px;
+    }
+    .foreign-geofence-title {
+        letter-spacing: 0;
+    }
+    .foreign-geofence-legend-row {
+        border-radius: 12px;
+    }
+    .foreign-geofence-progress {
+        background: color-mix(in srgb, var(--fleet-muted) 12%, transparent);
+    }
+    .dashboard-loading-card,
+    .modal-content {
+        border-radius: 16px;
+        border-color: var(--fleet-line);
+        background: var(--fleet-card);
+        box-shadow: 0 28px 80px rgba(15, 23, 42, .18);
+    }
+    .badge,
+    .btn,
+    .form-control,
+    .form-select {
+        letter-spacing: 0;
+    }
+    [data-theme="dark"] #dashboardFilterForm .form-control,
+    [data-theme="dark"] #dashboardFilterForm .form-select,
+    [data-theme="dark"] .dashboard-scroll-table,
+    [data-theme="dark"] .dashboard-drilldown-table-wrapper,
+    [data-theme="dark"] .foreign-geofence-table-wrap,
+    [data-theme="dark"] .foreign-geofence-stat-wrap {
+        background: var(--fleet-card);
+        border-color: var(--fleet-line);
+    }
+    [data-theme="dark"] .metric-card::after {
+        opacity: .18;
+    }
+    [data-theme="dark"] .dashboard-card,
+    [data-theme="dark"] .dashboard-average-type-card,
+    [data-theme="dark"] .foreign-geofence-card,
+    [data-theme="dark"] .foreign-geofence-kpi,
+    [data-theme="dark"] .foreign-geofence-table-card,
+    [data-theme="dark"] .modal-content {
+        box-shadow: 0 18px 46px rgba(0, 0, 0, .22) !important;
+    }
+    [data-theme="dark"] .dashboard-scroll-table thead th,
+    [data-theme="dark"] .dashboard-drilldown-table thead th,
+    [data-theme="dark"] .foreign-geofence-detail-table thead th,
+    [data-theme="dark"] .foreign-geofence-stat-table thead th,
+    [data-theme="dark"] .table thead th {
+        background: var(--fleet-card-soft);
+    }
 </style>
 @endpush
 
