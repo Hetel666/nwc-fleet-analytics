@@ -9,8 +9,10 @@ use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class DashboardDailyAverageService
@@ -201,13 +203,15 @@ class DashboardDailyAverageService
      */
     public function paginateJournal(array $filters, string $metric): LengthAwarePaginator
     {
-        $rows = $this->journalRows($filters, $metric);
-        $page = max(1, (int) ($filters['page'] ?? 1));
-        $perPage = min(100, max(10, (int) ($filters['per_page'] ?? 50)));
+        $rawFilters = $filters;
+        $filters = $this->normalizedFilters($filters);
+        $page = max(1, (int) ($rawFilters['page'] ?? 1));
+        $perPage = min(100, max(10, (int) ($rawFilters['per_page'] ?? 50)));
+        $result = $this->paginatedJournalRows($filters, $metric, $page, $perPage);
 
         return new LengthAwarePaginator(
-            $rows->forPage($page, $perPage)->values(),
-            $rows->count(),
+            $result['rows'],
+            $result['total'],
             $perPage,
             $page,
             ['path' => request()->url(), 'query' => request()->query()]
@@ -448,6 +452,189 @@ class DashboardDailyAverageService
             })
             ->pipe(fn (Collection $rows): Collection => $this->sortJournalRows($rows, $filters, $metric))
             ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array{rows: Collection<int, array<string, mixed>>, total: int}
+     */
+    private function paginatedJournalRows(array $filters, string $metric, int $page, int $perPage): array
+    {
+        $dates = $this->dates($filters['from'], $filters['to']);
+        $equipmentIds = $this->eligibleEquipment($filters, $metric)->pluck('id')->all();
+
+        if ($dates === [] || $equipmentIds === []) {
+            return ['rows' => collect(), 'total' => 0];
+        }
+
+        $query = $this->journalQuery($filters, $metric, $dates, $equipmentIds);
+        $total = (clone $query)->count();
+        $rows = $this->applyJournalQuerySorting($query, $filters, $metric)
+            ->offset(($page - 1) * $perPage)
+            ->limit($perPage)
+            ->get()
+            ->map(fn (object $row): array => $this->databaseJournalRow($row, $metric))
+            ->values();
+
+        return ['rows' => $rows, 'total' => $total];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  array<int, string>  $dates
+     * @param  array<int, int>  $equipmentIds
+     */
+    private function journalQuery(array $filters, string $metric, array $dates, array $equipmentIds): QueryBuilder
+    {
+        [$dateSql, $dateBindings] = $this->dateSeriesTable($dates);
+        $latestStats = EquipmentDailyStat::query()
+            ->selectRaw('MAX(id) as id, equipment_id, stat_date')
+            ->whereDate('stat_date', '>=', $filters['from'])
+            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereIn('equipment_id', $equipmentIds)
+            ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
+            ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('project_id', $projectIds))
+            ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('ownership_type', $ownership))
+            ->groupBy('equipment_id', 'stat_date');
+
+        $query = DB::query()
+            ->fromRaw('('.$dateSql.') as calendar', $dateBindings)
+            ->crossJoin('equipments')
+            ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
+            ->leftJoin('projects', 'projects.id', '=', 'equipments.project_id')
+            ->leftJoinSub($latestStats, 'latest_stats', function ($join): void {
+                $join->on('latest_stats.equipment_id', '=', 'equipments.id')
+                    ->on('latest_stats.stat_date', '=', 'calendar.stat_date');
+            })
+            ->leftJoin('equipment_daily_stats as stats', 'stats.id', '=', 'latest_stats.id')
+            ->whereIn('equipments.id', $equipmentIds)
+            ->select([
+                'calendar.stat_date as date',
+                'equipments.id as equipment_id',
+                'equipments.name',
+                'equipments.registration_number',
+                'equipments.ownership_type',
+                'equipments.project_id',
+                'equipments.wialon_unit_id',
+                'equipment_types.name as type_name',
+                'projects.name as project_name',
+                'stats.id as stat_id',
+                'stats.worked_hours',
+                'stats.distance_km',
+                'stats.calculation_status',
+            ]);
+
+        $this->applyJournalDataStatusFilter($query, $filters, $metric);
+
+        return $query;
+    }
+
+    /**
+     * @param  array<int, string>  $dates
+     * @return array{0: string, 1: array<int, string>}
+     */
+    private function dateSeriesTable(array $dates): array
+    {
+        $sql = collect($dates)
+            ->map(fn (): string => 'select ? as stat_date')
+            ->implode(' union all ');
+
+        return [$sql, array_values($dates)];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyJournalDataStatusFilter(QueryBuilder $query, array $filters, string $metric): void
+    {
+        if ($filters['data_status'] === 'all') {
+            return;
+        }
+
+        $method = $filters['data_status'] === 'available' ? 'whereRaw' : 'whereRaw';
+        $query->{$method}(
+            ($filters['data_status'] === 'available' ? '' : 'not ').'('.$this->metricAvailableSql($metric).')'
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyJournalQuerySorting(QueryBuilder $query, array $filters, string $metric): QueryBuilder
+    {
+        $direction = $filters['direction'] === 'desc' ? 'desc' : 'asc';
+        $sortExpression = match ($filters['sort']) {
+            'name' => 'lower(equipments.name)',
+            'registration_number' => "lower(coalesce(nullif(equipments.registration_number, ''), 'вЂ”'))",
+            'vehicle_type' => 'lower(equipment_types.name)',
+            'project' => "lower(coalesce(projects.name, 'вЂ”'))",
+            'ownership' => 'lower(equipments.ownership_type)',
+            'engine_hours' => $this->metricSortSql('engine_hours'),
+            'mileage' => $this->metricSortSql('mileage'),
+            'data_status' => 'case when '.$this->metricAvailableSql($metric)." then 'available' else 'missing' end",
+            'wialon_id' => 'equipments.wialon_unit_id',
+            default => 'calendar.stat_date',
+        };
+
+        return $query
+            ->orderByRaw($sortExpression.' '.$direction)
+            ->orderBy('calendar.stat_date', $direction)
+            ->orderByRaw('lower(equipments.name) '.$direction);
+    }
+
+    private function metricSortSql(string $metric): string
+    {
+        $column = $metric === 'mileage' ? 'stats.distance_km' : 'stats.worked_hours';
+
+        return 'coalesce(case when '.$this->metricAvailableSql($metric).' then '.$column.' end, -1)';
+    }
+
+    private function metricAvailableSql(string $metric): string
+    {
+        $valid = "(stats.id is not null and (stats.calculation_status is null or stats.calculation_status = 'success'))";
+
+        if ($metric === 'mileage') {
+            return $valid.' and stats.distance_km >= 0';
+        }
+
+        return $valid;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function databaseJournalRow(object $row, string $metric): array
+    {
+        $hasRecord = $row->stat_id !== null
+            && ($row->calculation_status === null || $row->calculation_status === 'success');
+        $metricValue = null;
+
+        if ($hasRecord) {
+            $metricValue = $metric === 'mileage'
+                ? (float) $row->distance_km
+                : (float) $row->worked_hours;
+
+            if ($metric === 'mileage' && $metricValue < 0) {
+                $metricValue = null;
+            }
+        }
+
+        return [
+            'date' => (string) $row->date,
+            'name' => $row->name,
+            'registration_number' => $row->registration_number ?: 'вЂ”',
+            'vehicle_type' => $this->displayTypeName($row->type_name),
+            'vehicle_type_code' => $this->typeCode($row->type_name),
+            'ownership' => $this->ownershipLabel($row->ownership_type),
+            'ownership_type' => $row->ownership_type,
+            'project_id' => $row->project_id,
+            'project' => $row->project_name ?: 'вЂ”',
+            'engine_hours' => $hasRecord ? (float) $row->worked_hours : null,
+            'mileage' => $hasRecord && (float) $row->distance_km >= 0 ? (float) $row->distance_km : null,
+            'data_available' => $metricValue !== null,
+            'data_status' => $metricValue !== null ? 'MЙ™lumat var' : 'MЙ™lumat yoxdur',
+            'wialon_id' => $row->wialon_unit_id,
+        ];
     }
 
     /**

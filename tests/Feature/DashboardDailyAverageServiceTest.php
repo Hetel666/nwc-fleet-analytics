@@ -7,8 +7,9 @@ use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\DashboardDailyAverageService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -182,6 +183,69 @@ class DashboardDailyAverageServiceTest extends TestCase
             '8.00 saat',
             0,
         ], $summaryRow);
+    }
+
+    public function test_average_journal_uses_database_pagination_and_keeps_missing_rows(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+
+        collect(range(1, 15))->each(function (int $index) use ($excavator, $project): void {
+            $unit = $this->equipment(sprintf('Excavator %02d', $index), $excavator, $project);
+
+            if ($index <= 5) {
+                $this->stat($unit, '2026-07-01', $index, 0);
+            }
+        });
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $page = app(DashboardDailyAverageService::class)->paginateJournal([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'vehicle_types' => ['excavator'],
+            'page' => 2,
+            'per_page' => 10,
+            'sort' => 'name',
+        ], 'engine_hours');
+
+        $this->assertSame(15, $page->total());
+        $this->assertSame(5, $page->count());
+        $this->assertSame('Excavator 11', $page->items()[0]['name']);
+        $this->assertFalse($page->items()[0]['data_available']);
+        $this->assertTrue(collect($queries)->contains(fn (string $sql): bool => str_contains(strtolower($sql), 'limit')));
+    }
+
+    public function test_average_journal_missing_filter_is_applied_before_pagination(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+
+        collect(range(1, 12))->each(function (int $index) use ($loader, $project): void {
+            $unit = $this->equipment(sprintf('Loader %02d', $index), $loader, $project);
+
+            if ($index <= 3) {
+                $this->stat($unit, '2026-07-01', 4, 0);
+            }
+        });
+
+        $page = app(DashboardDailyAverageService::class)->paginateJournal([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'vehicle_types' => ['loader'],
+            'data_status' => 'missing',
+            'page' => 1,
+            'per_page' => 10,
+        ], 'engine_hours');
+
+        $this->assertSame(9, $page->total());
+        $this->assertSame(9, $page->count());
+        $this->assertTrue(collect($page->items())->every(fn (array $row): bool => $row['data_available'] === false));
     }
 
     private function equipment(string $name, EquipmentType $type, Project $project, string $ownership = Equipment::OWNERSHIP_NWC): Equipment
