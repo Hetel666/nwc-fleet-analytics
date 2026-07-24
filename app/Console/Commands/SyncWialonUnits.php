@@ -7,6 +7,7 @@ use App\Models\EquipmentType;
 use App\Models\ProjectWialonGroup;
 use App\Services\WialonService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -51,6 +52,10 @@ class SyncWialonUnits extends Command
                         'lat' => $unit['pos']['y'] ?? null,
                         'lng' => $unit['pos']['x'] ?? null,
                         'speed' => $unit['pos']['s'] ?? null,
+                        'time' => isset($unit['pos']['t'])
+                            ? Carbon::createFromTimestamp((int) $unit['pos']['t'], config('app.timezone'))->toDateTimeString()
+                            : null,
+                        'received_at' => now(config('app.timezone'))->toDateTimeString(),
                     ] : null,
                     'last_synced_at' => now(),
                 ]);
