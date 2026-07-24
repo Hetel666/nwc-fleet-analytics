@@ -16,6 +16,8 @@ return [
         'engine_hours_report_timeout' => (int) env('WIALON_ENGINE_HOURS_REPORT_TIMEOUT', 15),
         'daily_engine_hours_report_timeout' => (int) env('WIALON_DAILY_ENGINE_HOURS_REPORT_TIMEOUT', 30),
         'report_stats_sync_timeout' => (int) env('WIALON_REPORT_STATS_SYNC_TIMEOUT', 90),
+        'nwc_group_id' => env('WIALON_NWC_GROUP_ID'),
+        'icare_group_id' => env('WIALON_ICARE_GROUP_ID'),
         'actual_work_report_resource_id' => (int) env('WIALON_ACTUAL_WORK_REPORT_RESOURCE_ID', env('WIALON_ENGINE_HOURS_REPORT_RESOURCE_ID', 601701680)),
         'actual_work_report_template_id' => (int) env('WIALON_ACTUAL_WORK_REPORT_TEMPLATE_ID', 0),
         'actual_work_report_template_name' => env('WIALON_ACTUAL_WORK_REPORT_TEMPLATE_NAME', 'Qrup report DNN,day 24 saat (api)'),

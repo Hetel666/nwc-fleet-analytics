@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -48,6 +49,24 @@ class Equipment extends Model
             'last_synced_at' => 'datetime',
             'last_position_json' => 'array',
         ];
+    }
+
+    public function scopeVisibleInDashboard(Builder $query): Builder
+    {
+        $column = $query->getModel()->qualifyColumn('excluded_from_dashboard');
+
+        return $query->where(function (Builder $query) use ($column): void {
+            $query->where($column, false)
+                ->orWhereNull($column);
+        });
+    }
+
+    public function scopeClassifiedForDashboard(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query->whereNotNull($query->getModel()->qualifyColumn('project_wialon_group_id'))
+                ->orWhereNotNull($query->getModel()->qualifyColumn('matched_wialon_group_id'));
+        });
     }
 
     public function type(): BelongsTo
