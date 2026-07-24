@@ -12,18 +12,22 @@ The read-only profiler command is available:
 php artisan dashboard:profile [--project] [--date-from] [--date-to] [--widget] [--repetitions] [--json]
 ```
 
-In the current local SQLite environment, direct profiler execution is blocked before Dashboard payload generation:
+The default local environment uses SQLite with `CACHE_STORE=database`, but the local default SQLite database does not
+contain the `cache` / `cache_locks` tables. The testing database migrations do create those tables.
+
+For local read-only profiling, `CACHE_STORE=array` was used as a command-scoped override. This does not change
+production configuration and avoids mutating the default local SQLite database.
 
 ```text
-SQLSTATE[HY000]: General error: 1 no such table: cache
-Query: select * from "cache" where "key" in (laravel_cache_dashboard:data-version)
+CACHE_STORE=array php artisan optimize:clear
+CACHE_STORE=array php artisan dashboard:profile --help
 ```
 
 No production database or production services were used.
 
 ## Representative validation used for this phase
 
-Because local profiling cannot run without the cache schema, the Average drilldown optimization baseline is characterized through deterministic tests:
+The Average drilldown optimization baseline is characterized through deterministic tests:
 
 - detail rows include generated missing unit-day rows;
 - project, ownership, vehicle type, date and data-status filters are preserved;
