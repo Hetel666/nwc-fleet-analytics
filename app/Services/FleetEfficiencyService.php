@@ -42,23 +42,17 @@ class FleetEfficiencyService
             Equipment::OWNERSHIP_ICARE => [],
         ];
 
-        foreach ($this->dailyRows($filters) as $row) {
+        foreach ($this->summaryAggregates($filters, byProject: true) as $row) {
             $ownership = $row['ownership_type'];
             $projectId = (int) $row['project_id'];
+            $summary = $this->emptyProjectRow($projectId, (string) $row['project']);
 
-            $rows[$ownership][$projectId] ??= $this->emptyProjectRow($projectId, (string) $row['project']);
-
-            $rows[$ownership][$projectId][$row['daytime_status']]++;
-
-            $rows[$ownership][$projectId]['missing_data'] += $row['data_available'] ? 0 : 1;
-            $rows[$ownership][$projectId]['overtime_denominator'] += $row['overtime_calculated'] ? 1 : 0;
-            $rows[$ownership][$projectId]['overtime_unknown'] += $row['overtime_calculated'] ? 0 : 1;
-
-            if ($row['has_overtime'] === true) {
-                $rows[$ownership][$projectId][self::STATUS_OVERTIME]++;
+            foreach ($this->aggregateKeys() as $key) {
+                $summary[$key] = (int) $row[$key];
             }
 
-            $rows[$ownership][$projectId]['total'] = $this->daytimeTotal($rows[$ownership][$projectId]);
+            $summary['total'] = $this->daytimeTotal($summary);
+            $rows[$ownership][$projectId] = $summary;
         }
 
         foreach ($rows as &$ownershipRows) {
@@ -82,16 +76,11 @@ class FleetEfficiencyService
     public function summaryForOwnership(array $filters, string $ownershipType): array
     {
         $summary = $this->emptySummary();
+        $row = $this->summaryAggregates([...$filters, 'ownership_type' => $ownershipType], byProject: false)->first();
 
-        foreach ($this->dailyRows([...$filters, 'ownership_type' => $ownershipType]) as $row) {
-            $summary[$row['daytime_status']]++;
-
-            $summary['missing_data'] += $row['data_available'] ? 0 : 1;
-            $summary['overtime_denominator'] += $row['overtime_calculated'] ? 1 : 0;
-            $summary['overtime_unknown'] += $row['overtime_calculated'] ? 0 : 1;
-
-            if ($row['has_overtime'] === true) {
-                $summary[self::STATUS_OVERTIME]++;
+        if ($row !== null) {
+            foreach ($this->aggregateKeys() as $key) {
+                $summary[$key] = (int) $row[$key];
             }
         }
 
@@ -567,6 +556,72 @@ class FleetEfficiencyService
     private function dataAvailableSql(): string
     {
         return '(stats.id IS NOT NULL AND stats.daytime_hours IS NOT NULL AND stats.overtime_hours IS NOT NULL AND (stats.data_available IS NULL OR stats.data_available != 0))';
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function summaryAggregates(array $filters, bool $byProject): Collection
+    {
+        $filters = $this->normalizeFilters($filters);
+        $query = $this->dailyRowsQuery($filters);
+        $availableSql = $this->dataAvailableSql();
+        $selects = [
+            'equipment.ownership_type',
+            DB::raw('SUM(CASE WHEN NOT '.$availableSql.' OR stats.daytime_hours < 1 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_1),
+            DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours >= 1 AND stats.daytime_hours < 7 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_7),
+            DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours >= 7 AND stats.daytime_hours <= 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
+            DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
+            DB::raw('SUM(CASE WHEN NOT '.$availableSql.' THEN 1 ELSE 0 END) as missing_data'),
+            DB::raw('SUM(CASE WHEN stats.overtime_hours IS NOT NULL THEN 1 ELSE 0 END) as overtime_denominator'),
+            DB::raw('SUM(CASE WHEN stats.overtime_hours IS NULL THEN 1 ELSE 0 END) as overtime_unknown'),
+            DB::raw('SUM(CASE WHEN stats.overtime_hours > 0 THEN 1 ELSE 0 END) as '.self::STATUS_OVERTIME),
+        ];
+
+        if ($byProject) {
+            $selects[] = 'equipment.project_id';
+            $selects[] = DB::raw("COALESCE(equipment.project_name, '-') as project");
+            $query->groupBy('equipment.ownership_type', 'equipment.project_id', 'equipment.project_name');
+        } else {
+            $query->groupBy('equipment.ownership_type');
+        }
+
+        return $query
+            ->select($selects)
+            ->get()
+            ->map(function (object $row): array {
+                return [
+                    'ownership_type' => $row->ownership_type,
+                    'project_id' => $row->project_id ?? null,
+                    'project' => $row->project ?? '-',
+                    self::DAY_STATUS_LESS_THAN_1 => (int) $row->{self::DAY_STATUS_LESS_THAN_1},
+                    self::DAY_STATUS_LESS_THAN_7 => (int) $row->{self::DAY_STATUS_LESS_THAN_7},
+                    self::DAY_STATUS_BETWEEN_7_AND_10 => (int) $row->{self::DAY_STATUS_BETWEEN_7_AND_10},
+                    self::DAY_STATUS_OVER_10 => (int) $row->{self::DAY_STATUS_OVER_10},
+                    self::STATUS_OVERTIME => (int) $row->{self::STATUS_OVERTIME},
+                    'missing_data' => (int) $row->missing_data,
+                    'overtime_denominator' => (int) $row->overtime_denominator,
+                    'overtime_unknown' => (int) $row->overtime_unknown,
+                ];
+            });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function aggregateKeys(): array
+    {
+        return [
+            self::DAY_STATUS_LESS_THAN_1,
+            self::DAY_STATUS_LESS_THAN_7,
+            self::DAY_STATUS_BETWEEN_7_AND_10,
+            self::DAY_STATUS_OVER_10,
+            self::STATUS_OVERTIME,
+            'missing_data',
+            'overtime_denominator',
+            'overtime_unknown',
+        ];
     }
 
     private function totalHoursSql(): string
