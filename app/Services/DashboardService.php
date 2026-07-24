@@ -20,6 +20,7 @@ class DashboardService
 {
     public function __construct(
         private GeofenceViolationService $geofenceViolations,
+        private DashboardDataVersion $dataVersion,
     ) {}
 
     public function getOverview(array $filters): array
@@ -570,7 +571,7 @@ class DashboardService
     {
         return 'dashboard:aggregate:'.md5(json_encode([
             'version' => 12,
-            'data_version' => (int) Cache::get('dashboard:data-version', 1),
+            'data_version' => $this->dataVersion->current(),
             'filters' => $filters,
         ]));
     }

@@ -780,6 +780,10 @@ const projectComparisonIcare = @json($projectComparisonTop->pluck($icare)->value
 const mapData = @json($data['mapData']);
 const dashboardLayoutScope = @json($selectedProject ? 'project-'.$selectedProject->id : 'dashboard');
 const dashboardLayoutKey = `fleet.analytics.dashboard.order.v4.${dashboardLayoutScope}`;
+const dashboardLayoutInitial = @json($dashboardLayout ?? []);
+const dashboardLayoutDefault = @json($dashboardDefaultLayout ?? []);
+const dashboardLayoutSaveUrl = @json(route('dashboard.layout.save'));
+const dashboardCsrfToken = @json(csrf_token());
 const dashboardGrid = document.getElementById('dashboardGrid');
 const dashboardResetButton = document.getElementById('resetDashboardLayout');
 const dashboardFilterForm = document.getElementById('dashboardFilterForm');
@@ -1180,7 +1184,7 @@ const refreshDashboardVisuals = () => {
     }
 };
 
-const readDashboardOrder = () => {
+const readLocalDashboardOrder = () => {
     try {
         const order = JSON.parse(localStorage.getItem(dashboardLayoutKey) || '[]');
         return Array.isArray(order) ? order : [];
@@ -1189,17 +1193,39 @@ const readDashboardOrder = () => {
     }
 };
 
-const saveDashboardOrder = () => {
+const currentDashboardLayoutPayload = () => dashboardWidgets().map((widget, index) => ({
+    key: widget.dataset.dashboardWidget,
+    order: (index + 1) * 10,
+    visible: true
+})).filter(item => item.key);
+
+const persistDashboardOrder = () => {
+    const widgets = currentDashboardLayoutPayload();
+
     try {
-        const order = dashboardWidgets().map(widget => widget.dataset.dashboardWidget).filter(Boolean);
-        localStorage.setItem(dashboardLayoutKey, JSON.stringify(order));
+        localStorage.setItem(dashboardLayoutKey, JSON.stringify(widgets.map(widget => widget.key)));
     } catch (error) {
         // Ignore private-mode storage errors; dragging still works for the current page.
     }
+
+    fetch(dashboardLayoutSaveUrl, {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': dashboardCsrfToken,
+        },
+        body: JSON.stringify({ widgets }),
+    }).catch(() => {
+        // Local order has already been saved; server persistence is retried on the next drag.
+    });
 };
 
 const applySavedDashboardOrder = () => {
-    const savedOrder = readDashboardOrder();
+    const serverOrder = Array.isArray(dashboardLayoutInitial)
+        ? dashboardLayoutInitial.map(item => item.key).filter(Boolean)
+        : [];
+    const savedOrder = serverOrder.length > 0 ? serverOrder : readLocalDashboardOrder();
     if (!dashboardGrid || savedOrder.length === 0) {
         return;
     }
@@ -1297,7 +1323,7 @@ if (dashboardGrid) {
             draggedWidget.classList.remove('dragging');
             draggedWidget = null;
             disableDashboardDragging();
-            saveDashboardOrder();
+            persistDashboardOrder();
             refreshDashboardVisuals();
         }
         setDragOverWidget(null);
@@ -1310,7 +1336,15 @@ dashboardResetButton?.addEventListener('click', () => {
     } catch (error) {
         // Nothing to clear when local storage is unavailable.
     }
-    window.location.reload();
+    fetch(dashboardLayoutSaveUrl, {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': dashboardCsrfToken,
+        },
+        body: JSON.stringify({ widgets: dashboardLayoutDefault }),
+    }).finally(() => window.location.reload());
 });
 
 createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], { showLegend: false });
