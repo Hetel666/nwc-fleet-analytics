@@ -42,6 +42,22 @@ return [
         'min_exit_minutes' => (int) env('GEOFENCE_MIN_EXIT_MINUTES', 3),
     ],
 
+    'foreign_geofence' => [
+        'min_minutes' => (int) env('FOREIGN_GEOFENCE_MIN_MINUTES', 180),
+        'stale_after_minutes' => (int) env('FOREIGN_GEOFENCE_STALE_AFTER_MINUTES', 30),
+        'show_all' => (bool) env('FOREIGN_GEOFENCE_SHOW_ALL', false),
+        'include_stale' => (bool) env('FOREIGN_GEOFENCE_INCLUDE_STALE', false),
+        'allowed_vehicle_types' => [
+            'Dump Truck',
+            'Excavator',
+            'Road Grader',
+            'Loader',
+            'Backhoe Loader',
+            'Bakhoe Loader',
+            'Road Roller',
+        ],
+    ],
+
     'demo' => [
         'seed' => (bool) env('SEED_DEMO_DATA', false),
     ],
