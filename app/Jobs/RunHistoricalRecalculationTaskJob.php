@@ -4,8 +4,8 @@ namespace App\Jobs;
 
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
-use App\Services\DashboardService;
 use App\Services\HistoricalRecalculationService;
+use App\Services\WialonReportStatsSyncService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -26,7 +26,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         $this->tries = 1;
     }
 
-    public function handle(DashboardService $dashboard, HistoricalRecalculationService $service): void
+    public function handle(WialonReportStatsSyncService $sync, HistoricalRecalculationService $service): void
     {
         $task = HistoricalRecalculationTask::query()->with('run')->findOrFail($this->taskId);
         $run = $task->run;
@@ -37,6 +37,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
                 'completed_at' => now(config('app.timezone')),
             ])->save();
             $service->refreshProgress($run);
+
             return;
         }
 
@@ -46,6 +47,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
 
         if ($task->status !== HistoricalRecalculationTask::STATUS_PENDING) {
             $service->dispatchNextPendingFetchTask($run);
+
             return;
         }
 
@@ -56,6 +58,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
 
         if (! $runLock->get()) {
             $this->release(max(5, (int) config('historical_recalculation.report_task_delay_seconds', 5)));
+
             return;
         }
 
@@ -64,6 +67,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         if (! $lock->get()) {
             optional($runLock)->release();
             $this->release(30);
+
             return;
         }
 
@@ -87,7 +91,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
                 'last_heartbeat_at' => now(config('app.timezone')),
             ])->save();
 
-            $result = $dashboard->syncDailyEngineHoursReport([
+            $result = $sync->syncDailyEngineHoursReport([
                 'date_from' => $task->stat_date->toDateString(),
                 'date_to' => $task->stat_date->toDateString(),
                 'project_id' => $task->project_id,
