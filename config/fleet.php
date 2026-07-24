@@ -47,6 +47,11 @@ return [
         'stale_after_minutes' => (int) env('FOREIGN_GEOFENCE_STALE_AFTER_MINUTES', 30),
         'show_all' => (bool) env('FOREIGN_GEOFENCE_SHOW_ALL', false),
         'include_stale' => (bool) env('FOREIGN_GEOFENCE_INCLUDE_STALE', false),
+        'monitoring_enabled' => (bool) env('FOREIGN_GEOFENCE_MONITORING_ENABLED', false),
+        'monitoring_interval_minutes' => (int) env('FOREIGN_GEOFENCE_MONITORING_INTERVAL_MINUTES', 5),
+        'monitoring_batch_size' => (int) env('FOREIGN_GEOFENCE_MONITORING_BATCH_SIZE', 100),
+        'monitoring_lock_seconds' => (int) env('FOREIGN_GEOFENCE_MONITORING_LOCK_SECONDS', 240),
+        'monitoring_future_skew_seconds' => (int) env('FOREIGN_GEOFENCE_MONITORING_FUTURE_SKEW_SECONDS', 300),
         'allowed_vehicle_types' => [
             'Dump Truck',
             'Excavator',
