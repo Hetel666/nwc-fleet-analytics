@@ -58,8 +58,8 @@ class DashboardGeneratorExclusionTest extends TestCase
         $this->assertSame(130.0, $overview['total_distance']);
         $this->assertSame(46.7, $overview['utilization']);
         $this->assertSame([
-            ['label' => Equipment::OWNERSHIP_ICARE, 'count' => 1],
             ['label' => Equipment::OWNERSHIP_NWC, 'count' => 2],
+            ['label' => Equipment::OWNERSHIP_ICARE, 'count' => 1],
         ], $overview['ownership_share']);
 
         $types = $dashboard->getEquipmentTypeDistributionByOwnership($filters);
@@ -73,9 +73,9 @@ class DashboardGeneratorExclusionTest extends TestCase
 
         $categories = $dashboard->getActualWorkHourCategories($filters);
         $this->assertSame(0, $categories[Equipment::OWNERSHIP_NWC]['overtime']);
-        $this->assertSame(1, $categories[Equipment::OWNERSHIP_NWC]['from_7_to_10']);
-        $this->assertSame(1, $categories[Equipment::OWNERSHIP_NWC]['from_1_to_7']);
-        $this->assertSame(1, $categories[Equipment::OWNERSHIP_ICARE]['from_1_to_7']);
+        $this->assertSame(1, $categories[Equipment::OWNERSHIP_NWC]['between_7_and_10_hours']);
+        $this->assertSame(0, $categories[Equipment::OWNERSHIP_NWC]['less_than_7_hours']);
+        $this->assertSame(1, $categories[Equipment::OWNERSHIP_ICARE]['less_than_7_hours']);
 
         $averages = $dashboard->getAverageMetricsByOwnership($filters);
         $this->assertSame(1, $averages[Equipment::OWNERSHIP_NWC]['engine_hours_equipment_count']);
@@ -110,6 +110,7 @@ class DashboardGeneratorExclusionTest extends TestCase
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
             'ownership_type' => $ownershipType,
+            'matched_wialon_group_id' => '601701903',
             'excluded_from_dashboard' => $excluded,
             'dashboard_exclusion_reason' => $excluded ? Equipment::DASHBOARD_EXCLUSION_GENERATOR_GROUP : null,
         ]);
@@ -123,6 +124,19 @@ class DashboardGeneratorExclusionTest extends TestCase
             'project_id' => $project->id,
             'ownership_type' => $equipment->ownership_type,
             'worked_hours' => $hours,
+            'daytime_hours' => $hours,
+            'overtime_hours' => 0,
+            'total_hours' => $hours,
+            'day_status' => match (true) {
+                $hours < 1 => 'less_than_1_hour',
+                $hours < 7 => 'less_than_7_hours',
+                $hours <= 10 => 'between_7_and_10_hours',
+                default => 'over_10_hours',
+            },
+            'has_overtime' => false,
+            'data_available' => true,
+            'daytime_data_available' => true,
+            'overtime_data_available' => true,
             'distance_km' => $distance,
             'utilization_percent' => $utilization,
         ]);

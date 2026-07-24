@@ -16,7 +16,7 @@ class WialonReportStatsSyncTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_daily_group_report_is_stored_and_reused_by_dashboard(): void
+    public function test_daily_group_report_is_stored_without_feeding_shift_efficiency_dashboard(): void
     {
         Cache::flush();
         config([
@@ -109,7 +109,6 @@ class WialonReportStatsSyncTest extends TestCase
         ]);
 
         $this->assertSame(1, $wialon->calls);
-        $this->assertSame(1, $result[Equipment::OWNERSHIP_NWC][0]['from_7_to_10']);
-        $this->assertSame(1, $result[Equipment::OWNERSHIP_NWC][0]['total']);
+        $this->assertSame([], $result[Equipment::OWNERSHIP_NWC]);
     }
 }

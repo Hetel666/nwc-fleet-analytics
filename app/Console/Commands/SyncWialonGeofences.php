@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Models\Geofence;
 use App\Models\Project;
-use App\Models\ProjectWialonGeofenceGroup;
 use App\Services\GeofenceNameNormalizer;
 use App\Services\WialonService;
 use Illuminate\Console\Command;
@@ -16,22 +15,64 @@ class SyncWialonGeofences extends Command
 {
     protected $signature = 'fleet:sync-geofences';
 
-    protected $description = 'Import project geofences from mapped Wialon geofence groups.';
+    protected $description = 'Import project geofences from configured Wialon geofence IDs.';
 
     public function handle(WialonService $wialon, GeofenceNameNormalizer $normalizer): int
     {
-        $count = 0;
         $projects = Project::query()->get()->keyBy('name');
-        $overrides = config('wialon_projects.geofence_zone_project_overrides', []);
+        $configuredGeofences = config('wialon_projects.project_geofence_ids', []);
 
-        foreach (ProjectWialonGeofenceGroup::query()->with('project')->get() as $mapping) {
+        if (! is_array($configuredGeofences) || $configuredGeofences === []) {
+            $this->warn('No Wialon geofence IDs configured.');
+            return self::SUCCESS;
+        }
+
+        $count = $this->syncConfiguredGeofences($wialon, $normalizer, $projects, $configuredGeofences);
+
+        $this->info("Synced {$count} Wialon geofences.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  Collection<string, Project>  $projects
+     * @param  array<string, array<int, string>>  $configuredGeofences
+     */
+    private function syncConfiguredGeofences(
+        WialonService $wialon,
+        GeofenceNameNormalizer $normalizer,
+        Collection $projects,
+        array $configuredGeofences
+    ): int {
+        $count = 0;
+        $projectByGeofenceId = [];
+        $zoneIdsByResourceId = [];
+
+        foreach ($configuredGeofences as $projectName => $geofenceIds) {
+            foreach ((array) $geofenceIds as $wialonGeofenceId) {
+                [$resourceId, $zoneId] = $this->splitWialonGeofenceId((string) $wialonGeofenceId);
+
+                if ($resourceId === null || $zoneId === null) {
+                    continue;
+                }
+
+                $fullId = $resourceId.':'.$zoneId;
+                $projectByGeofenceId[$fullId] = (string) $projectName;
+                $zoneIdsByResourceId[$resourceId][] = $zoneId;
+            }
+        }
+
+        Geofence::query()
+            ->whereNotNull('wialon_geofence_id')
+            ->whereNotIn('wialon_geofence_id', array_keys($projectByGeofenceId))
+            ->update(['active' => false]);
+
+        foreach ($zoneIdsByResourceId as $resourceId => $zoneIds) {
             try {
-                $zones = $wialon->getGeofenceGroupZones($mapping->wialon_resource_id, $mapping->wialon_geofence_group_id);
+                $zones = $wialon->getGeofenceZonesByIds($resourceId, array_values(array_unique($zoneIds)));
             } catch (Throwable $exception) {
-                Log::warning('Wialon geofence group sync failed', [
-                    'project_id' => $mapping->project_id,
-                    'resource_id' => $mapping->wialon_resource_id,
-                    'group_id' => $mapping->wialon_geofence_group_id,
+                Log::warning('Configured Wialon geofence sync failed', [
+                    'resource_id' => $resourceId,
                     'message' => $exception->getMessage(),
                 ]);
                 $this->error($exception->getMessage());
@@ -41,21 +82,23 @@ class SyncWialonGeofences extends Command
 
             foreach ($zones as $zone) {
                 $zoneId = (string) ($zone['id'] ?? '');
+
                 if ($zoneId === '') {
                     continue;
                 }
 
-                $wialonGeofenceId = $mapping->wialon_resource_id.':'.$zoneId;
-                $projectId = $this->projectIdForZone($mapping, $wialonGeofenceId, $projects, $overrides);
+                $wialonGeofenceId = $resourceId.':'.$zoneId;
+                $projectName = $projectByGeofenceId[$wialonGeofenceId] ?? null;
+                $project = is_string($projectName) ? $projects->get($projectName) : null;
 
-                if ($projectId === null) {
+                if (! $project instanceof Project) {
                     continue;
                 }
 
                 Geofence::updateOrCreate(
                     ['wialon_geofence_id' => $wialonGeofenceId],
                     [
-                        'project_id' => $projectId,
+                        'project_id' => $project->id,
                         'name' => $zone['n'] ?? 'Geofence '.$zoneId,
                         'normalized_name' => $normalizer->normalize($zone['n'] ?? 'Geofence '.$zoneId),
                         'geometry_json' => $this->geometry($zone),
@@ -65,30 +108,23 @@ class SyncWialonGeofences extends Command
 
                 $count++;
             }
-
-            $mapping->update(['zones_count' => count($zones)]);
         }
 
-        $this->info("Synced {$count} Wialon geofences.");
-
-        return self::SUCCESS;
+        return $count;
     }
 
-    private function projectIdForZone(
-        ProjectWialonGeofenceGroup $mapping,
-        string $wialonGeofenceId,
-        Collection $projects,
-        array $overrides
-    ): ?int {
-        $overrideProjectName = $overrides[$wialonGeofenceId] ?? null;
+    /**
+     * @return array{0: string|null, 1: string|null}
+     */
+    private function splitWialonGeofenceId(string $wialonGeofenceId): array
+    {
+        $parts = explode(':', trim($wialonGeofenceId), 2);
 
-        if (is_string($overrideProjectName) && $overrideProjectName !== '') {
-            $project = $projects->get($overrideProjectName);
-
-            return $project instanceof Project ? (int) $project->id : null;
+        if (count($parts) !== 2 || $parts[0] === '' || $parts[1] === '') {
+            return [null, null];
         }
 
-        return $mapping->project_id ? (int) $mapping->project_id : null;
+        return [$parts[0], $parts[1]];
     }
 
     private function geometry(array $zone): ?array

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -22,11 +24,18 @@ class DailyUnitAggregate extends Model
     protected function casts(): array
     {
         return [
-            'date' => 'date',
             'engine_hours' => 'decimal:2',
             'mileage' => 'decimal:2',
             'geofence_outside_hours' => 'decimal:2',
         ];
+    }
+
+    protected function date(): Attribute
+    {
+        return Attribute::make(
+            get: fn (mixed $value): ?Carbon => $value === null ? null : Carbon::parse($value),
+            set: fn (mixed $value): ?string => $value === null ? null : Carbon::parse($value)->toDateString(),
+        );
     }
 
     public function equipment(): BelongsTo

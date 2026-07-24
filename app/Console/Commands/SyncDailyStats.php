@@ -36,6 +36,7 @@ class SyncDailyStats extends Command
                             'project_id' => $item->project_id,
                             'ownership_type' => $item->ownership_type,
                             'worked_hours' => $stats['worked_hours'],
+                            'overtime_hours' => $stats['overtime_hours'] ?? null,
                             'distance_km' => $stats['distance_km'],
                             'utilization_percent' => round($utilization, 2),
                             'first_message_at' => $stats['first_message_at'],

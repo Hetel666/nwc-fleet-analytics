@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Equipment;
 use App\Models\Project;
-use App\Models\ProjectWialonGeofenceGroup;
 use App\Models\ProjectWialonGroup;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -30,7 +29,6 @@ class ProjectController extends Controller
                     }),
                     'geofences',
                     'wialonGroups',
-                    'wialonGeofenceGroups',
                 ])
                 ->orderBy('name')
                 ->paginate(20),
@@ -42,7 +40,6 @@ class ProjectController extends Controller
         return view('projects.form', [
             'project' => new Project(),
             'wialonGroups' => [],
-            'wialonGeofenceGroup' => [],
         ]);
     }
 
@@ -50,28 +47,25 @@ class ProjectController extends Controller
     {
         $project = Project::create($this->validated($request));
         $this->syncWialonGroups($project, $this->validatedWialonGroups($request));
-        $this->syncWialonGeofenceGroup($project, $this->validatedWialonGeofenceGroup($request));
 
         return redirect()->route('projects.index')->with('status', __('app.saved'));
     }
 
     public function edit(Project $project): View
     {
-        $project->load(['wialonGroups', 'wialonGeofenceGroups']);
+        $project->load(['wialonGroups']);
 
         return view('projects.form', [
             'project' => $project,
             'wialonGroups' => $this->wialonGroupValues($project),
-            'wialonGeofenceGroup' => $this->wialonGeofenceGroupValues($project),
         ]);
     }
 
     public function update(Request $request, Project $project): RedirectResponse
     {
-        $project->load(['wialonGroups', 'wialonGeofenceGroups']);
+        $project->load(['wialonGroups']);
         $project->update($this->validated($request));
         $this->syncWialonGroups($project, $this->validatedWialonGroups($request, $project));
-        $this->syncWialonGeofenceGroup($project, $this->validatedWialonGeofenceGroup($request));
 
         return redirect()->route('projects.index')->with('status', __('app.saved'));
     }
@@ -102,15 +96,6 @@ class ProjectController extends Controller
         return $request->validate([
             'wialon_group_nwc' => ['nullable', 'string', 'max:100', $this->uniqueGroupRule($project, Equipment::OWNERSHIP_NWC)],
             'wialon_group_icare' => ['nullable', 'string', 'max:100', $this->uniqueGroupRule($project, Equipment::OWNERSHIP_ICARE)],
-        ]);
-    }
-
-    private function validatedWialonGeofenceGroup(Request $request): array
-    {
-        return $request->validate([
-            'wialon_geofence_resource_id' => ['nullable', 'required_with:wialon_geofence_group_id', 'string', 'max:100'],
-            'wialon_geofence_group_id' => ['nullable', 'required_with:wialon_geofence_resource_id', 'string', 'max:100'],
-            'wialon_geofence_group_name' => ['nullable', 'string', 'max:255'],
         ]);
     }
 
@@ -150,43 +135,6 @@ class ProjectController extends Controller
         return $project->wialonGroups
             ->mapWithKeys(fn (ProjectWialonGroup $group): array => [$group->ownership_type => $group->wialon_group_id])
             ->all();
-    }
-
-    private function syncWialonGeofenceGroup(Project $project, array $group): void
-    {
-        $resourceId = trim((string) ($group['wialon_geofence_resource_id'] ?? ''));
-        $groupId = trim((string) ($group['wialon_geofence_group_id'] ?? ''));
-
-        if ($resourceId === '' && $groupId === '') {
-            ProjectWialonGeofenceGroup::query()->where('project_id', $project->id)->delete();
-
-            return;
-        }
-
-        ProjectWialonGeofenceGroup::updateOrCreate(
-            ['project_id' => $project->id],
-            [
-                'wialon_resource_id' => $resourceId,
-                'wialon_resource_name' => null,
-                'wialon_geofence_group_id' => $groupId,
-                'name' => ($group['wialon_geofence_group_name'] ?? '') ?: $project->name,
-            ]
-        );
-    }
-
-    private function wialonGeofenceGroupValues(Project $project): array
-    {
-        $group = $project->wialonGeofenceGroups->first();
-
-        if (! $group instanceof ProjectWialonGeofenceGroup) {
-            return [];
-        }
-
-        return [
-            'wialon_geofence_resource_id' => $group->wialon_resource_id,
-            'wialon_geofence_group_id' => $group->wialon_geofence_group_id,
-            'wialon_geofence_group_name' => $group->name,
-        ];
     }
 
     private function ownershipLabel(string $ownership): string

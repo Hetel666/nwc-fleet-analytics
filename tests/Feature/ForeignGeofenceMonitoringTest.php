@@ -12,6 +12,7 @@ use App\Services\GeofenceReportViolationCalculator;
 use App\Services\GeofenceViolationService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class ForeignGeofenceMonitoringTest extends TestCase
@@ -379,7 +380,7 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $this->geofence($fuzuli, 'Füzuli Xocavənd yol', 60, 60, 70, 70);
 
         $lacinUnitInKalbajar = $this->equipment($lacin, 'Excavator', 'Laçın unit Kalbajar');
-        $lacinUnitInQazax = $this->equipment($lacin, 'Dump Truck', 'Laçın unit Qazax');
+        $lacinUnitInQazax = $this->equipment($lacin, 'Road Roller', 'Laçın unit Qazax');
         $fuzuliUnitInKalbajar = $this->equipment($fuzuli, 'Loader', 'Füzuli unit Kalbajar');
 
         $kalbajarGeofence = Geofence::query()->where('project_id', $kalbajar->id)->firstOrFail();
@@ -415,6 +416,34 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $this->assertContains('Laçın unit Kalbajar', $excelRows[0]);
         $this->assertNotContains('Füzuli unit Kalbajar', $excelRows[0]);
         $this->assertSame(0, $service->summary([...$filters, 'project_id' => 999999])['total']);
+    }
+
+    public function test_summary_does_not_query_home_geofences_per_interval(): void
+    {
+        $foreign = Project::query()->create(['name' => 'Foreign shared destination', 'active' => true]);
+        $foreignGeofence = $this->geofence($foreign, 'Foreign shared destination', 60, 60, 70, 70);
+
+        for ($index = 1; $index <= 12; $index++) {
+            $home = Project::query()->create(['name' => 'Home '.$index, 'active' => true]);
+            $this->geofence($home, 'Home '.$index, 0, 0, 10, 10);
+            $unit = $this->equipment($home, 'Excavator', 'Unit '.$index);
+
+            $this->reportInterval($unit, $home, $foreign, $foreignGeofence);
+        }
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $sql = mb_strtolower((string) $query->sql);
+
+            if (str_contains($sql, 'from "geofences"') || str_contains($sql, 'from `geofences`')) {
+                $queries[] = $query->sql;
+            }
+        });
+
+        $summary = app(GeofenceViolationService::class)->summary($this->filters());
+
+        $this->assertSame(12, $summary['total']);
+        $this->assertLessThanOrEqual(4, count($queries), 'Geofence queries should stay bounded and not run once per interval.');
     }
 
     /**

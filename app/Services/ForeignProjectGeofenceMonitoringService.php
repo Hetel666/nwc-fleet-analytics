@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\Geofence;
 use App\Models\Project;
 use App\Models\UnitForeignGeofenceInterval;
+use App\Support\FleetVehicleType;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -14,6 +15,15 @@ use Throwable;
 
 class ForeignProjectGeofenceMonitoringService
 {
+    /** @var Collection<int, Geofence>|null */
+    private ?Collection $activeGeofences = null;
+
+    /** @var array<int, Collection<int, Geofence>> */
+    private array $allowedHomeGeofencesByProjectId = [];
+
+    /** @var array<string, string> */
+    private array $normalizedNames = [];
+
     /**
      * Updates the current foreign-project geofence interval for one unit position.
      *
@@ -91,6 +101,12 @@ class ForeignProjectGeofenceMonitoringService
      */
     public function resolveAllowedHomeGeofences(Project $project): Collection
     {
+        $projectId = (int) $project->id;
+
+        if (array_key_exists($projectId, $this->allowedHomeGeofencesByProjectId)) {
+            return $this->allowedHomeGeofencesByProjectId[$projectId];
+        }
+
         $projectName = $this->normalizedName($project->name);
         $sharedNames = collect(config('wialon_projects.shared_home_geofences', []))
             ->filter(fn (array $projects): bool => collect($projects)
@@ -100,10 +116,7 @@ class ForeignProjectGeofenceMonitoringService
             ->map(fn (string $name): string => $this->normalizedName($name))
             ->values();
 
-        return Geofence::query()
-            ->where('active', true)
-            ->orderBy('id')
-            ->get()
+        return $this->allowedHomeGeofencesByProjectId[$projectId] = $this->activeGeofences()
             ->filter(fn (Geofence $geofence): bool => (int) $geofence->project_id === (int) $project->id
                 || $sharedNames->contains($this->normalizedName($geofence->name)))
             ->unique('id')
@@ -119,12 +132,8 @@ class ForeignProjectGeofenceMonitoringService
             return collect();
         }
 
-        return Geofence::query()
-            ->with('project:id,name')
-            ->where('active', true)
-            ->whereNotNull('project_id')
-            ->orderBy('id')
-            ->get()
+        return $this->activeGeofences()
+            ->filter(fn (Geofence $geofence): bool => $geofence->project_id !== null)
             ->filter(fn (Geofence $geofence): bool => $this->containsPosition($geofence, $position))
             ->sortBy([
                 fn (Geofence $a, Geofence $b): int => $this->geofenceArea($a) <=> $this->geofenceArea($b),
@@ -383,10 +392,7 @@ class ForeignProjectGeofenceMonitoringService
 
     public function effectiveDurationSeconds(UnitForeignGeofenceInterval $interval): int
     {
-        $lastPositionAt = $interval->last_position_at ?: $interval->entered_at;
-        $upperBound = $this->isStale($interval)
-            ? $lastPositionAt
-            : now(config('app.timezone'));
+        $upperBound = $interval->left_at ?: ($interval->last_position_at ?: $interval->entered_at);
 
         return (int) max(0, $interval->entered_at->diffInSeconds($upperBound));
     }
@@ -399,11 +405,7 @@ class ForeignProjectGeofenceMonitoringService
 
     public function normalizedVehicleTypeName(?string $name): string
     {
-        return Str::of((string) $name)
-            ->lower()
-            ->replace(['bakhoe loader'], ['backhoe loader'])
-            ->title()
-            ->toString();
+        return FleetVehicleType::display($name);
     }
 
     /**
@@ -412,12 +414,11 @@ class ForeignProjectGeofenceMonitoringService
     public function allowedVehicleTypeNames(): array
     {
         return config('fleet.foreign_geofence.allowed_vehicle_types', [
-            'Dump Truck',
+            'Bulldozer',
             'Excavator',
-            'Road Grader',
             'Loader',
             'Backhoe Loader',
-            'Bakhoe Loader',
+            'Road Grader',
             'Road Roller',
         ]);
     }
@@ -597,11 +598,36 @@ class ForeignProjectGeofenceMonitoringService
 
     private function normalizedName(?string $value): string
     {
-        return (string) Str::of((string) $value)
+        $key = (string) $value;
+
+        if (array_key_exists($key, $this->normalizedNames)) {
+            return $this->normalizedNames[$key];
+        }
+
+        return $this->normalizedNames[$key] = (string) Str::of($key)
             ->lower()
             ->ascii()
             ->replaceMatches('/[^a-z0-9]+/', ' ')
             ->squish();
+    }
+
+    /**
+     * Active geofences are request-scoped reference data. Loading them
+     * once removes the dashboard N+1 caused by per-interval home zone checks.
+     *
+     * @return Collection<int, Geofence>
+     */
+    private function activeGeofences(): Collection
+    {
+        if ($this->activeGeofences instanceof Collection) {
+            return $this->activeGeofences;
+        }
+
+        return $this->activeGeofences = Geofence::query()
+            ->with('project:id,name')
+            ->where('active', true)
+            ->orderBy('id')
+            ->get(['id', 'name', 'normalized_name', 'project_id', 'geometry_json', 'active']);
     }
 
     /**

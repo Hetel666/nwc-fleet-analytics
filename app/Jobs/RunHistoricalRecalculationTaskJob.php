@@ -44,14 +44,36 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
             return;
         }
 
+        if ($task->status !== HistoricalRecalculationTask::STATUS_PENDING) {
+            $service->dispatchNextPendingFetchTask($run);
+            return;
+        }
+
+        $runLock = Cache::lock(
+            'historical-recalculation-run-execution:'.$run->id,
+            (int) config('historical_recalculation.lock_seconds', 7200)
+        );
+
+        if (! $runLock->get()) {
+            $this->release(max(5, (int) config('historical_recalculation.report_task_delay_seconds', 5)));
+            return;
+        }
+
         $lock = Cache::lock('historical-recalculation-task:'.$task->id, (int) config('historical_recalculation.lock_seconds', 7200));
 
         if (! $lock->get()) {
+            optional($runLock)->release();
             $this->release(30);
             return;
         }
 
         try {
+            $task = $task->refresh();
+
+            if ($task->status !== HistoricalRecalculationTask::STATUS_PENDING) {
+                return;
+            }
+
             $task->forceFill([
                 'status' => HistoricalRecalculationTask::STATUS_RUNNING,
                 'attempts' => $task->attempts + 1,
@@ -77,6 +99,8 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
             $service->markTaskFailed($task, $exception->getMessage());
         } finally {
             optional($lock)->release();
+            optional($runLock)->release();
+            $service->dispatchNextPendingFetchTask($run->refresh());
         }
     }
 }

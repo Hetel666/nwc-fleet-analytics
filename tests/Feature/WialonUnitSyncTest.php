@@ -136,7 +136,7 @@ class WialonUnitSyncTest extends TestCase
         ]);
     }
 
-    public function test_unit_only_in_without_project_group_keeps_ownership_without_project(): void
+    public function test_unit_only_in_without_project_group_is_not_imported(): void
     {
         $this->app->instance(WialonService::class, new class extends WialonService
         {
@@ -166,10 +166,11 @@ class WialonUnitSyncTest extends TestCase
         });
 
         $this->artisan('fleet:sync-units')
-            ->expectsOutput('Synced 1 Wialon units.')
+            ->expectsOutput('Synced 0 Wialon units.')
+            ->expectsOutput('Skipped 1 Wialon units without project group.')
             ->assertExitCode(0);
 
-        $this->assertDatabaseHas('equipments', [
+        $this->assertDatabaseMissing('equipments', [
             'wialon_unit_id' => '40',
             'project_id' => null,
             'ownership_type' => Equipment::OWNERSHIP_ICARE,
@@ -291,7 +292,7 @@ class WialonUnitSyncTest extends TestCase
         ]);
     }
 
-    public function test_sync_units_ignores_project_groups_not_configured_as_real_projects(): void
+    public function test_sync_units_uses_active_project_wialon_groups_from_database(): void
     {
         $project = Project::create(['name' => 'Old project', 'active' => true]);
 
@@ -335,8 +336,56 @@ class WialonUnitSyncTest extends TestCase
 
         $this->assertDatabaseHas('equipments', [
             'wialon_unit_id' => '30',
-            'project_id' => null,
+            'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+    }
+
+    public function test_unit_not_found_in_project_wialon_group_is_not_imported(): void
+    {
+        $project = Project::create(['name' => 'Project group', 'active' => true]);
+
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '100',
+            'name' => 'Project NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+
+        $this->app->instance(WialonService::class, new class extends WialonService
+        {
+            public function __construct()
+            {
+            }
+
+            public function getUnits(bool $full = false): array
+            {
+                return [
+                    [
+                        'id' => 31,
+                        'nm' => 'Unbound unit',
+                        'pflds' => [
+                            ['n' => 'vehicle_class', 'v' => 'loader'],
+                        ],
+                    ],
+                ];
+            }
+
+            public function getUnitGroups(array $groupIds = []): array
+            {
+                return [
+                    ['id' => 100, 'nm' => 'Project NWC', 'u' => []],
+                ];
+            }
+        });
+
+        $this->artisan('fleet:sync-units')
+            ->expectsOutput('Synced 0 Wialon units.')
+            ->expectsOutput('Skipped 1 Wialon units without project group.')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseMissing('equipments', [
+            'wialon_unit_id' => '31',
         ]);
     }
 }

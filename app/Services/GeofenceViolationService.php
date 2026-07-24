@@ -7,15 +7,28 @@ use App\Models\Geofence;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
+use App\Support\FleetVehicleType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Pagination\LengthAwarePaginator as Paginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class GeofenceViolationService
 {
+    /**
+     * @var array<int, string>
+     */
+    private const HIDDEN_EXPORT_COLUMNS = [
+        'registration_number',
+        'wialon_group',
+        'home_geofence',
+        'wialon_id',
+    ];
+
     public function __construct(
         private ForeignProjectGeofenceMonitoringService $monitoring,
     ) {
@@ -26,19 +39,21 @@ class GeofenceViolationService
      */
     public function summary(array $filters): array
     {
-        $rows = $this->intervals($filters)
-            ->groupBy(fn (UnitForeignGeofenceInterval $interval): string => $this->sectorKey($interval))
-            ->map(function (Collection $intervals): array {
-                $interval = $intervals->first();
+        $rows = $this->eligibleIntervalRecords($filters)
+            ->when(filled($filters['current_geozone_key'] ?? null), fn (Collection $rows): Collection => $rows
+                ->filter(fn (object $row): bool => $this->recordSectorKey($row) === (string) $filters['current_geozone_key']))
+            ->groupBy(fn (object $row): string => $this->recordSectorKey($row))
+            ->map(function (Collection $records): array {
+                $record = $records->first();
 
                 return [
-                    'project_id' => $interval->foreign_project_id ? (int) $interval->foreign_project_id : null,
-                    'geofence_id' => $interval->foreign_geofence_id ? (int) $interval->foreign_geofence_id : null,
-                    'project' => $interval->foreignProject?->name ?: ($interval->foreign_project_name ?: '-'),
-                    'geofence' => $interval->foreignGeofence?->name ?: ($interval->foreign_geofence_name ?: '-'),
-                    'label' => $this->currentGeozoneLabel($interval),
-                    'sector_key' => $this->sectorKey($interval),
-                    'count' => $intervals->unique(fn (UnitForeignGeofenceInterval $interval): string => $this->unitKey($interval))->count(),
+                    'project_id' => $record->foreign_project_id ? (int) $record->foreign_project_id : null,
+                    'geofence_id' => $record->foreign_geofence_id ? (int) $record->foreign_geofence_id : null,
+                    'project' => $record->foreign_project_name ?: '-',
+                    'geofence' => $record->foreign_geofence_name ?: '-',
+                    'label' => $this->recordCurrentGeozoneLabel($record),
+                    'sector_key' => $this->recordSectorKey($record),
+                    'count' => $records->unique(fn (object $record): string => $this->recordUnitKey($record))->count(),
                 ];
             })
             ->sortByDesc('count')
@@ -55,20 +70,32 @@ class GeofenceViolationService
         ];
     }
 
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function visibleExportRow(array $row): array
+    {
+        return collect($row)
+            ->except(self::HIDDEN_EXPORT_COLUMNS)
+            ->all();
+    }
+
     public function paginate(array $filters): LengthAwarePaginator
     {
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perPage = min(100, max(10, (int) ($filters['per_page'] ?? 50)));
-        $items = $this->intervals($filters)
-            ->sortByDesc(fn (UnitForeignGeofenceInterval $interval): int => $this->monitoring->effectiveDurationSeconds($interval))
-            ->values();
+        $ids = $this->detailIntervalIds($filters);
+        $pageIds = $ids->forPage($page, $perPage)->values();
+        $intervals = $this->loadIntervalsByIds($pageIds->all());
 
         return new Paginator(
-            $items->forPage($page, $perPage)
-                ->values()
+            $pageIds
+                ->map(fn (int $id): ?UnitForeignGeofenceInterval => $intervals->get($id))
+                ->filter()
                 ->map(fn (UnitForeignGeofenceInterval $interval): array => $this->row($interval))
                 ->all(),
-            $items->count(),
+            $ids->count(),
             $perPage,
             $page,
             ['path' => request()->url(), 'query' => request()->query()]
@@ -80,10 +107,13 @@ class GeofenceViolationService
      */
     public function exportRows(array $filters): array
     {
-        return $this->intervals($filters)
-            ->sortByDesc(fn (UnitForeignGeofenceInterval $interval): int => $this->monitoring->effectiveDurationSeconds($interval))
-            ->values()
-            ->map(fn (UnitForeignGeofenceInterval $interval, int $index): array => array_values($this->row($interval, $index + 1)))
+        $ids = $this->detailIntervalIds($filters);
+        $intervals = $this->loadIntervalsByIds($ids->all());
+
+        return $ids
+            ->map(fn (int $id): ?UnitForeignGeofenceInterval => $intervals->get($id))
+            ->filter()
+            ->map(fn (UnitForeignGeofenceInterval $interval, int $index): array => array_values($this->visibleExportRow($this->row($interval, $index + 1))))
             ->all();
     }
 
@@ -95,12 +125,9 @@ class GeofenceViolationService
         return [
             'number' => '№',
             'equipment' => 'Texnika',
-            'registration_number' => 'Qeydiyyat nişanı',
             'vehicle_type' => 'Texnika növü',
             'ownership' => 'Ownership',
-            'wialon_group' => 'Wialon group',
             'home_project' => 'Ev layihəsi',
-            'home_geofence' => 'Ev geozonası',
             'current_project' => 'Cari layihə',
             'current_geofence' => 'Cari geozona',
             'entered_at' => 'Geozonaya giriş vaxtı',
@@ -108,7 +135,6 @@ class GeofenceViolationService
             'duration' => 'Geozonada qalma müddəti',
             'reported_project' => 'Reported project',
             'project_mismatch' => 'Project mismatch',
-            'wialon_id' => 'Wialon ID',
         ];
     }
 
@@ -135,11 +161,19 @@ class GeofenceViolationService
      */
     public function baseIntervals(array $filters = []): Collection
     {
-        return $this->reportIntervalQuery($filters)
+        $openIntervals = $this->monitoring->currentViolationQuery($filters)
+            ->orderByDesc('entered_at')
+            ->orderByDesc('id')
+            ->get();
+        $reportIntervals = $this->reportIntervalQuery($filters)
             ->orderByDesc('duration_seconds')
             ->orderByDesc('entered_at')
             ->orderByDesc('id')
-            ->get()
+            ->get();
+
+        return $openIntervals
+            ->concat($reportIntervals)
+            ->sortByDesc(fn (UnitForeignGeofenceInterval $interval): int => (int) ($interval->duration_seconds ?: $this->monitoring->effectiveDurationSeconds($interval)))
             ->filter(fn (UnitForeignGeofenceInterval $interval): bool => $this->intervalIsEligible($interval))
             ->filter(fn (UnitForeignGeofenceInterval $interval): bool => ! filled($filters['current_geozone_key'] ?? null) || $this->sectorKey($interval) === (string) $filters['current_geozone_key'])
             ->unique(fn (UnitForeignGeofenceInterval $interval): string => $this->unitKey($interval).'|'.$this->sectorKey($interval))
@@ -232,6 +266,224 @@ class GeofenceViolationService
         return $this->currentIntervals($filters);
     }
 
+    /**
+     * SQL-level base selection for Dashboard summary, modal and Excel IDs.
+     * It mirrors intervalIsEligible()/intervalPassesMinimumDuration() but avoids
+     * hydrating every candidate interval with all relations.
+     *
+     * @return Collection<int, object>
+     */
+    private function eligibleIntervalRecords(array $filters): Collection
+    {
+        $open = $this->eligibleIntervalQuery($filters, UnitForeignGeofenceInterval::STATUS_OPEN, false);
+        $report = $this->eligibleIntervalQuery($filters, UnitForeignGeofenceInterval::STATUS_CLOSED, true);
+
+        return DB::query()
+            ->fromSub($open->unionAll($report), 'eligible_intervals')
+            ->get();
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function detailIntervalIds(array $filters): Collection
+    {
+        return $this->eligibleIntervalRecords($filters)
+            ->when(filled($filters['current_geozone_key'] ?? null), fn (Collection $rows): Collection => $rows
+                ->filter(fn (object $row): bool => $this->recordSectorKey($row) === (string) $filters['current_geozone_key']))
+            ->sortByDesc(fn (object $row): int => (int) $row->sort_duration)
+            ->unique(fn (object $row): string => $this->recordUnitKey($row).'|'.$this->recordSectorKey($row))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values();
+    }
+
+    /**
+     * @param  array<int, int>  $ids
+     * @return Collection<int, UnitForeignGeofenceInterval>
+     */
+    private function loadIntervalsByIds(array $ids): Collection
+    {
+        if ($ids === []) {
+            return collect();
+        }
+
+        return UnitForeignGeofenceInterval::query()
+            ->with([
+                'unit.type:id,name',
+                'unit.project:id,name',
+                'unit.projectWialonGroup:id,wialon_group_id,name,project_id,ownership_type',
+                'homeProject:id,name',
+                'homeGeofence:id,name,project_id,active',
+                'foreignProject:id,name',
+                'foreignGeofence:id,name,project_id,active',
+            ])
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+    }
+
+    private function eligibleIntervalQuery(array $filters, string $status, bool $reportSource): QueryBuilder
+    {
+        $from = Carbon::parse($filters['date_from'] ?? $filters['from'] ?? now(config('app.timezone'))->startOfDay(), config('app.timezone'))->startOfDay();
+        $to = Carbon::parse($filters['date_to'] ?? $filters['to'] ?? now(config('app.timezone'))->endOfDay(), config('app.timezone'))->endOfDay();
+        $ownershipType = $filters['ownership_type'] ?? null;
+
+        if (($filters['ownership'] ?? 'all') !== 'all' && ! $ownershipType) {
+            $ownershipType = ($filters['ownership'] ?? null) === 'icare' ? Equipment::OWNERSHIP_ICARE : Equipment::OWNERSHIP_NWC;
+        }
+
+        $durationExpression = $this->durationSqlExpression();
+        $query = DB::table('unit_foreign_geofence_intervals as intervals')
+            ->join('equipments as units', 'units.id', '=', 'intervals.unit_id')
+            ->leftJoin('equipment_types as types', 'types.id', '=', 'units.equipment_type_id')
+            ->leftJoin('projects as foreign_projects', 'foreign_projects.id', '=', 'intervals.foreign_project_id')
+            ->leftJoin('geofences as foreign_geofences', 'foreign_geofences.id', '=', 'intervals.foreign_geofence_id')
+            ->where('intervals.status', $status)
+            ->whereNotNull('intervals.home_project_id')
+            ->whereColumn('intervals.home_project_id', 'units.project_id')
+            ->where('units.active', true)
+            ->where(function (QueryBuilder $query): void {
+                $query->where('units.excluded_from_dashboard', false)
+                    ->orWhereNull('units.excluded_from_dashboard');
+            })
+            ->where(function (QueryBuilder $query): void {
+                $query->whereNotNull('units.project_wialon_group_id')
+                    ->orWhereNotNull('units.matched_wialon_group_id');
+            })
+            ->whereNotNull('units.project_id')
+            ->whereIn('units.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
+            ->whereIn(DB::raw("lower(replace(replace(types.name, '-', '_'), ' ', '_'))"), $this->allowedVehicleTypeSqlKeys())
+            ->whereNotNull('intervals.foreign_geofence_id')
+            ->where('foreign_geofences.active', true)
+            ->where(function (QueryBuilder $query): void {
+                $query->whereNull('intervals.match_status')
+                    ->orWhere('intervals.match_status', '<>', 'ambiguous');
+            })
+            ->where('intervals.entered_at', '<=', $to)
+            ->where(function (QueryBuilder $query) use ($from): void {
+                $query->where('intervals.left_at', '>=', $from)
+                    ->orWhereNull('intervals.left_at');
+            })
+            ->when($reportSource, fn (QueryBuilder $query) => $query->where('intervals.source', GeofenceReportViolationCalculator::SOURCE))
+            ->when(! $reportSource, fn (QueryBuilder $query) => $query
+                ->whereColumn('intervals.home_project_id', '<>', 'intervals.foreign_project_id')
+                ->where('intervals.last_position_at', '>=', $from))
+            ->when($filters['project_id'] ?? null, fn (QueryBuilder $query, int $projectId) => $query->where('intervals.home_project_id', $projectId))
+            ->when($ownershipType, fn (QueryBuilder $query, string $ownershipType) => $query->where('intervals.ownership_type', $ownershipType))
+            ->when($filters['current_geozone_project_id'] ?? null, fn (QueryBuilder $query, int $projectId) => $query->where('intervals.foreign_project_id', $projectId))
+            ->when($filters['current_geozone_id'] ?? null, fn (QueryBuilder $query, int $geofenceId) => $query->where('intervals.foreign_geofence_id', $geofenceId))
+            ->when($filters['equipment_type_id'] ?? null, fn (QueryBuilder $query, int $typeId) => $query->where('units.equipment_type_id', $typeId))
+            ->when(filled($filters['unit'] ?? null), function (QueryBuilder $query) use ($filters): void {
+                $unit = trim((string) $filters['unit']);
+                $query->where(function (QueryBuilder $query) use ($unit): void {
+                    $query->where('intervals.wialon_unit_id', $unit)
+                        ->orWhere('intervals.unit_id', $unit);
+                });
+            })
+            ->when(trim((string) ($filters['search'] ?? '')) !== '', function (QueryBuilder $query) use ($filters): void {
+                $search = '%'.trim((string) $filters['search']).'%';
+                $query->where(function (QueryBuilder $query) use ($search): void {
+                    $query->where('intervals.foreign_geofence_name', 'like', $search)
+                        ->orWhere('intervals.foreign_project_name', 'like', $search)
+                        ->orWhere('intervals.home_project_name', 'like', $search)
+                        ->orWhere('intervals.wialon_unit_id', 'like', $search)
+                        ->orWhere('units.name', 'like', $search)
+                        ->orWhere('units.registration_number', 'like', $search)
+                        ->orWhere('types.name', 'like', $search);
+                });
+            });
+
+        if (! (bool) config('fleet.foreign_geofence.show_all', false)) {
+            $query->whereRaw($durationExpression.' >= ?', [(int) config('fleet.foreign_geofence.min_minutes', 180) * 60]);
+
+            if ($status === UnitForeignGeofenceInterval::STATUS_OPEN && ! $this->monitoring->includeStaleIntervals()) {
+                $query->where('intervals.last_position_at', '>=', now(config('app.timezone'))->subMinutes($this->monitoring->staleAfterMinutes()));
+            }
+        }
+
+        $this->applyHomeGeofenceEligibility($query);
+
+        return $query->select([
+            'intervals.id',
+            'intervals.unit_id',
+            'intervals.wialon_unit_id',
+            'intervals.foreign_project_id',
+            'intervals.foreign_geofence_id',
+            DB::raw('coalesce(foreign_projects.name, intervals.foreign_project_name) as foreign_project_name'),
+            DB::raw('coalesce(foreign_geofences.name, intervals.foreign_geofence_name) as foreign_geofence_name'),
+            DB::raw($durationExpression.' as sort_duration'),
+        ]);
+    }
+
+    private function applyHomeGeofenceEligibility(QueryBuilder $query): void
+    {
+        $allowedByProject = $this->allowedHomeGeofenceIdsByProject();
+
+        $query->where(function (QueryBuilder $query) use ($allowedByProject): void {
+            foreach ($allowedByProject as $projectId => $geofenceIds) {
+                $query->orWhere(function (QueryBuilder $query) use ($projectId, $geofenceIds): void {
+                    $query->where('intervals.home_project_id', (int) $projectId)
+                        ->where(function (QueryBuilder $query) use ($geofenceIds): void {
+                            $query->whereNull('intervals.foreign_geofence_id');
+
+                            if ($geofenceIds !== []) {
+                                $query->orWhereNotIn('intervals.foreign_geofence_id', $geofenceIds);
+                            }
+                        });
+                });
+            }
+        });
+    }
+
+    /**
+     * @return array<int, array<int, int>>
+     */
+    private function allowedHomeGeofenceIdsByProject(): array
+    {
+        return Project::query()
+            ->where('active', true)
+            ->get(['id', 'name'])
+            ->mapWithKeys(function (Project $project): array {
+                $ids = $this->monitoring->resolveAllowedHomeGeofences($project)
+                    ->pluck('id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->values()
+                    ->all();
+
+                return $ids === [] ? [] : [(int) $project->id => $ids];
+            })
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function allowedVehicleTypeSqlKeys(): array
+    {
+        $allowedCodes = collect($this->monitoring->allowedVehicleTypeNames())
+            ->map(fn (string $type): string => FleetVehicleType::normalize($type))
+            ->unique()
+            ->values();
+
+        return collect(FleetVehicleType::aliases())
+            ->filter(fn (string $target): bool => $allowedCodes->contains($target))
+            ->keys()
+            ->merge($allowedCodes)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function durationSqlExpression(): string
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return "coalesce(nullif(intervals.duration_seconds, 0), (strftime('%s', coalesce(intervals.left_at, intervals.last_position_at, intervals.entered_at)) - strftime('%s', intervals.entered_at)))";
+        }
+
+        return 'coalesce(nullif(intervals.duration_seconds, 0), timestampdiff(second, intervals.entered_at, coalesce(intervals.left_at, intervals.last_position_at, intervals.entered_at)))';
+    }
+
     private function reportIntervalQuery(array $filters): Builder
     {
         $from = Carbon::parse($filters['date_from'] ?? $filters['from'] ?? now(config('app.timezone'))->startOfDay(), config('app.timezone'))->startOfDay();
@@ -322,12 +574,23 @@ class GeofenceViolationService
             return true;
         }
 
-        return (int) ($interval->duration_seconds ?? 0) >= (int) config('fleet.foreign_geofence.min_minutes', 180) * 60;
+        if ($interval->status === UnitForeignGeofenceInterval::STATUS_OPEN && $this->monitoring->isStale($interval)) {
+            return false;
+        }
+
+        $durationSeconds = (int) ($interval->duration_seconds ?: $this->monitoring->effectiveDurationSeconds($interval));
+
+        return $durationSeconds >= (int) config('fleet.foreign_geofence.min_minutes', 180) * 60;
     }
 
     private function unitKey(UnitForeignGeofenceInterval $interval): string
     {
         return (string) ($interval->wialon_unit_id ?: $interval->unit_id ?: $interval->id);
+    }
+
+    private function recordUnitKey(object $record): string
+    {
+        return (string) ($record->wialon_unit_id ?: $record->unit_id ?: $record->id);
     }
 
     private function sectorKey(UnitForeignGeofenceInterval $interval): string
@@ -337,6 +600,31 @@ class GeofenceViolationService
         }
 
         return 'name:'.mb_strtolower(trim((string) $interval->foreign_geofence_name));
+    }
+
+    private function recordSectorKey(object $record): string
+    {
+        if ($record->foreign_project_id || $record->foreign_geofence_id) {
+            return (string) ($record->foreign_project_id ?? 'null').':'.(string) ($record->foreign_geofence_id ?? 'null');
+        }
+
+        return 'name:'.mb_strtolower(trim((string) $record->foreign_geofence_name));
+    }
+
+    private function recordCurrentGeozoneLabel(object $record): string
+    {
+        $project = trim((string) ($record->foreign_project_name ?? ''));
+        $geofence = trim((string) ($record->foreign_geofence_name ?? ''));
+
+        if ($project === '') {
+            return $geofence;
+        }
+
+        if ($geofence === '' || $geofence === $project) {
+            return $project;
+        }
+
+        return $project.' / '.$geofence;
     }
 
     private function intervalIsEligible(UnitForeignGeofenceInterval $interval): bool
@@ -359,7 +647,11 @@ class GeofenceViolationService
             return false;
         }
 
-        if ($interval->foreign_geofence_id !== null && $this->monitoring->homeProjectGeofences($unit)->contains('id', $interval->foreign_geofence_id)) {
+        if ($interval->foreign_geofence_id === null || $interval->foreign_project_id === null) {
+            return false;
+        }
+
+        if ($this->monitoring->homeProjectGeofences($unit)->contains('id', $interval->foreign_geofence_id)) {
             return false;
         }
 
@@ -528,9 +820,9 @@ class GeofenceViolationService
         }
 
         if (filled($filters['current_geozone_id'] ?? null) || filled($filters['current_geozone_project_id'] ?? null)) {
-            $interval = $this->intervals($filters)->first();
-            $project = $interval instanceof UnitForeignGeofenceInterval
-                ? $this->currentGeozoneLabel($interval)
+            $row = collect($this->summary($filters)['rows'] ?? [])->first();
+            $project = is_array($row) && filled($row['label'] ?? null)
+                ? (string) $row['label']
                 : 'foreign-project-geofence';
 
             $parts[] = Str::slug($project, '_');

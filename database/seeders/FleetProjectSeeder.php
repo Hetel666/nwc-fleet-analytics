@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Project;
-use App\Models\ProjectWialonGeofenceGroup;
 use App\Models\ProjectWialonGroup;
 use App\Services\WialonGroupClassificationService;
 use Illuminate\Database\Seeder;
@@ -28,7 +27,6 @@ class FleetProjectSeeder extends Seeder
             ->update(['active' => false]);
 
         $this->syncProjectGroups($groups, $projects);
-        $this->syncGeofenceGroups($projects);
     }
 
     private function syncProjects(Collection $projectNames): Collection
@@ -62,30 +60,6 @@ class FleetProjectSeeder extends Seeder
                     'project_id' => $project->id,
                     'name' => $group['name'],
                     'ownership_type' => $group['ownership_type'],
-                ]
-            );
-        }
-    }
-
-    private function syncGeofenceGroups(Collection $projects): void
-    {
-        foreach (config('wialon_projects.geofence_groups', []) as $group) {
-            $project = $projects->get($group['project']);
-
-            if (! $project instanceof Project) {
-                continue;
-            }
-
-            ProjectWialonGeofenceGroup::updateOrCreate(
-                [
-                    'wialon_resource_id' => (string) $group['wialon_resource_id'],
-                    'wialon_geofence_group_id' => (string) $group['wialon_geofence_group_id'],
-                ],
-                [
-                    'project_id' => $project->id,
-                    'wialon_resource_name' => $group['wialon_resource_name'],
-                    'name' => $group['name'],
-                    'zones_count' => (int) $group['zones_count'],
                 ]
             );
         }

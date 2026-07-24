@@ -131,6 +131,7 @@
                                 <th>Tapsiriq</th>
                                 <th>Status</th>
                                 <th>Son icra</th>
+                                <th>Netice</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -143,6 +144,7 @@
                                     <td>{{ $row['label'] }}</td>
                                     <td><span class="badge text-bg-{{ $statusClass }}">{{ $status }}</span></td>
                                     <td class="small text-secondary">{{ $settings['auto_sync_'.$row['key'].'_last_run_at'] ?? '-' }}</td>
+                                    <td class="small text-secondary">{{ $settings['auto_sync_'.$row['key'].'_last_message'] ?? '-' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>

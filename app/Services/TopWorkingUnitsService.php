@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\EngineHoursReportUnitDay;
 use App\Models\Equipment;
-use App\Models\EquipmentDailyStat;
+use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 
 class TopWorkingUnitsService
 {
@@ -23,8 +23,6 @@ class TopWorkingUnitsService
     }
 
     /**
-     * Builds the exact rows used by the dashboard and Excel export.
-     *
      * @param array<string, mixed> $filters
      * @return array<int, array<string, mixed>>
      */
@@ -42,26 +40,20 @@ class TopWorkingUnitsService
      */
     public function exportRows(array $filters, string $ranking, int $limit = 20): array
     {
-        $range = $this->isRange($filters);
-
         return collect($this->rows($filters, $ranking, $limit))
             ->values()
-            ->map(function (array $row, int $index) use ($range): array {
-                $values = [$index + 1];
-
-                if ($range) {
-                    $values[] = $row['date'];
-                }
-
-                return array_merge($values, [
-                    $row['name'],
-                    $row['ownership_label'],
-                    $row['type'],
-                    $row['project'],
-                    $row['hours'],
-                    $row['wialon_id'],
-                ]);
-            })
+            ->map(fn (array $row, int $index): array => [
+                $index + 1,
+                $row['date'],
+                $row['name'],
+                $row['registration_number'],
+                $row['ownership_label'],
+                $row['type'],
+                $row['project'],
+                $row['hours'],
+                $row['wialon_id'],
+                $row['source'],
+            ])
             ->all();
     }
 
@@ -71,20 +63,18 @@ class TopWorkingUnitsService
      */
     public function exportColumns(array $filters): array
     {
-        $columns = ['#'];
-
-        if ($this->isRange($filters)) {
-            $columns[] = 'Tarix';
-        }
-
-        return array_merge($columns, [
+        return [
+            '#',
+            'Tarix',
             __('app.equipment'),
-            'Vendor',
+            'Qeydiyyat nisani',
+            'Mensubiyyet',
             __('app.type'),
             __('app.project'),
             'Faktiki '.__('app.hours'),
             'Wialon ID',
-        ]);
+            'Menbe',
+        ];
     }
 
     /**
@@ -103,8 +93,8 @@ class TopWorkingUnitsService
         }
 
         $row = $this->baseQuery([...$filters, 'from' => $date, 'to' => $date])
-            ->where('equipment_daily_stats.equipment_id', $equipmentId)
-            ->whereDate('equipment_daily_stats.stat_date', $date)
+            ->where('engine_hours_report_unit_days.equipment_id', $equipmentId)
+            ->whereDate('engine_hours_report_unit_days.stat_date', $date)
             ->first();
 
         return $row ? $this->mapRow($row) : null;
@@ -115,8 +105,18 @@ class TopWorkingUnitsService
      */
     public function paginateDetail(array $filters): LengthAwarePaginator
     {
-        $row = $this->detail($filters);
-        $rows = $row ? [$this->detailRow($row)] : [];
+        $filters = $this->normalizeFilters($filters);
+        $ranking = (string) ($filters['top_working_ranking'] ?? '');
+
+        if (in_array($ranking, ['least', 'most'], true)) {
+            $rows = $this->journalRows($filters, $ranking)
+                ->values()
+                ->map(fn (array $row, int $index): array => $this->detailRow($row, $index + 1))
+                ->all();
+        } else {
+            $row = $this->detail($filters);
+            $rows = $row ? [$this->detailRow($row, 1)] : [];
+        }
 
         return new LengthAwarePaginator(
             $rows,
@@ -133,17 +133,16 @@ class TopWorkingUnitsService
     public function detailColumns(): array
     {
         return [
-            'number' => '№',
+            'number' => '#',
             'date' => 'Tarix',
-            'name' => 'Texnikanın adı',
-            'project' => 'Layihə',
-            'ownership' => 'Mənsubiyyət',
-            'vehicle_type' => 'Texnika növü',
-            'total_hours' => 'Faktiki saat',
-            'daytime_status_label' => 'İş statusu',
-            'overtime_label' => 'Overtime',
-            'data_status' => 'Məlumat statusu',
+            'name' => 'Texnika',
+            'registration_number' => 'Qeydiyyat nisani',
+            'ownership' => 'Mensubiyyet',
+            'vehicle_type' => 'Texnika novu',
+            'project' => 'Layihe',
+            'engine_hours' => 'Engine hours',
             'wialon_id' => 'Wialon ID',
+            'source' => 'Melumat menbeyi',
         ];
     }
 
@@ -164,7 +163,6 @@ class TopWorkingUnitsService
 
                 return $row;
             })
-            ->filter(fn (array $row): bool => $this->isAllowedType($row['type_code']))
             ->sort(function (array $first, array $second) use ($ranking): int {
                 $hours = $first['hours'] <=> $second['hours'];
 
@@ -172,7 +170,8 @@ class TopWorkingUnitsService
                     return $ranking === 'least' ? $hours : -$hours;
                 }
 
-                return strnatcasecmp($first['name'], $second['name'])
+                return strcmp($first['date'], $second['date'])
+                    ?: strnatcasecmp($first['unit_name'], $second['unit_name'])
                     ?: strcmp((string) $first['wialon_id'], (string) $second['wialon_id']);
             })
             ->values();
@@ -185,11 +184,11 @@ class TopWorkingUnitsService
     {
         $filters = $this->normalizeFilters($filters);
 
-        return EquipmentDailyStat::query()
-            ->join('equipments', 'equipments.id', '=', 'equipment_daily_stats.equipment_id')
-            ->leftJoin('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
-            ->leftJoin('projects', 'projects.id', '=', 'equipment_daily_stats.project_id')
-            ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
+        return EngineHoursReportUnitDay::query()
+            ->join('equipments', 'equipments.id', '=', 'engine_hours_report_unit_days.equipment_id')
+            ->leftJoin('projects', 'projects.id', '=', 'engine_hours_report_unit_days.project_id')
+            ->whereDate('engine_hours_report_unit_days.stat_date', '>=', $filters['from'])
+            ->whereDate('engine_hours_report_unit_days.stat_date', '<=', $filters['to'])
             ->where('equipments.active', true)
             ->where(function (Builder $query): void {
                 $query->where('equipments.excluded_from_dashboard', false)
@@ -199,37 +198,34 @@ class TopWorkingUnitsService
                 $query->whereNotNull('equipments.project_wialon_group_id')
                     ->orWhereNotNull('equipments.matched_wialon_group_id');
             })
-            ->whereIn('equipment_daily_stats.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
-            ->where(function (Builder $query): void {
-                $query->whereNull('equipment_daily_stats.calculation_status')
-                    ->orWhere('equipment_daily_stats.calculation_status', 'success');
-            })
-            ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('equipment_daily_stats.project_id', $projectId))
-            ->when($filters['equipment_type_id'], fn (Builder $query, int $typeId) => $query->where('equipments.equipment_type_id', $typeId))
-            ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('equipment_daily_stats.ownership_type', $ownership))
+            ->whereIn('engine_hours_report_unit_days.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
+            ->where('engine_hours_report_unit_days.engine_hours_source', EngineHoursReportUnitDay::SOURCE)
+            ->where('engine_hours_report_unit_days.parse_status', 'ok')
+            ->whereNotNull('engine_hours_report_unit_days.engine_hours')
+            ->where('engine_hours_report_unit_days.engine_hours', '>=', 0)
+            ->whereIn('engine_hours_report_unit_days.vehicle_type', FleetVehicleType::names(FleetVehicleType::TOP_WORKING_TYPES))
+            ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('engine_hours_report_unit_days.project_id', $projectId))
+            ->when($filters['equipment_type_id'], fn (Builder $query, int $typeId) => $query->where('engine_hours_report_unit_days.equipment_type_id', $typeId))
+            ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('engine_hours_report_unit_days.ownership_type', $ownership))
             ->select([
-                'equipment_daily_stats.id as stat_id',
-                'equipment_daily_stats.stat_date',
-                'equipment_daily_stats.equipment_id',
-                'equipment_daily_stats.ownership_type',
-                'equipment_daily_stats.worked_hours',
-                'equipment_daily_stats.distance_km',
-                'equipment_daily_stats.first_message_at',
-                'equipment_daily_stats.last_message_at',
-                'equipment_daily_stats.calculation_status',
+                'engine_hours_report_unit_days.id as stat_id',
+                'engine_hours_report_unit_days.stat_date',
+                'engine_hours_report_unit_days.equipment_id',
+                'engine_hours_report_unit_days.ownership_type',
+                'engine_hours_report_unit_days.engine_hours',
+                'engine_hours_report_unit_days.engine_hours_source',
+                'engine_hours_report_unit_days.vehicle_type as type_name',
+                'engine_hours_report_unit_days.project_id',
                 'equipments.name',
                 'equipments.registration_number',
                 'equipments.wialon_unit_id',
-                'equipment_types.name as type_name',
-                'projects.id as project_id',
                 'projects.name as project_name',
             ]);
     }
 
     private function mapRow(object $row): array
     {
-        $hours = round((float) $row->worked_hours, 1);
-        $typeCode = $this->typeCode($row->type_name);
+        $hours = round((float) $row->engine_hours, 1);
 
         return [
             'id' => (int) $row->equipment_id,
@@ -237,20 +233,21 @@ class TopWorkingUnitsService
             'date' => CarbonImmutable::parse($row->stat_date)->toDateString(),
             'name' => $this->equipmentName($row),
             'unit_name' => (string) ($row->name ?: ''),
-            'registration_number' => $row->registration_number ?: '—',
-            'type' => $this->displayType($row->type_name),
-            'type_code' => $typeCode,
+            'registration_number' => $row->registration_number ?: '-',
+            'type' => FleetVehicleType::display($row->type_name),
+            'type_code' => FleetVehicleType::slug($row->type_name),
             'ownership' => (string) $row->ownership_type,
             'ownership_label' => $this->ownershipLabel((string) $row->ownership_type),
             'project_id' => $row->project_id ? (int) $row->project_id : null,
-            'project' => $row->project_name ?: 'Layihəsiz',
+            'project' => $row->project_name ?: 'Layihesiz',
             'hours' => $hours,
-            'distance' => round((float) $row->distance_km, 1),
+            'distance' => 0.0,
             'work_status' => $this->workStatus($hours),
             'work_status_label' => $this->workStatusLabel($this->workStatus($hours)),
-            'overtime_label' => $hours > 10 ? 'Bəli' : 'Xeyr',
-            'data_status' => 'Məlumat var',
+            'overtime_label' => '-',
+            'data_status' => 'Melumat var',
             'wialon_id' => $row->wialon_unit_id,
+            'source' => EngineHoursReportUnitDay::SOURCE,
         ];
     }
 
@@ -258,20 +255,19 @@ class TopWorkingUnitsService
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function detailRow(array $row): array
+    private function detailRow(array $row, int $number): array
     {
         return [
-            'number' => 1,
+            'number' => $number,
             'date' => $row['date'],
             'name' => $row['name'],
-            'project' => $row['project'],
+            'registration_number' => $row['registration_number'],
             'ownership' => $row['ownership_label'],
             'vehicle_type' => $row['type'],
-            'total_hours' => $row['hours'],
-            'daytime_status_label' => $row['work_status_label'],
-            'overtime_label' => $row['overtime_label'],
-            'data_status' => $row['data_status'],
+            'project' => $row['project'],
+            'engine_hours' => $row['hours'],
             'wialon_id' => $row['wialon_id'],
+            'source' => $row['source'],
         ];
     }
 
@@ -288,29 +284,6 @@ class TopWorkingUnitsService
         return $name !== '' ? $name : (string) $row->wialon_unit_id;
     }
 
-    private function isAllowedType(string $typeCode): bool
-    {
-        return in_array($typeCode, config('fleet_efficiency.top_working_vehicle_types', []), true);
-    }
-
-    private function typeCode(?string $type): string
-    {
-        $code = Str::of((string) $type)
-            ->squish()
-            ->lower()
-            ->replace(['-', ' '], '_')
-            ->value();
-
-        $alias = config('fleet_efficiency.type_aliases.'.$code, $code);
-
-        return str_replace('-', '_', (string) $alias);
-    }
-
-    private function displayType(?string $type): string
-    {
-        return $this->typeCode($type) === 'backhoe_loader' ? 'Backhoe Loader' : ((string) $type ?: '—');
-    }
-
     private function workStatus(float $hours): string
     {
         if ($hours < 1) {
@@ -325,23 +298,37 @@ class TopWorkingUnitsService
             return 'from_7_to_10';
         }
 
-        return 'overtime';
+        return 'over_10';
     }
 
     private function workStatusLabel(string $status): string
     {
         return match ($status) {
-            'less_than_1' => '1 saatdan az işləyən',
-            'from_1_to_7' => '7 saatdan az işləyən',
-            'from_7_to_10' => '7-10 saat arası işləyən',
-            'overtime' => '10 saatdan çox işləyən (Overtime)',
+            'less_than_1' => '1 saatdan az isleyen',
+            'from_1_to_7' => '7 saatdan az isleyen',
+            'from_7_to_10' => '7-10 saat arasi isleyen',
+            'over_10' => '10 saatdan cox isleyen',
             default => $status,
         };
     }
 
     private function ownershipLabel(string $ownership): string
     {
-        return $ownership === Equipment::OWNERSHIP_ICARE ? 'İCARƏ' : 'NWC';
+        return $ownership === Equipment::OWNERSHIP_ICARE ? 'ICARE' : 'NWC';
+    }
+
+    private function ownershipType(mixed $ownership): ?string
+    {
+        $raw = trim((string) $ownership);
+        $normalized = mb_strtolower($raw);
+
+        return match ($normalized) {
+            'nwc' => Equipment::OWNERSHIP_NWC,
+            'icare', 'icarə' => Equipment::OWNERSHIP_ICARE,
+            default => in_array(strtoupper($raw), [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)
+                ? strtoupper($raw)
+                : null,
+        };
     }
 
     /**
@@ -357,10 +344,9 @@ class TopWorkingUnitsService
             [$from, $to] = [$to, $from];
         }
 
-        $ownership = $filters['ownership_type'] ?? null;
-        if (! in_array($ownership, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
-            $ownership = null;
-        }
+        $ownership = $this->ownershipType($filters['ownership_type'] ?? $filters['ownership'] ?? null);
+
+        $ranking = $filters['top_working_ranking'] ?? null;
 
         return [
             'from' => $from,
@@ -370,16 +356,7 @@ class TopWorkingUnitsService
             'ownership_type' => $ownership,
             'top_working_equipment_id' => $filters['top_working_equipment_id'] ?? null,
             'top_working_stat_date' => $filters['top_working_stat_date'] ?? null,
+            'top_working_ranking' => in_array($ranking, ['least', 'most'], true) ? $ranking : null,
         ];
-    }
-
-    /**
-     * @param array<string, mixed> $filters
-     */
-    private function isRange(array $filters): bool
-    {
-        $filters = $this->normalizeFilters($filters);
-
-        return $filters['from'] !== $filters['to'];
     }
 }

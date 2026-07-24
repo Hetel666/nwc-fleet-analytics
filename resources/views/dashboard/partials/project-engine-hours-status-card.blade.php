@@ -2,8 +2,13 @@
     $categoryKeys = $categoryLabels->keys();
     $total = (int) ($summary['total'] ?? 0);
     $missingData = (int) ($summary['missing_data'] ?? 0);
+    $overtimeDenominator = (int) ($summary['overtime_denominator'] ?? 0);
+    $overtimeUnknown = (int) ($summary['overtime_unknown'] ?? 0);
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
     $title = $title ?? null;
+    $drilldownProjectId = $drilldownProjectId ?? ($filters['project_id'] ?? null);
+    $drilldownDateFrom = $drilldownDateFrom ?? ($filters['from'] ?? null);
+    $drilldownDateTo = $drilldownDateTo ?? ($filters['to'] ?? null);
 @endphp
 
 <section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column">
@@ -50,7 +55,8 @@
                         @foreach ($categoryKeys as $key)
                             @php
                                 $count = (int) ($summary[$key] ?? 0);
-                                $percent = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+                                $percentDenominator = $key === 'overtime' ? $overtimeDenominator : $total;
+                                $percent = $percentDenominator > 0 ? round(($count / $percentDenominator) * 100, 1) : 0;
                                 $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
                             @endphp
                             <tr
@@ -59,7 +65,11 @@
                                 tabindex="0"
                                 data-drilldown-title="{{ ($title ?: 'Project üzrə: '.$ownershipLabel).' — '.$categoryLabels[$key] }}"
                                 data-drilldown-ownership="{{ $drilldownOwnership }}"
+                                data-drilldown-project-id="{{ $drilldownProjectId }}"
                                 data-drilldown-work-category="{{ $key }}"
+                                data-drilldown-status="{{ $key }}"
+                                data-drilldown-date-from="{{ $drilldownDateFrom }}"
+                                data-drilldown-date-to="{{ $drilldownDateTo }}"
                             >
                                 <td>
                                     <span class="dashboard-work-status-label">
@@ -79,7 +89,10 @@
                     </tbody>
                 </table>
                 @if ($missingData > 0)
-                    <div class="small text-secondary mt-2">1 saatdan az işləyən kateqoriyasına məlumatı olmayan {{ number_format($missingData, 0, '.', ' ') }} texnika daxildir.</div>
+                    <div class="small text-secondary mt-2">Məlumatı olmayan {{ number_format($missingData, 0, '.', ' ') }} texnika-gün 1 saatdan az işləyən kateqoriyasında göstərilir.</div>
+                @endif
+                @if ($overtimeUnknown > 0)
+                    <div class="small text-secondary mt-1">Overtime hesablanmayan {{ number_format($overtimeUnknown, 0, '.', ' ') }} texnika-gün overtime faizində denominator deyil.</div>
                 @endif
             </div>
         </div>
@@ -87,21 +100,10 @@
             <i class="bi bi-info-circle"></i>
             <span>Hesablamalar Asia/Baku vaxtına əsasən aparılır. Göstəricilər texnika-gün qeydləri üzrə hesablanıb; overtime gündüz statusu ilə üst-üstə düşə bilər.</span>
         </div>
-        <div class="dashboard-work-status-legend mt-3">
-            @foreach ($categoryKeys as $key)
-                <div class="dashboard-work-status-legend-item">
-                    <span class="dashboard-color-dot mt-1" style="background: {{ $categoryColors[$key] }}"></span>
-                    <span>
-                        {{ $categoryLabels[$key] }}
-                        <small>({{ $categoryRanges[$key] }})</small>
-                    </span>
-                </div>
-            @endforeach
-        </div>
     @else
         <div class="dashboard-empty flex-grow-1">{{ __('app.no_data') }}</div>
         @if ($missingData > 0)
-            <div class="small text-secondary mt-2">1 saatdan az işləyən kateqoriyasına məlumatı olmayan {{ number_format($missingData, 0, '.', ' ') }} texnika daxildir.</div>
+            <div class="small text-secondary mt-2">Məlumatı olmayan {{ number_format($missingData, 0, '.', ' ') }} texnika-gün 1 saatdan az işləyən kateqoriyasında göstərilir.</div>
         @endif
     @endif
 </section>

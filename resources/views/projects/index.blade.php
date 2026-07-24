@@ -18,7 +18,6 @@
                         <th>{{ __('app.name') }}</th>
                         <th>{{ __('app.code') }}</th>
                         <th class="text-end">Wialon qrupları</th>
-                        <th class="text-end">Geozona qruplari</th>
                         <th class="text-end">NWC</th>
                         <th class="text-end">İCARƏ</th>
                         <th class="text-end">{{ __('app.equipment') }}</th>
@@ -38,7 +37,6 @@
                             </td>
                             <td>{{ $project->code }}</td>
                             <td class="text-end">{{ $project->wialon_groups_count }}</td>
-                            <td class="text-end">{{ $project->wialon_geofence_groups_count }}</td>
                             <td class="text-end">{{ $project->nwc_equipment_count }}</td>
                             <td class="text-end">{{ $project->icare_equipment_count }}</td>
                             <td class="text-end">{{ $project->equipment_count }}</td>

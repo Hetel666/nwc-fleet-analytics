@@ -12,7 +12,6 @@ use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
-use Illuminate\Bus\Batch;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
@@ -76,12 +75,6 @@ class HistoricalRecalculationService
 
     public function dispatch(HistoricalRecalculation $run): void
     {
-        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
-        $fetchTasks = $run->tasks()
-            ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
-            ->where('status', HistoricalRecalculationTask::STATUS_PENDING)
-            ->pluck('id');
-
         $run->forceFill([
             'status' => HistoricalRecalculation::STATUS_RUNNING,
             'started_at' => $run->started_at ?: now(config('app.timezone')),
@@ -89,26 +82,64 @@ class HistoricalRecalculationService
             'last_heartbeat_at' => now(config('app.timezone')),
         ])->save();
 
-        if ($fetchTasks->isEmpty()) {
-            FinalizeHistoricalRecalculationJob::dispatch($run->id)->onQueue($queue);
+        $this->dispatchNextPendingFetchTask($run);
+    }
+
+    public function dispatchNextPendingFetchTask(HistoricalRecalculation $run): void
+    {
+        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $lock = Cache::lock(
+            'historical-recalculation-dispatch:'.$run->id,
+            (int) config('historical_recalculation.lock_seconds', 7200)
+        );
+
+        if (! $lock->get()) {
             return;
         }
 
-        $jobs = $fetchTasks
-            ->map(fn (int $taskId): RunHistoricalRecalculationTaskJob => (new RunHistoricalRecalculationTaskJob($taskId))->onQueue($queue))
-            ->all();
+        try {
+            $run = $run->refresh();
 
-        $runId = $run->id;
+            if ($run->isTerminal()) {
+                return;
+            }
 
-        $batch = Bus::batch($jobs)
-            ->name('Historical recalculation '.$run->uuid)
-            ->allowFailures()
-            ->finally(function (Batch $batch) use ($runId, $queue): void {
-                FinalizeHistoricalRecalculationJob::dispatch($runId)->onQueue($queue);
-            })
-            ->dispatch();
+            if ($run->status === HistoricalRecalculation::STATUS_CANCELLED) {
+                return;
+            }
 
-        $run->forceFill(['batch_id' => $batch->id])->save();
+            $runningFetchTasks = $run->tasks()
+                ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+                ->where('status', HistoricalRecalculationTask::STATUS_RUNNING)
+                ->count();
+
+            if ($runningFetchTasks > 0) {
+                return;
+            }
+
+            $nextTask = $run->tasks()
+                ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+                ->where('status', HistoricalRecalculationTask::STATUS_PENDING)
+                ->orderBy('stat_date')
+                ->orderBy('project_id')
+                ->orderBy('ownership_type')
+                ->orderBy('id')
+                ->first();
+
+            if ($nextTask instanceof HistoricalRecalculationTask) {
+                $delaySeconds = max(0, (int) config('historical_recalculation.report_task_delay_seconds', 5));
+
+                RunHistoricalRecalculationTaskJob::dispatch($nextTask->id)
+                    ->onQueue($queue)
+                    ->delay(now(config('app.timezone'))->addSeconds($delaySeconds));
+
+                return;
+            }
+
+            FinalizeHistoricalRecalculationJob::dispatch($run->id)->onQueue($queue);
+        } finally {
+            optional($lock)->release();
+        }
     }
 
     public function cancel(HistoricalRecalculation $run): void

@@ -8,135 +8,187 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\DashboardDailyAverageService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class DashboardDailyAverageServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_engine_hours_uses_only_allowed_types_and_normalizes_bakhoe_loader(): void
+    public function test_engine_hours_are_calculated_independently_by_vehicle_type(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+
+        $excavators = collect(range(1, 5))
+            ->map(fn (int $index): Equipment => $this->equipment('Excavator '.$index, $excavator, $project));
+        $loaders = collect(range(1, 2))
+            ->map(fn (int $index): Equipment => $this->equipment('Loader '.$index, $loader, $project));
+
+        $excavators->each(function (Equipment $unit): void {
+            $this->stat($unit, '2026-07-01', 67, 0);
+        });
+        $loaders->each(function (Equipment $unit): void {
+            $this->stat($unit, '2026-07-01', 70, 0);
+        });
+
+        $rows = app(DashboardDailyAverageService::class)->typeSummary([
+            'from' => '2026-07-01',
+            'to' => '2026-07-07',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ], 'engine_hours')->keyBy('type_code');
+
+        $this->assertSame(9.57, $rows['excavator']['average_per_unit_per_day']);
+        $this->assertSame(5, $rows['excavator']['units_count']);
+        $this->assertSame(7, $rows['excavator']['days_count']);
+        $this->assertSame(335.0, $rows['excavator']['total_value']);
+
+        $this->assertSame(10.0, $rows['loader']['average_per_unit_per_day']);
+        $this->assertSame(2, $rows['loader']['units_count']);
+        $this->assertSame(140.0, $rows['loader']['total_value']);
+    }
+
+    public function test_ownership_project_and_inclusive_one_day_filters_are_applied_before_aggregation(): void
+    {
+        $projectA = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $projectB = Project::query()->create(['name' => 'Project B', 'active' => true]);
+        $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+
+        $nwc = $this->equipment('NWC Excavator', $excavator, $projectA, Equipment::OWNERSHIP_NWC);
+        $icare = $this->equipment('Icare Excavator', $excavator, $projectA, Equipment::OWNERSHIP_ICARE);
+        $otherProject = $this->equipment('Other Project Excavator', $excavator, $projectB, Equipment::OWNERSHIP_NWC);
+
+        $this->stat($nwc, '2026-07-01', 8, 0);
+        $this->stat($icare, '2026-07-01', 5, 0);
+        $this->stat($otherProject, '2026-07-01', 20, 0);
+
+        $rows = app(DashboardDailyAverageService::class)->typeSummary([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'project_id' => $projectA->id,
+        ], 'engine_hours');
+
+        $nwcRow = $rows->first(fn (array $row): bool => $row['type_code'] === 'excavator' && $row['ownership'] === Equipment::OWNERSHIP_NWC);
+        $icareRow = $rows->first(fn (array $row): bool => $row['type_code'] === 'excavator' && $row['ownership'] === Equipment::OWNERSHIP_ICARE);
+
+        $this->assertSame(1, $nwcRow['days_count']);
+        $this->assertSame(8.0, $nwcRow['average_per_unit_per_day']);
+        $this->assertSame(5.0, $icareRow['average_per_unit_per_day']);
+    }
+
+    public function test_bakhoe_loader_is_normalized_and_missing_units_are_counted_separately(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $bakhoe = EquipmentType::query()->create(['name' => 'Bakhoe Loader']);
-        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
 
-        $this->stat($this->equipment('Excavator 01', $excavator, $project), '2026-07-01', 8, 20);
-        $this->stat($this->equipment('Bakhoe 01', $bakhoe, $project), '2026-07-01', 6, 30);
-        $this->stat($this->equipment('Dump 01', $dumpTruck, $project), '2026-07-01', 100, 500);
+        $withData = $this->equipment('Backhoe 01', $bakhoe, $project);
+        $withoutData = $this->equipment('Backhoe 02', $bakhoe, $project);
 
-        $rows = app(DashboardDailyAverageService::class)->dailyAverages([
+        $this->stat($withData, '2026-07-01', 0, 0);
+
+        $row = app(DashboardDailyAverageService::class)->typeSummary([
             'from' => '2026-07-01',
-            'to' => '2026-07-01',
+            'to' => '2026-07-02',
             'ownership_type' => Equipment::OWNERSHIP_NWC,
-        ], 'engine_hours');
+            'vehicle_types' => ['backhoe-loader'],
+        ], 'engine_hours')->firstWhere('type_code', 'backhoe_loader');
 
-        $nwc = $rows->firstWhere('ownership', Equipment::OWNERSHIP_NWC);
-
-        $this->assertSame(7.0, $nwc['average']);
-        $this->assertSame(2, $nwc['valid_units_count']);
-        $this->assertSame(0, $nwc['missing_units_count']);
+        $this->assertSame('Backhoe Loader', $row['vehicle_type']);
+        $this->assertSame(2, $row['units_count']);
+        $this->assertSame(1, $row['units_without_data']);
+        $this->assertSame(0.0, $row['average_per_unit_per_day']);
     }
 
-    public function test_mileage_uses_only_dump_truck(): void
+    public function test_mileage_still_uses_dump_truck_and_excludes_negative_values(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
         $loader = EquipmentType::query()->create(['name' => 'Loader']);
 
-        $this->stat($this->equipment('Dump 01', $dumpTruck, $project), '2026-07-01', 8, 120);
-        $this->stat($this->equipment('Dump 02', $dumpTruck, $project), '2026-07-01', 4, 80);
-        $this->stat($this->equipment('Loader 01', $loader, $project), '2026-07-01', 10, 900);
+        $dumpA = $this->equipment('Dump 01', $dumpTruck, $project);
+        $dumpB = $this->equipment('Dump 02', $dumpTruck, $project);
+        $loaderUnit = $this->equipment('Loader 01', $loader, $project);
 
-        $rows = app(DashboardDailyAverageService::class)->dailyAverages([
+        $this->stat($dumpA, '2026-07-01', 8, 120);
+        $this->stat($dumpB, '2026-07-01', 4, -80);
+        $this->stat($loaderUnit, '2026-07-01', 10, 900);
+
+        $row = app(DashboardDailyAverageService::class)->typeSummary([
             'from' => '2026-07-01',
             'to' => '2026-07-01',
             'ownership_type' => Equipment::OWNERSHIP_NWC,
-        ], 'mileage');
+        ], 'mileage')->firstWhere('type_code', 'dump_truck');
 
-        $nwc = $rows->firstWhere('ownership', Equipment::OWNERSHIP_NWC);
-
-        $this->assertSame(100.0, $nwc['average']);
-        $this->assertSame(2, $nwc['valid_units_count']);
+        $this->assertSame(60.0, $row['average_per_unit_per_day']);
+        $this->assertSame(2, $row['units_count']);
+        $this->assertSame(1, $row['units_without_data']);
     }
 
-    public function test_date_range_returns_separate_daily_points_and_does_not_average_whole_period(): void
+    public function test_duplicate_unit_day_is_not_summed_twice(): void
     {
+        Schema::table('equipment_daily_stats', function (Blueprint $table): void {
+            $table->dropUnique(['stat_date', 'equipment_id']);
+        });
+
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
-        $loader = EquipmentType::query()->create(['name' => 'Loader']);
-        $roadRoller = EquipmentType::query()->create(['name' => 'Road Roller']);
+        $unit = $this->equipment('Excavator 01', $excavator, $project);
 
-        $excavatorUnit = $this->equipment('Excavator 01', $excavator, $project);
-        $loaderUnit = $this->equipment('Loader 01', $loader, $project);
-        $rollerUnit = $this->equipment('Roller 01', $roadRoller, $project);
+        $this->stat($unit, '2026-07-01', 6, 0);
+        $this->stat($unit, '2026-07-01', 9, 0);
 
-        $this->stat($excavatorUnit, '2026-07-01', 8, 0);
-        $this->stat($loaderUnit, '2026-07-01', 6, 0);
-        $this->stat($excavatorUnit, '2026-07-02', 4, 0);
-        $this->stat($loaderUnit, '2026-07-02', 8, 0);
-        $this->stat($rollerUnit, '2026-07-02', 6, 0);
-        $this->stat($excavatorUnit, '2026-07-03', 5, 0);
-
-        $rows = app(DashboardDailyAverageService::class)->dailyAverages([
+        $row = app(DashboardDailyAverageService::class)->typeSummary([
             'from' => '2026-07-01',
-            'to' => '2026-07-03',
+            'to' => '2026-07-01',
             'ownership_type' => Equipment::OWNERSHIP_NWC,
-        ], 'engine_hours');
+        ], 'engine_hours')->firstWhere('type_code', 'excavator');
 
-        $this->assertSame([7.0, 6.0, 5.0], $rows->pluck('average')->all());
-        $this->assertSame([2, 3, 1], $rows->pluck('valid_units_count')->all());
-        $this->assertSame([1, 0, 2], $rows->pluck('missing_units_count')->all());
+        $this->assertSame(9.0, $row['total_value']);
+        $this->assertSame(9.0, $row['average_per_unit_per_day']);
     }
 
-    public function test_missing_day_returns_null_and_confirmed_zero_is_kept(): void
+    public function test_dashboard_data_and_exports_use_type_summary_rows(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
         $unit = $this->equipment('Excavator 01', $excavator, $project);
 
-        $this->stat($unit, '2026-07-01', 0, 0);
+        $this->stat($unit, '2026-07-01', 8, 12);
 
-        $rows = app(DashboardDailyAverageService::class)->dailyAverages([
+        $service = app(DashboardDailyAverageService::class);
+        $data = $service->dashboardData([
             'from' => '2026-07-01',
-            'to' => '2026-07-02',
-            'ownership_type' => Equipment::OWNERSHIP_NWC,
-        ], 'engine_hours');
-
-        $this->assertSame(0.0, $rows[0]['average']);
-        $this->assertNull($rows[1]['average']);
-    }
-
-    public function test_dashboard_data_returns_weighted_kpis_table_and_day_cards(): void
-    {
-        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
-        $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
-        $unitA = $this->equipment('Excavator 01', $excavator, $project);
-        $unitB = $this->equipment('Excavator 02', $excavator, $project);
-
-        $this->stat($unitA, '2026-07-01', 10, 0);
-        $this->stat($unitA, '2026-07-02', 0, 0);
-        $this->stat($unitB, '2026-07-02', 0, 0);
-
-        $data = app(DashboardDailyAverageService::class)->dashboardData([
-            'from' => '2026-07-01',
-            'to' => '2026-07-02',
+            'to' => '2026-07-01',
             'ownership_type' => Equipment::OWNERSHIP_NWC,
         ], 'engine_hours');
 
         $this->assertTrue($data['has_data']);
-        $this->assertCount(2, $data['table_rows']);
-        $this->assertCount(2, $data['day_cards']);
-        $this->assertSame([10.0, 0.0], $data['chart']['series'][Equipment::OWNERSHIP_NWC]);
-        $this->assertSame(3.3, $data['kpis'][Equipment::OWNERSHIP_NWC]['average']);
-        $this->assertSame(3, $data['kpis'][Equipment::OWNERSHIP_NWC]['valid_units_count']);
-        $this->assertSame(1, $data['kpis'][Equipment::OWNERSHIP_NWC]['missing_units_count']);
+        $this->assertSame('Excavator', collect($data['type_rows'])->firstWhere('type_code', 'excavator')['vehicle_type']);
+        $summaryRow = collect($service->summaryRows([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'vehicle_types' => ['excavator'],
+        ], 'engine_hours'))->first(fn (array $row): bool => $row[0] === 'Excavator');
+
+        $this->assertSame([
+            'Excavator',
+            'NWC',
+            '8.00 saat',
+            1,
+            1,
+            '8.00 saat',
+            0,
+        ], $summaryRow);
     }
 
     private function equipment(string $name, EquipmentType $type, Project $project, string $ownership = Equipment::OWNERSHIP_NWC): Equipment
     {
         return Equipment::query()->create([
             'name' => $name,
+            'registration_number' => $name.' RN',
             'wialon_unit_id' => (string) random_int(100000, 999999),
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,

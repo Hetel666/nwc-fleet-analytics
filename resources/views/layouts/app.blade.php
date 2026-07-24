@@ -145,11 +145,18 @@
             </div>
         </div>
 
+        @php
+            $dashboardYesterday = now(config('app.timezone'))->subDay()->toDateString();
+        @endphp
+
         <nav class="nav flex-column gap-1">
-            <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}">
+            <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}">
                 <i class="bi bi-speedometer2"></i><span>{{ __('app.dashboard') }}</span>
             </a>
             @if (auth()->user()?->isAdmin())
+                <a class="nav-link {{ request()->routeIs('admin.dashboard-analytics.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-analytics.index') }}">
+                    <i class="bi bi-diagram-3"></i><span>Dashboard mənbələri</span>
+                </a>
                 <a class="nav-link {{ request()->routeIs('projects.*') ? 'active' : '' }}" href="{{ route('projects.index') }}">
                     <i class="bi bi-folder2-open"></i><span>{{ __('app.projects') }}</span>
                 </a>

@@ -22,7 +22,7 @@ class WialonService
         $this->baseUrl = rtrim((string) config('fleet.wialon.base_url'), '/');
     }
 
-    public function loginByToken(): string
+    public function loginByToken(bool $cacheSession = true): string
     {
         $token = config('fleet.wialon.token');
 
@@ -37,7 +37,9 @@ class WialonService
             throw new RuntimeException('Wialon login did not return a session id.');
         }
 
-        Cache::put($this->sessionCacheKey(), $sid, now()->addMinutes((int) config('fleet.wialon.session_cache_minutes', 30)));
+        if ($cacheSession) {
+            Cache::put($this->sessionCacheKey(), $sid, now()->addMinutes((int) config('fleet.wialon.session_cache_minutes', 30)));
+        }
 
         return $sid;
     }
@@ -54,8 +56,13 @@ class WialonService
         $sid = Cache::pull($this->sessionCacheKey());
 
         if ($sid) {
-            $this->request('core/logout', [], $sid);
+            $this->logoutSession($sid);
         }
+    }
+
+    public function logoutSession(string $sid): void
+    {
+        $this->request('core/logout', [], $sid);
     }
 
     public function getUnits(bool $full = false): array
@@ -131,11 +138,13 @@ class WialonService
         return $response['item'] ?? $response;
     }
 
-    public function getGeofenceGroupZones(int|string $resourceId, int|string $groupId): array
+    /**
+     * @param  array<int, int|string>  $zoneIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function getGeofenceZonesByIds(int|string $resourceId, array $zoneIds): array
     {
-        $resource = $this->getResource($resourceId);
-        $group = $resource['zg'][(string) $groupId] ?? $resource['zg'][(int) $groupId] ?? null;
-        $zoneIds = $group['zns'] ?? [];
+        $zoneIds = array_values(array_filter($zoneIds, fn (int|string|null $id): bool => filled($id)));
 
         if ($zoneIds === []) {
             return [];
@@ -143,7 +152,7 @@ class WialonService
 
         return $this->request('resource/get_zone_data', [
             'itemId' => (int) $resourceId,
-            'col' => array_values($zoneIds),
+            'col' => $zoneIds,
             'flags' => 1 | 2 | 4 | 8 | 16,
         ]);
     }
@@ -505,6 +514,16 @@ class WialonService
         return is_array($rows) ? $rows : [];
     }
 
+    public function getReportResultSubrows(int $tableIndex, int $rowIndex, ?string $sid = null): array
+    {
+        $rows = $this->request('report/get_result_subrows', [
+            'tableIndex' => $tableIndex,
+            'rowIndex' => $rowIndex,
+        ], $sid ?? $this->getSessionId());
+
+        return is_array($rows) ? $rows : [];
+    }
+
     private function getSelectedRowsForTable(string $sid, int $tableIndex, array $table, int $rowCount, int $chunkSize): array
     {
         $tableLevel = (int) ($table['level'] ?? 1);
@@ -684,6 +703,7 @@ class WialonService
         if ($messages === []) {
             return [
                 'worked_hours' => 0,
+                'overtime_hours' => null,
                 'distance_km' => 0,
                 'first_message_at' => null,
                 'last_message_at' => null,
@@ -697,6 +717,8 @@ class WialonService
         $lastMessage = null;
         $lastPosition = null;
         $engineStart = null;
+        $hasEngineIntervals = false;
+        $overtimeSeconds = 0;
         $firstTime = null;
         $lastTime = null;
         $engineHoursStart = null;
@@ -724,7 +746,10 @@ class WialonService
                 $engineStart = $time;
             }
             if ($mode !== 'mileage' && ! $engineOn && $engineStart !== null) {
-                $workedSeconds += max(0, $time - $engineStart);
+                $segmentSeconds = max(0, $time - $engineStart);
+                $workedSeconds += $segmentSeconds;
+                $overtimeSeconds += $this->overtimeSecondsBetween($engineStart, $time);
+                $hasEngineIntervals = $hasEngineIntervals || $segmentSeconds > 0;
                 $engineStart = null;
             }
 
@@ -737,7 +762,10 @@ class WialonService
         }
 
         if ($engineStart !== null && $lastTime !== null) {
-            $workedSeconds += max(0, $lastTime - $engineStart);
+            $segmentSeconds = max(0, $lastTime - $engineStart);
+            $workedSeconds += $segmentSeconds;
+            $overtimeSeconds += $this->overtimeSecondsBetween($engineStart, $lastTime);
+            $hasEngineIntervals = $hasEngineIntervals || $segmentSeconds > 0;
         }
 
         if ($engineHoursStart !== null && $engineHoursEnd !== null && $engineHoursEnd >= $engineHoursStart) {
@@ -750,6 +778,7 @@ class WialonService
 
         return [
             'worked_hours' => round($workedHours, 2),
+            'overtime_hours' => $hasEngineIntervals ? round(min($workedHours, $overtimeSeconds / 3600), 2) : null,
             'distance_km' => round($distanceKm, 2),
             'first_message_at' => $firstTime ? Carbon::createFromTimestamp($firstTime) : null,
             'last_message_at' => $lastTime ? Carbon::createFromTimestamp($lastTime) : null,
@@ -757,6 +786,38 @@ class WialonService
             'calculation_source' => 'wialon_messages',
             'calculation_status' => 'ok',
         ];
+    }
+
+    private function overtimeSecondsBetween(int $startTimestamp, int $endTimestamp): int
+    {
+        if ($endTimestamp <= $startTimestamp) {
+            return 0;
+        }
+
+        $timezone = config('fleet_efficiency.timezone', config('app.timezone', 'Asia/Baku'));
+        $start = Carbon::createFromTimestamp($startTimestamp)->timezone($timezone);
+        $end = Carbon::createFromTimestamp($endTimestamp)->timezone($timezone);
+        $seconds = 0;
+
+        for ($day = $start->copy()->startOfDay(); $day->lessThanOrEqualTo($end); $day->addDay()) {
+            foreach (config('fleet_efficiency.overtime', []) as $window) {
+                $windowStart = Carbon::parse($day->toDateString().' '.$window['start'], $timezone);
+                $windowEnd = Carbon::parse($day->toDateString().' '.$window['end'], $timezone);
+
+                if (str_ends_with((string) $window['end'], ':59')) {
+                    $windowEnd->addSecond();
+                }
+
+                $overlapStart = $start->greaterThan($windowStart) ? $start : $windowStart;
+                $overlapEnd = $end->lessThan($windowEnd) ? $end : $windowEnd;
+
+                if ($overlapEnd->greaterThan($overlapStart)) {
+                    $seconds += (int) floor($overlapStart->diffInSeconds($overlapEnd));
+                }
+            }
+        }
+
+        return $seconds;
     }
 
     private function request(string $svc, array $params = [], string|bool|null $sid = null): array

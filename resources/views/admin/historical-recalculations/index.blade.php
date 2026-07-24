@@ -70,6 +70,9 @@
                     </div>
 
                     <div id="preview-result" class="alert alert-secondary small mt-3 d-none"></div>
+                    <div class="alert alert-info small mt-3 mb-0">
+                        Wialon report tapsiriqlari serveri yuklememek ucun ardicil novbede icra olunur: bir tapsiriq bitdikden sonra novbetisi baslayir.
+                    </div>
 
                     <div class="d-flex gap-2 mt-4">
                         <button type="button" id="preview-button" class="btn btn-outline-primary btn-icon">

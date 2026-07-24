@@ -26,29 +26,35 @@
     $ownershipAverageRows = $ownershipAverages->keyBy('ownership');
     $averageEngineMax = max(0.1, (float) $ownershipAverages->max(fn ($row) => (float) ($row['avg_hours'] ?? 0)));
     $averageMileageMax = max(0.1, (float) $ownershipAverages->max(fn ($row) => (float) ($row['avg_mileage'] ?? 0)));
-    $dailyAverageMetrics = $data['dailyAverageMetrics'] ?? [];
     $dailyAverageDashboards = $data['dailyAverageDashboards'] ?? [];
     $projectWorkCategoryGroups = $data['projectActualWorkHourCategoriesByOwnership'] ?? [$nwc => [], $icare => []];
     $projectWorkCategoryRowsNwc = collect($projectWorkCategoryGroups[$nwc] ?? []);
     $projectWorkCategoryRowsIcare = collect($projectWorkCategoryGroups[$icare] ?? []);
     $actualWorkCategoryLabels = collect([
-        'less_than_1' => __('app.worked_less_than_1_hour'),
-        'from_1_to_7' => __('app.worked_less_than_7_hours'),
-        'from_7_to_10' => __('app.worked_7_to_10_hours'),
-        'overtime' => 'İş vaxtından kənar işləyən (Overtime)',
+        'less_than_1_hour' => __('app.worked_less_than_1_hour'),
+        'less_than_7_hours' => __('app.worked_less_than_7_hours'),
+        'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
+        'over_10_hours' => __('app.worked_over_10_hours'),
+        'overtime' => __('app.worked_overtime_hours'),
     ]);
     $actualWorkCategoryRanges = collect([
-        'less_than_1' => '< 1 saat',
-        'from_1_to_7' => '1 - 5 saat',
-        'from_7_to_10' => '5 - 10 saat',
-        'overtime' => '18:01 - 07:59 (Overtime)',
+        'less_than_1_hour' => '< 1 saat',
+        'less_than_7_hours' => '1 - 7 saat',
+        'between_7_and_10_hours' => '7 - 10 saat',
+        'over_10_hours' => '> 10 saat',
+        'overtime' => '18:00 - 07:59 (Overtime)',
     ]);
     $actualWorkCategoryColors = collect([
-        'less_than_1' => '#1f6feb',
-        'from_1_to_7' => '#f97316',
-        'from_7_to_10' => '#24b35b',
+        'less_than_1_hour' => '#1f6feb',
+        'less_than_7_hours' => '#f97316',
+        'between_7_and_10_hours' => '#24b35b',
+        'over_10_hours' => '#8b5cf6',
         'overtime' => '#ef4444',
     ]);
+    $efficiencyVehicleTypes = collect(config('fleet_efficiency.efficiency_vehicle_types', config('fleet_efficiency.allowed_vehicle_types', [])))
+        ->unique()
+        ->mapWithKeys(fn (string $value): array => [$value => \App\Support\FleetVehicleType::label($value)])
+        ->all();
     $projectWorkCategorySummaryFor = function ($rows) use ($actualWorkCategoryLabels) {
         $rows = collect($rows);
         $summary = [];
@@ -57,8 +63,10 @@
             $summary[$key] = (int) $rows->sum($key);
         }
 
-        $summary['total'] = array_sum(array_intersect_key($summary, array_flip($actualWorkCategoryLabels->keys()->all())));
+        $summary['total'] = (int) array_sum(array_intersect_key($summary, array_flip(['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'over_10_hours'])));
         $summary['missing_data'] = (int) $rows->sum('missing_data');
+        $summary['overtime_denominator'] = (int) $rows->sum('overtime_denominator');
+        $summary['overtime_unknown'] = (int) $rows->sum('overtime_unknown');
 
         return collect($summary);
     };
@@ -201,6 +209,59 @@
     }
     .dashboard-drilldown-status {
         min-height: 24px;
+    }
+    .dashboard-drilldown-filter-panel {
+        border: 1px solid #dbe5f4;
+        border-radius: 14px;
+        background: #f8fbff;
+        box-shadow: 0 18px 45px rgba(15, 31, 58, .08);
+        padding: 14px;
+        margin-bottom: 12px;
+    }
+    .dashboard-drilldown-filter-panel .form-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #5b6b84;
+        margin-bottom: 4px;
+    }
+    .dashboard-drilldown-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+    .dashboard-drilldown-chip {
+        border: 1px solid #cfe0ff;
+        background: #f1f6ff;
+        color: #1f4ea3;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 7px 10px;
+    }
+    .dashboard-drilldown-chip button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-weight: 900;
+        margin-left: 6px;
+        padding: 0;
+    }
+    .dashboard-drilldown-sort {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0;
+        font: inherit;
+        font-weight: 700;
+    }
+    .dashboard-drilldown-loading {
+        opacity: .55;
+        pointer-events: none;
     }
     .dashboard-widget.drag-over .panel {
         border-color: rgba(31, 111, 235, .55);
@@ -531,6 +592,10 @@
         color: var(--fleet-muted);
         font-size: .88rem;
     }
+    .dashboard-average-info span:last-child {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
     .dashboard-average-info-icon {
         width: 38px;
         height: 38px;
@@ -682,6 +747,143 @@
         border-color: rgba(31, 111, 235, .45);
         box-shadow: 0 8px 24px rgba(31, 111, 235, .08);
     }
+    .dashboard-average-type-card {
+        min-height: 420px;
+    }
+    .dashboard-average-formula-help {
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        display: inline-grid;
+        place-items: center;
+        color: var(--fleet-blue);
+        background: #eef5ff;
+        font-size: .9rem;
+        flex: 0 0 auto;
+    }
+    .dashboard-average-type-panel {
+        display: grid;
+        gap: 10px;
+    }
+    .dashboard-average-type-head,
+    .dashboard-average-type-row {
+        display: grid;
+        grid-template-columns: minmax(126px, 170px) minmax(0, 1fr) minmax(0, 1fr);
+        gap: 12px;
+        align-items: center;
+    }
+    .dashboard-average-type-head {
+        padding: 0 12px 6px;
+        color: var(--fleet-muted);
+        font-size: .78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .02em;
+    }
+    .dashboard-average-type-row {
+        border: 1px solid var(--fleet-line);
+        border-radius: 12px;
+        background: #fff;
+        padding: 10px 12px;
+        transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+    }
+    .dashboard-average-type-row:hover {
+        transform: translateY(-1px);
+        border-color: rgba(37, 99, 235, .22);
+        box-shadow: 0 10px 26px rgba(15, 31, 58, .08);
+    }
+    .dashboard-average-type-name {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+    }
+    .dashboard-average-type-name strong {
+        color: var(--fleet-ink);
+        font-size: .95rem;
+        line-height: 1.15;
+    }
+    .dashboard-average-type-name span {
+        color: var(--fleet-muted);
+        font-size: .76rem;
+    }
+    .dashboard-average-type-cell {
+        min-width: 0;
+        border: 0;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 8px 10px;
+        display: grid;
+        grid-template-columns: minmax(72px, 1fr) auto;
+        gap: 5px 10px;
+        align-items: center;
+        text-align: left;
+        color: var(--fleet-ink);
+        transition: background .22s ease, box-shadow .22s ease;
+    }
+    .dashboard-average-type-cell:hover,
+    .dashboard-average-type-cell:focus-visible {
+        background: #eef5ff;
+        box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .18);
+    }
+    .dashboard-average-type-cell--empty {
+        color: var(--fleet-muted);
+        cursor: default;
+    }
+    .dashboard-average-type-track {
+        height: 10px;
+        border-radius: 999px;
+        background: #e6edf7;
+        overflow: hidden;
+    }
+    .dashboard-average-type-fill {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        transition: width .28s ease;
+    }
+    .dashboard-average-type-value {
+        justify-self: end;
+        font-weight: 900;
+        font-size: .96rem;
+        white-space: nowrap;
+    }
+    .dashboard-average-type-meta {
+        grid-column: 1 / -1;
+        color: var(--fleet-muted);
+        font-size: .75rem;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .dashboard-drilldown-formula {
+        border: 1px solid #d9e6fb;
+        border-radius: 12px;
+        background: #f7fbff;
+        padding: 12px;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+    .dashboard-drilldown-formula-item {
+        min-width: 0;
+        display: grid;
+        gap: 3px;
+    }
+    .dashboard-drilldown-formula-item span {
+        color: var(--fleet-muted);
+        font-size: .74rem;
+        line-height: 1.15;
+    }
+    .dashboard-drilldown-formula-item strong {
+        color: var(--fleet-ink);
+        font-size: .92rem;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
     .dashboard-loading-overlay {
         position: fixed;
         inset: 0;
@@ -772,6 +974,13 @@
         .dashboard-type-chart-box {
             flex-basis: auto;
         }
+        .dashboard-drilldown-filter-panel {
+            position: fixed;
+            inset: 10px;
+            z-index: 1065;
+            overflow: auto;
+            margin: 0;
+        }
         .dashboard-average-insight-header {
             align-items: stretch !important;
         }
@@ -791,6 +1000,22 @@
         .dashboard-chart-mode-tabs .btn {
             flex: 1 1 0;
             min-width: 0;
+        }
+        .dashboard-average-type-head {
+            display: none;
+        }
+        .dashboard-average-type-row {
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+        .dashboard-average-type-cell {
+            grid-template-columns: 1fr;
+        }
+        .dashboard-average-type-value {
+            justify-self: start;
+        }
+        .dashboard-drilldown-formula {
+            grid-template-columns: 1fr 1fr;
         }
     }
     .dashboard-widget[data-widget-key="geofence-analysis"] {
@@ -1636,6 +1861,7 @@
                     'categoryRanges' => $actualWorkCategoryRanges,
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-nwc'),
+                    'filters' => $filters,
                     'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Project üzrə: '.__('app.ownership_nwc')),
                 ])
             </div>
@@ -1653,6 +1879,7 @@
                     'categoryRanges' => $actualWorkCategoryRanges,
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-icare'),
+                    'filters' => $filters,
                     'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Project üzrə: '.__('app.ownership_icare')),
                 ])
             </div>
@@ -1663,7 +1890,6 @@
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'engine_hours',
-                    'chartId' => 'averageEngineHoursChart',
                     'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
                     'title' => $dashboardWidgetTitleFor('average-engine-hours', 'Orta motosaat göstəricisi'),
                     'subtitle' => 'Hər gün üzrə orta motosaat (saat)',
@@ -1679,7 +1905,6 @@
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'mileage',
-                    'chartId' => 'averageMileageChart',
                     'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
                     'title' => $dashboardWidgetTitleFor('average-mileage', 'Orta yürüş göstəricisi'),
                     'subtitle' => 'Hər gün üzrə orta yürüş (km)',
@@ -1695,7 +1920,7 @@
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking']])
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'], 'ranking' => 'least'])
                 </section>
             </div>
 
@@ -1705,7 +1930,7 @@
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking']])
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'], 'ranking' => 'most'])
                 </section>
             </div>
 
@@ -1771,7 +1996,7 @@
                                             <button
                                                 type="button"
                                                 class="foreign-geofence-legend-row dashboard-drilldown-trigger"
-                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} — Geozonadan çıxma halları"
+                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geozonadan çıxma halları"
                                                 data-drilldown-geofence-violation="1"
                                                 data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
                                                 data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
@@ -1812,7 +2037,7 @@
                                                 class="foreign-geofence-stat-row dashboard-drilldown-trigger"
                                                 role="button"
                                                 tabindex="0"
-                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} — Geozonadan çıxma halları"
+                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geozonadan çıxma halları"
                                                 data-drilldown-geofence-violation="1"
                                                 data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
                                                 data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
@@ -1871,7 +2096,7 @@
                     <div class="foreign-geofence-table-card">
                         <div class="foreign-geofence-table-toolbar">
                             <div class="min-w-0">
-                                <h3 class="foreign-geofence-table-title">Geozonadan çıxma halları{{ $filters['project_id'] ? ' — '.$geofenceHomeProjectLabel : '' }}</h3>
+                                <h3 class="foreign-geofence-table-title">Geozonadan çıxma halları{{ $filters['project_id'] ? ' - '.$geofenceHomeProjectLabel : '' }}</h3>
                                 <div class="foreign-geofence-table-meta" id="foreignGeofenceTableMeta">Məlumatlar yüklənir...</div>
                             </div>
                             <div class="foreign-geofence-table-actions">
@@ -1981,7 +2206,7 @@
                                                     class="{{ $loop->iteration > 10 ? 'expandable-extra d-none' : '' }} dashboard-drilldown-trigger"
                                                     role="button"
                                                     tabindex="0"
-                                                    data-drilldown-title="{{ $row['name'] }} — Bütün texnika"
+                                                    data-drilldown-title="{{ $row['name'] }} - Bütün texnika"
                                                     data-drilldown-project-id="{{ $row['id'] }}"
                                                     data-drilldown-ownership="all"
                                                 >
@@ -1990,7 +2215,7 @@
                                                         class="text-end dashboard-drilldown-trigger"
                                                         role="button"
                                                         tabindex="0"
-                                                        data-drilldown-title="{{ $row['name'] }} — NWC"
+                                                        data-drilldown-title="{{ $row['name'] }} - NWC"
                                                         data-drilldown-project-id="{{ $row['id'] }}"
                                                         data-drilldown-ownership="nwc"
                                                     >{{ number_format($row[$nwc], 0) }}</td>
@@ -1998,7 +2223,7 @@
                                                         class="text-end dashboard-drilldown-trigger"
                                                         role="button"
                                                         tabindex="0"
-                                                        data-drilldown-title="{{ $row['name'] }} — {{ __('app.ownership_icare') }}"
+                                                        data-drilldown-title="{{ $row['name'] }} - {{ __('app.ownership_icare') }}"
                                                         data-drilldown-project-id="{{ $row['id'] }}"
                                                         data-drilldown-ownership="icare"
                                                     >{{ number_format($row[$icare], 0) }}</td>
@@ -2042,14 +2267,134 @@
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="available">Məlumat var</button>
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="missing">Məlumat yoxdur</button>
                         </div>
-                        <input type="search" class="form-control form-control-sm ms-auto" id="dashboardDrilldownSearch" placeholder="Axtarış..." style="max-width: 260px;">
+                        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="dashboardDrilldownFilterToggle">
+                            <i class="bi bi-funnel"></i> Filtrlər
+                        </button>
+                        <select class="form-select form-select-sm d-none" id="dashboardDrilldownGroupMode" aria-label="Qruplaşdırma" style="max-width: 190px;">
+                            <option value="details">Gündəlik detallar</option>
+                            <option value="day">Gün üzrə</option>
+                            <option value="unit">Texnika üzrə</option>
+                        </select>
+                        <input type="search" class="form-control form-control-sm" id="dashboardDrilldownSearch" placeholder="Axtarış..." style="max-width: 260px;">
                     </div>
+                    <div class="dashboard-drilldown-filter-panel d-none" id="dashboardDrilldownFilterPanel">
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                            <strong>Əlavə filtrlər</strong>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardDrilldownFilterClose">Bağla</button>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6 col-lg-3">
+                                <label class="form-label" for="dashboardDrilldownDateFrom">Tarixdən</label>
+                                <input type="date" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDateFrom" data-filter-name="date_from">
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <label class="form-label" for="dashboardDrilldownDateTo">Tarixədək</label>
+                                <input type="date" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDateTo" data-filter-name="date_to">
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <label class="form-label" for="dashboardDrilldownOwnershipSelect">Mənsubiyyət</label>
+                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownOwnershipSelect" data-filter-name="ownership">
+                                    <option value="all">Hamısı</option>
+                                    <option value="nwc">NWC</option>
+                                    <option value="icare">İCARƏ</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <label class="form-label" for="dashboardDrilldownDataStatusSelect">Məlumat statusu</label>
+                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDataStatusSelect" data-filter-name="data_status">
+                                    <option value="all">Hamısı</option>
+                                    <option value="available">Məlumat var</option>
+                                    <option value="missing">Məlumat yoxdur</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-lg-4 dashboard-efficiency-filter-group">
+                                <label class="form-label" for="dashboardDrilldownProjects">Layihə</label>
+                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownProjects" data-filter-name="project_ids" multiple size="4">
+                                    @foreach ($projects as $project)
+                                        <option value="{{ $project->id }}">{{ $project->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-12 col-lg-4">
+                                <label class="form-label" for="dashboardDrilldownVehicleTypes">Texnika növü</label>
+                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownVehicleTypes" data-filter-name="vehicle_types" multiple size="4">
+                                    @foreach ($efficiencyVehicleTypes as $value => $label)
+                                        <option value="{{ $value }}">{{ $label }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-12 col-lg-4">
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="form-label" for="dashboardDrilldownDayStatus">Gündüz statusu</label>
+                                        <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDayStatus" data-filter-name="day_status">
+                                            <option value="">Hamısı</option>
+                                            <option value="less_than_1_hour">1 saatdan az işləyən</option>
+                                            <option value="less_than_7_hours">7 saatdan az işləyən</option>
+                                            <option value="between_7_and_10_hours">7-10 saat işləyən</option>
+                                            <option value="over_10_hours">{{ __('app.worked_over_10_hours') }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label" for="dashboardDrilldownOvertime">Overtime</label>
+                                        <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownOvertime" data-filter-name="has_overtime">
+                                            <option value="all">Hamısı</option>
+                                            <option value="yes">Var</option>
+                                            <option value="no">Yoxdur</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label" for="dashboardDrilldownDayMin">Gündüz min</label>
+                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDayMin" data-filter-name="day_hours_min">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label" for="dashboardDrilldownOvertimeMin">Overtime min</label>
+                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownOvertimeMin" data-filter-name="overtime_hours_min">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label" for="dashboardDrilldownTotalMin">Ümumi min</label>
+                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownTotalMin" data-filter-name="total_hours_min">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label" for="dashboardDrilldownDayMax">Gündüz max</label>
+                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDayMax" data-filter-name="day_hours_max">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label" for="dashboardDrilldownOvertimeMax">Overtime max</label>
+                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownOvertimeMax" data-filter-name="overtime_hours_max">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="form-label" for="dashboardDrilldownTotalMax">Ümumi max</label>
+                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownTotalMax" data-filter-name="total_hours_max">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-lg-4">
+                                <label class="form-label" for="dashboardDrilldownUnitName">Texnikanın adı</label>
+                                <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownUnitName" data-filter-name="unit_name">
+                            </div>
+                            <div class="col-6 col-lg-4">
+                                <label class="form-label" for="dashboardDrilldownRegistration">Qeydiyyat nişanı</label>
+                                <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownRegistration" data-filter-name="registration_number">
+                            </div>
+                            <div class="col-6 col-lg-4">
+                                <label class="form-label" for="dashboardDrilldownWialonId">Wialon ID</label>
+                                <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownWialonId" data-filter-name="wialon_id">
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardDrilldownClearFilters">Təmizlə</button>
+                            <button type="button" class="btn btn-sm btn-primary" id="dashboardDrilldownApplyFilters">Filtrləri tətbiq et</button>
+                        </div>
+                    </div>
+                    <div class="dashboard-drilldown-chips" id="dashboardDrilldownChips"></div>
                     <div class="dashboard-drilldown-status small text-secondary mb-2" id="dashboardDrilldownStatus">Məlumatlar yüklənir...</div>
+                    <div class="dashboard-drilldown-formula d-none" id="dashboardDrilldownFormula"></div>
                     <div class="dashboard-drilldown-table-wrapper border rounded">
                         <table class="table table-sm align-middle mb-0 dashboard-drilldown-table">
                             <thead>
                                 <tr id="dashboardDrilldownHeader">
-                                    <th>№</th>
+                                    <th>#</th>
                                     <th>Texnikanın adı</th>
                                     <th>Texnika növü</th>
                                     <th>Mənsubiyyət</th>
@@ -2062,9 +2407,16 @@
                     </div>
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
                         <div class="small text-secondary" id="dashboardDrilldownPageInfo"></div>
-                        <div class="btn-group btn-group-sm">
-                            <button type="button" class="btn btn-outline-secondary" id="dashboardDrilldownPrev">Əvvəlki</button>
-                            <button type="button" class="btn btn-outline-secondary" id="dashboardDrilldownNext">Növbəti</button>
+                        <div class="d-flex align-items-center gap-2">
+                            <select class="form-select form-select-sm" id="dashboardDrilldownPageSize" style="width: auto;">
+                                <option value="20">20</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-secondary" id="dashboardDrilldownPrev">Əvvəlki</button>
+                                <button type="button" class="btn btn-outline-secondary" id="dashboardDrilldownNext">Növbəti</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2085,9 +2437,10 @@
 const ownershipColor = { NWC: '#24b35b', ICARE: '#1f6feb' };
 const typePalette = ['#1f6feb', '#24b35b', '#f6ad00', '#8b5cf6', '#0ea5b7', '#94a3b8', '#f97316', '#14b8a6', '#6366f1', '#ef4444'];
 const workCategoryColors = {
-    less_than_1: '#1f6feb',
-    from_1_to_7: '#f97316',
-    from_7_to_10: '#24b35b',
+    less_than_1_hour: '#1f6feb',
+    less_than_7_hours: '#f97316',
+    between_7_and_10_hours: '#24b35b',
+    over_10_hours: '#8b5cf6',
     overtime: '#ef4444',
 };
 const ownershipShareLabels = @json($ownershipShare->pluck('label')->map($ownershipLabelFor)->values());
@@ -2106,12 +2459,17 @@ const workCategoryLabels = @json($actualWorkCategoryLabels->values());
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
 const projectWorkCategoryNwcCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values());
 const projectWorkCategoryIcareCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values());
+const workCategoryDonutKeys = workCategoryKeys.filter(key => key !== 'overtime');
+const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
+const workCategoryDonutLabels = workCategoryDonutIndexes.map(index => workCategoryLabels[index]);
+const workCategoryDonutColorValues = workCategoryDonutKeys.map(key => workCategoryColors[key]);
+const projectWorkCategoryNwcDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryNwcCounts[index] || 0);
+const projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
 const utilizationTrend = @json($utilizationTrendByOwnership);
 const projectComparisonLabels = @json($projectComparisonTop->pluck('name')->values());
 const projectComparisonIds = @json($projectComparisonTop->pluck('id')->values());
 const projectComparisonNwc = @json($projectComparisonTop->pluck($nwc)->values());
 const projectComparisonIcare = @json($projectComparisonTop->pluck($icare)->values());
-const dailyAverageMetrics = @json($dailyAverageMetrics);
 const dailyAverageDashboards = @json($dailyAverageDashboards);
 const geofenceViolationLabels = @json($geofenceViolations['labels'] ?? []);
 const geofenceViolationCounts = @json($geofenceViolations['counts'] ?? []);
@@ -2215,43 +2573,17 @@ const getContrastingTextColor = color => {
 
 if (window.ChartDataLabels) {
     Chart.register(ChartDataLabels);
+    Chart.defaults.plugins.datalabels = {
+        ...(Chart.defaults.plugins.datalabels || {}),
+        display: false,
+    };
 }
 
 const donutDataLabelsOptions = {
-    display: context => {
-        const dataset = context.chart.data.datasets[context.datasetIndex];
-        const total = (dataset.data || []).reduce((sum, value) => sum + Number(value || 0), 0);
-        const value = Number(dataset.data[context.dataIndex] || 0);
-
-        return total > 0 && (value / total) >= .05;
-    },
-    formatter: (value, context) => {
-        const dataset = context.chart.data.datasets[context.datasetIndex];
-        const total = (dataset.data || []).reduce((sum, value) => sum + Number(value || 0), 0);
-
-        if (!total) {
-            return '';
-        }
-
-        return `${((Number(value || 0) / total) * 100).toFixed(1)}%`;
-    },
-    color: context => {
-        const dataset = context.chart.data.datasets[context.datasetIndex];
-        const backgroundColor = Array.isArray(dataset.backgroundColor)
-            ? dataset.backgroundColor[context.dataIndex]
-            : dataset.backgroundColor;
-
-        return getContrastingTextColor(backgroundColor);
-    },
-    anchor: 'center',
-    align: 'center',
-    clamp: true,
-    clip: false,
-    font: {
-        weight: 700,
-        size: 13,
-    },
+    display: false,
 };
+
+const formatDonutCenterTotal = total => Number(total || 0).toLocaleString('az-AZ');
 
 const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => {
     const canvas = document.getElementById(id);
@@ -2262,6 +2594,28 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
 
     const showLegend = settings.showLegend ?? true;
     const total = Number(settings.total ?? values.reduce((sum, value) => sum + Number(value || 0), 0));
+    const centerTotalPlugin = {
+        id: `${id}CenterTotal`,
+        afterDraw: chart => {
+            if (!settings.showCenterTotal) {
+                return;
+            }
+
+            const { ctx, chartArea } = chart;
+
+            if (!chartArea) {
+                return;
+            }
+
+            ctx.save();
+            ctx.font = '700 24px Arial, sans-serif';
+            ctx.fillStyle = '#0f1f3a';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(formatDonutCenterTotal(total), (chartArea.left + chartArea.right) / 2, (chartArea.top + chartArea.bottom) / 2);
+            ctx.restore();
+        },
+    };
     const options = {
         ...doughnutOptions,
         cutout: settings.cutout || doughnutOptions.cutout,
@@ -2292,12 +2646,6 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
                 display: showLegend,
             },
             datalabels: donutDataLabelsOptions,
-            workStatusCenterText: {
-                display: (settings.showCenterText ?? true) && total > 0,
-                label: 'Cəmi',
-                total,
-                label: settings.centerLabel || 'Cəmi',
-            },
         },
     };
 
@@ -2305,7 +2653,7 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
         type: 'doughnut',
         data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff', hoverOffset: settings.hoverOffset ?? 0 }] },
         options,
-        plugins: [workStatusCenterTextPlugin],
+        plugins: settings.showCenterTotal ? [centerTotalPlugin] : [],
     });
 };
 
@@ -2344,7 +2692,7 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
 
                 if (projectId) {
                     openDashboardDrilldown({
-                        title: `${chartLabels[selected.index]} — ${ownership === 'nwc' ? labels.nwc : labels.icare}`,
+                        title: `${chartLabels[selected.index]} - ${ownership === 'nwc' ? labels.nwc : labels.icare}`,
                         project_id: projectId,
                         ownership,
                     });
@@ -2367,173 +2715,30 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
     });
 };
 
-const dashboardDailyAverageCharts = {};
-
-const dailyAverageChartMode = id => {
-    const saved = window.localStorage?.getItem(`dashboard:${id}:chart-mode`);
-
-    return ['line', 'bar', 'area'].includes(saved) ? saved : 'line';
-};
-
-const setDailyAverageChartModeButtons = (id, mode) => {
-    document.querySelectorAll(`[data-chart-mode-target="${id}"] [data-chart-mode]`).forEach(button => {
-        const active = button.dataset.chartMode === mode;
-        button.classList.toggle('btn-primary', active);
-        button.classList.toggle('btn-outline-secondary', !active);
-    });
-};
-
-const createDailyAverageChart = (id, metricData, metric, unit) => {
-    const canvas = document.getElementById(id);
-
-    if (!canvas || !metricData?.has_data) {
-        canvas?.closest('.dashboard-average-chart')?.classList.add('dashboard-empty');
-        if (canvas?.parentElement) {
-            canvas.parentElement.textContent = labels.noData;
-        }
-        return null;
-    }
-
-    dashboardDailyAverageCharts[id]?.destroy();
-    const mode = dailyAverageChartMode(id);
-    setDailyAverageChartModeButtons(id, mode);
-
-    const ownershipKeys = ['NWC', 'ICARE'];
-    const datasetMeta = {
-        NWC: { label: labels.nwc, color: ownershipColor.NWC },
-        ICARE: { label: labels.icare, color: ownershipColor.ICARE },
-    };
-
-    dashboardDailyAverageCharts[id] = new Chart(canvas, {
-        type: mode === 'bar' ? 'bar' : 'line',
-        data: {
-            labels: metricData.labels || [],
-            datasets: ownershipKeys.map(key => ({
-                label: datasetMeta[key].label,
-                data: metricData.series?.[key] || [],
-                borderColor: datasetMeta[key].color,
-                backgroundColor: mode === 'area'
-                    ? (key === 'NWC' ? 'rgba(36,179,91,.16)' : 'rgba(31,111,235,.16)')
-                    : datasetMeta[key].color,
-                borderRadius: mode === 'bar' ? 4 : 0,
-                fill: mode === 'area',
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                spanGaps: false,
-                tension: .3,
-            })),
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            onClick: (event, elements) => {
-                const selected = elements?.[0];
-
-                if (!selected) {
-                    return;
-                }
-
-                const date = metricData.dates?.[selected.index];
-                const ownership = selected.datasetIndex === 0 ? 'nwc' : 'icare';
-
-                if (date) {
-                    openDashboardDrilldown({
-                        title: `${metric === 'mileage' ? 'Orta yürüş' : 'Orta motosaat'} — ${selected.datasetIndex === 0 ? labels.nwc : labels.icare} — ${metricData.full_dates?.[selected.index] || date}`,
-                        date_from: date,
-                        date_to: date,
-                        ownership,
-                        metric,
-                    });
-                }
-            },
-            interaction: { mode: 'nearest', intersect: true },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: value => `${value} ${unit}`,
-                    },
-                },
-            },
-            plugins: {
-                legend: { position: 'bottom' },
-                datalabels: { display: false },
-                tooltip: {
-                    callbacks: {
-                        title: items => `Tarix: ${metricData.full_dates?.[items[0]?.dataIndex] || items[0]?.label || ''}`,
-                        label: context => {
-                            const ownershipKey = context.datasetIndex === 0 ? 'NWC' : 'ICARE';
-                            const value = context.raw;
-
-                            if (value === null || value === undefined) {
-                                return `${context.dataset.label}: ${labels.noData}`;
-                            }
-
-                            return `${context.dataset.label}: ${Number(value).toLocaleString(undefined, { maximumFractionDigits: metric === 'mileage' ? 0 : 1 })} ${unit}`;
-                        },
-                        afterLabel: context => {
-                            const ownershipKey = context.datasetIndex === 0 ? 'NWC' : 'ICARE';
-                            const index = context.dataIndex;
-                            const valid = metricData.valid_counts?.[ownershipKey]?.[index] ?? 0;
-                            const missing = metricData.missing_counts?.[ownershipKey]?.[index] ?? 0;
-                            const noun = metric === 'mileage' ? 'Dump Truck' : 'texnika';
-
-                            return [
-                                `Məlumatı olan ${noun}: ${valid}`,
-                                `Məlumatı olmayan ${noun}: ${missing}`,
-                            ];
-                        },
-                    },
-                },
-            },
-        },
-    });
-
-    return dashboardDailyAverageCharts[id];
-};
-
-const workStatusCenterTextPlugin = {
-    id: 'workStatusCenterText',
-    afterDraw(chart, args, options) {
-        if (!options?.display) {
-            return;
-        }
-
-        const { ctx, chartArea } = chart;
-        const centerX = (chartArea.left + chartArea.right) / 2;
-        const centerY = (chartArea.top + chartArea.bottom) / 2;
-
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#64748b';
-        ctx.font = '600 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillText(options.label || 'Cəmi', centerX, centerY - 13);
-        ctx.fillStyle = '#0f1f3a';
-        ctx.font = '800 26px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-        ctx.fillText(Number(options.total || 0).toLocaleString(), centerX, centerY + 14);
-        ctx.restore();
-    },
-};
 
 const createProjectWorkCategoryChart = (id, values, settings = {}) => {
     const canvas = document.getElementById(id);
     const total = values.reduce((sum, value) => sum + Number(value || 0), 0);
+    const chartLabels = settings.labels || workCategoryLabels;
+    const chartColors = settings.colors || workCategoryColorValues;
+    const displayValues = total > 0 ? values : [1];
+    const displayLabels = total > 0 ? chartLabels : ['Məlumat yoxdur'];
+    const displayColors = total > 0 ? chartColors : ['#e5edf7'];
 
-    if (!canvas || total <= 0) {
+    if (!canvas) {
         return null;
     }
 
     return new Chart(canvas, {
         type: 'doughnut',
         data: {
-            labels: workCategoryLabels,
+            labels: displayLabels,
             datasets: [{
-                data: values,
-                backgroundColor: workCategoryColorValues,
+                data: displayValues,
+                backgroundColor: displayColors,
                 borderColor: '#fff',
                 borderWidth: 2,
-                hoverOffset: 4,
+                hoverOffset: total > 0 ? 4 : 0,
             }],
         },
         options: {
@@ -2542,7 +2747,7 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
             onClick: (event, elements) => {
                 const selected = elements?.[0];
 
-                if (selected && settings.drilldownItems?.[selected.index]) {
+                if (total > 0 && selected && settings.drilldownItems?.[selected.index]) {
                     openDashboardDrilldown(settings.drilldownItems[selected.index]);
                 }
             },
@@ -2550,12 +2755,8 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
             radius: '94%',
             plugins: {
                 legend: { display: false },
-                workStatusCenterText: {
-                    display: true,
-                    label: 'Cəmi',
-                    total,
-                },
                 tooltip: {
+                    enabled: total > 0,
                     callbacks: {
                         label: context => {
                             const value = Number(context.raw || 0);
@@ -2565,10 +2766,10 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
                         },
                     }
                 },
-                datalabels: donutDataLabelsOptions,
+                datalabels: { display: false },
             },
         },
-        plugins: [workStatusCenterTextPlugin],
+        plugins: [],
     });
 };
 
@@ -3048,16 +3249,29 @@ const drilldownStatus = document.getElementById('dashboardDrilldownStatus');
 const drilldownRows = document.getElementById('dashboardDrilldownRows');
 const drilldownHeader = document.getElementById('dashboardDrilldownHeader');
 const drilldownSearch = document.getElementById('dashboardDrilldownSearch');
+const drilldownFilterToggle = document.getElementById('dashboardDrilldownFilterToggle');
+const drilldownGroupMode = document.getElementById('dashboardDrilldownGroupMode');
+const drilldownFilterPanel = document.getElementById('dashboardDrilldownFilterPanel');
+const drilldownFilterClose = document.getElementById('dashboardDrilldownFilterClose');
+const drilldownApplyFilters = document.getElementById('dashboardDrilldownApplyFilters');
+const drilldownClearFilters = document.getElementById('dashboardDrilldownClearFilters');
+const drilldownFilterControls = Array.from(document.querySelectorAll('.dashboard-drilldown-control'));
+const drilldownEfficiencyFilterGroups = Array.from(document.querySelectorAll('.dashboard-efficiency-filter-group'));
+const drilldownChips = document.getElementById('dashboardDrilldownChips');
 const drilldownPageInfo = document.getElementById('dashboardDrilldownPageInfo');
+const drilldownPageSize = document.getElementById('dashboardDrilldownPageSize');
 const drilldownPrev = document.getElementById('dashboardDrilldownPrev');
 const drilldownNext = document.getElementById('dashboardDrilldownNext');
 const drilldownExport = document.getElementById('dashboardDrilldownExport');
 const drilldownRetry = document.getElementById('dashboardDrilldownRetry');
+const drilldownFormula = document.getElementById('dashboardDrilldownFormula');
 let drilldownController = null;
 let drilldownRequestId = 0;
 let drilldownState = {
     title: '',
     filters: {},
+    baseFilters: {},
+    baseTotal: null,
     page: 1,
     meta: null,
     columns: {},
@@ -3074,20 +3288,81 @@ const baseDrilldownFilters = () => ({
 });
 
 const defaultDrilldownColumns = () => ({
-    number: '№',
+    number: '#',
     name: 'Texnikanın adı',
     vehicle_type: 'Texnika növü',
     ownership: 'Mənsubiyyət',
     project: 'Layihə',
-    wialon_id: 'Wialon ID',
 });
 
+const drilldownSortableColumns = new Set([
+    'date',
+    'name',
+    'registration_number',
+    'vehicle_type',
+    'project',
+    'ownership',
+    'daytime_hours',
+    'overtime_hours',
+    'total_hours',
+    'engine_hours',
+    'mileage',
+    'data_status',
+    'wialon_id',
+]);
+const drilldownFilterLabels = {
+    date_from: 'Tarixdən',
+    date_to: 'Tarixədək',
+    ownership: 'Mənsubiyyət',
+    data_status: 'Məlumat statusu',
+    group_by: 'Qruplaşdırma',
+    project_ids: 'Layihə',
+    vehicle_types: 'Texnika növü',
+    work_category: 'İş statusu',
+    day_status: 'Gündüz statusu',
+    has_overtime: 'Overtime',
+    day_hours_min: 'Gündüz min',
+    day_hours_max: 'Gündüz max',
+    overtime_hours_min: 'Overtime min',
+    overtime_hours_max: 'Overtime max',
+    total_hours_min: 'Ümumi min',
+    total_hours_max: 'Ümumi max',
+    unit_name: 'Texnika',
+    registration_number: 'Qeydiyyat nişanı',
+    wialon_id: 'Wialon ID',
+    search: 'Axtarış',
+};
+const drilldownValueLabels = {
+    ownership: { all: 'Hamısı', nwc: 'NWC', icare: 'İCARƏ' },
+    data_status: { all: 'Hamısı', available: 'Məlumat var', missing: 'Məlumat yoxdur' },
+    group_by: { details: 'Gündəlik detallar', day: 'Gün üzrə', unit: 'Texnika üzrə' },
+    work_category: { less_than_1_hour: @json(__('app.worked_less_than_1_hour')), less_than_7_hours: @json(__('app.worked_less_than_7_hours')), between_7_and_10_hours: @json(__('app.worked_7_to_10_hours')), over_10_hours: @json(__('app.worked_over_10_hours')), overtime: @json(__('app.worked_overtime_hours')), no_data: 'Məlumat yoxdur' },
+    day_status: { less_than_1_hour: @json(__('app.worked_less_than_1_hour')), less_than_7_hours: @json(__('app.worked_less_than_7_hours')), between_7_and_10_hours: @json(__('app.worked_7_to_10_hours')), over_10_hours: @json(__('app.worked_over_10_hours')) },
+    has_overtime: { all: 'Hamısı', yes: 'Var', no: 'Yoxdur' },
+    vehicle_types: @json($efficiencyVehicleTypes),
+};
+
 const cleanDrilldownFilters = filters => Object.fromEntries(
-    Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== '')
+    Object.entries(filters).filter(([, value]) => {
+        if (Array.isArray(value)) {
+            return value.length > 0;
+        }
+
+        return value !== undefined && value !== null && value !== '';
+    })
 );
 
 const drilldownUrl = (baseUrl, filters) => {
-    const params = new URLSearchParams(cleanDrilldownFilters(filters));
+    const params = new URLSearchParams();
+
+    Object.entries(cleanDrilldownFilters(filters)).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+            value.forEach(item => params.append(`${key}[]`, item));
+            return;
+        }
+
+        params.append(key, value);
+    });
 
     return `${baseUrl}?${params.toString()}`;
 };
@@ -3151,7 +3426,7 @@ const foreignGeofenceTone = minutes => {
 
 const appendForeignGeofenceCell = (row, text, className = '', title = '') => {
     const cell = document.createElement('td');
-    const value = text || '—';
+    const value = text || '-';
 
     if (className === 'foreign-geofence-clamp') {
         const content = document.createElement('span');
@@ -3245,7 +3520,7 @@ const renderForeignGeofenceRows = (rows, meta) => {
         const durationCell = document.createElement('td');
         const durationBadge = document.createElement('span');
         durationBadge.className = `foreign-geofence-duration ${tone.className}`;
-        durationBadge.textContent = item.duration || '—';
+        durationBadge.textContent = item.duration || '-';
         durationCell.appendChild(durationBadge);
         tr.appendChild(durationCell);
 
@@ -3384,6 +3659,44 @@ const setDrilldownStatus = (message, tone = 'muted') => {
     drilldownStatus.classList.toggle('text-success', tone === 'success');
 };
 
+const renderDrilldownFormula = formula => {
+    if (!drilldownFormula) {
+        return;
+    }
+
+    drilldownFormula.textContent = '';
+
+    if (!formula) {
+        drilldownFormula.classList.add('d-none');
+        return;
+    }
+
+    const items = [
+        ['Texnika növü', formula.vehicle_type || '-'],
+        [formula.total_label || 'Ümumi', formula.total_value || '-'],
+        ['Texnika sayı', Number(formula.units_count || 0).toLocaleString()],
+        ['Gün sayı', Number(formula.days_count || 0).toLocaleString()],
+        ['Orta göstərici', formula.average_value || '-'],
+        ['Məlumatsız', Number(formula.units_without_data || 0).toLocaleString()],
+    ];
+
+    items.forEach(([label, value]) => {
+        const item = document.createElement('div');
+        item.className = 'dashboard-drilldown-formula-item';
+
+        const labelElement = document.createElement('span');
+        labelElement.textContent = label;
+
+        const valueElement = document.createElement('strong');
+        valueElement.textContent = value;
+
+        item.append(labelElement, valueElement);
+        drilldownFormula.appendChild(item);
+    });
+
+    drilldownFormula.classList.remove('d-none');
+};
+
 const renderDrilldownFilters = filters => {
     if (!drilldownFilters) {
         return;
@@ -3394,6 +3707,114 @@ const renderDrilldownFilters = filters => {
         .join(' | ');
 };
 
+const drilldownSelectLabels = (filterName, values) => {
+    const valueList = Array.isArray(values) ? values : [values];
+    const control = drilldownFilterControls.find(item => item.dataset.filterName === filterName);
+
+    if (control?.tagName === 'SELECT') {
+        return Array.from(control.options)
+            .filter(option => valueList.map(String).includes(String(option.value)))
+            .map(option => option.textContent.trim())
+            .join(', ');
+    }
+
+    return valueList
+        .map(value => drilldownValueLabels[filterName]?.[value] || value)
+        .join(', ');
+};
+
+const syncDrilldownFilterControls = () => {
+    drilldownFilterControls.forEach(control => {
+        const name = control.dataset.filterName;
+        const value = drilldownState.filters[name];
+
+        if (control.multiple) {
+            const selected = Array.isArray(value) ? value.map(String) : [];
+            Array.from(control.options).forEach(option => {
+                option.selected = selected.includes(String(option.value));
+            });
+            return;
+        }
+
+        control.value = value ?? '';
+    });
+
+    if (drilldownSearch) {
+        drilldownSearch.value = drilldownState.filters.search || '';
+    }
+
+    if (drilldownPageSize) {
+        drilldownPageSize.value = String(drilldownState.filters.per_page || 50);
+    }
+};
+
+const collectDrilldownControlFilters = () => {
+    const filters = {};
+
+    drilldownFilterControls.forEach(control => {
+        const name = control.dataset.filterName;
+
+        if (control.multiple) {
+            filters[name] = Array.from(control.selectedOptions).map(option => option.value);
+            return;
+        }
+
+        filters[name] = control.value;
+    });
+
+    return cleanDrilldownFilters(filters);
+};
+
+const renderDrilldownChips = () => {
+    if (!drilldownChips) {
+        return;
+    }
+
+    drilldownChips.textContent = '';
+    const hidden = new Set(['page', 'per_page', 'sort', 'direction', 'title', 'geofence_violation', 'current_geozone_project_id', 'current_geozone_id', 'current_geozone_key', 'top_working_equipment_id', 'top_working_stat_date', 'top_working_ranking', 'metric']);
+    const defaultValues = { ownership: 'all', data_status: 'all', has_overtime: 'all', group_by: 'details' };
+
+    Object.entries(cleanDrilldownFilters(drilldownState.filters)).forEach(([name, value]) => {
+        if (name === 'work_category' && drilldownState.filters.day_status === value) {
+            return;
+        }
+
+        if (hidden.has(name) || String(defaultValues[name] ?? '') === String(value)) {
+            return;
+        }
+
+        const label = drilldownFilterLabels[name];
+
+        if (!label) {
+            return;
+        }
+
+        const chip = document.createElement('span');
+        chip.className = 'dashboard-drilldown-chip';
+        chip.textContent = `${label}: ${drilldownSelectLabels(name, value)}`;
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('aria-label', `${label} filtrini sil`);
+        button.textContent = '?';
+        button.addEventListener('click', () => {
+            if (name === 'day_status' && drilldownState.filters.work_category === value) {
+                delete drilldownState.filters.work_category;
+            }
+            if (name === 'work_category' && drilldownState.filters.day_status === value) {
+                delete drilldownState.filters.day_status;
+            }
+            delete drilldownState.filters[name];
+            drilldownState.filters.page = 1;
+            syncDrilldownFilterControls();
+            loadDashboardDrilldown();
+        });
+
+        chip.appendChild(button);
+        drilldownChips.appendChild(chip);
+    });
+};
+
 const renderDrilldownRows = rows => {
     if (!drilldownRows) {
         return;
@@ -3402,6 +3823,17 @@ const renderDrilldownRows = rows => {
     drilldownRows.textContent = '';
     const columns = Object.keys(drilldownState.columns || {});
 
+    if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = Math.max(1, columns.length);
+        td.className = 'text-center text-secondary py-4';
+        td.textContent = 'Seçilmiş filtrlərə uyğun məlumat tapılmadı';
+        tr.appendChild(td);
+        drilldownRows.appendChild(tr);
+        return;
+    }
+
     rows.forEach((row, index) => {
         const tr = document.createElement('tr');
         const rowNumber = ((drilldownState.meta?.current_page || 1) - 1) * (drilldownState.meta?.per_page || 50) + index + 1;
@@ -3409,7 +3841,7 @@ const renderDrilldownRows = rows => {
         columns.forEach(key => {
             const td = document.createElement('td');
             const value = key === 'number' ? rowNumber : row[key];
-            td.textContent = value ?? '—';
+            td.textContent = value ?? '-';
             tr.appendChild(td);
         });
 
@@ -3426,9 +3858,25 @@ const renderDrilldownColumns = columns => {
 
     drilldownHeader.textContent = '';
 
-    Object.values(drilldownState.columns).forEach(label => {
+    Object.entries(drilldownState.columns).forEach(([key, label]) => {
         const th = document.createElement('th');
-        th.textContent = label;
+
+        if (drilldownSortableColumns.has(key)) {
+            const button = document.createElement('button');
+            const isActive = drilldownState.filters.sort === key;
+            button.type = 'button';
+            button.className = 'dashboard-drilldown-sort';
+            button.dataset.sort = key;
+            button.textContent = label;
+
+            const marker = document.createElement('span');
+            marker.textContent = isActive ? (drilldownState.filters.direction === 'desc' ? '?' : '?') : '?';
+            button.appendChild(marker);
+            th.appendChild(button);
+        } else {
+            th.textContent = label;
+        }
+
         drilldownHeader.appendChild(th);
     });
 };
@@ -3447,6 +3895,10 @@ const updateDrilldownPagination = () => {
     if (drilldownNext) {
         drilldownNext.disabled = Number(meta.current_page || 1) >= Number(meta.last_page || 1);
     }
+
+    if (drilldownPageSize) {
+        drilldownPageSize.value = String(meta.per_page || drilldownState.filters.per_page || 50);
+    }
 };
 
 const updateDrilldownFilterButtons = () => {
@@ -3455,6 +3907,9 @@ const updateDrilldownFilterButtons = () => {
         const value = button.dataset.filterValue;
         button.classList.toggle('active', String(drilldownState.filters[name] || 'all') === value);
     });
+
+    syncDrilldownFilterControls();
+    renderDrilldownChips();
 };
 
 const updateDrilldownExportUrl = () => {
@@ -3476,6 +3931,8 @@ const resetDashboardDrilldownState = (options = {}) => {
     drilldownState = {
         title: '',
         filters: {},
+        baseFilters: {},
+        baseTotal: null,
         page: 1,
         meta: null,
         columns: defaultDrilldownColumns(),
@@ -3488,12 +3945,17 @@ const resetDashboardDrilldownState = (options = {}) => {
     if (drilldownSearch) {
         drilldownSearch.value = '';
     }
+    if (drilldownGroupMode) {
+        drilldownGroupMode.value = 'details';
+        drilldownGroupMode.classList.add('d-none');
+    }
 
     if (drilldownFilters) {
         drilldownFilters.textContent = '';
     }
 
     setDrilldownStatus('');
+    renderDrilldownFormula(null);
     renderDrilldownColumns(null);
     renderDrilldownRows([]);
     updateDrilldownPagination();
@@ -3503,6 +3965,12 @@ const resetDashboardDrilldownState = (options = {}) => {
     if (drilldownExport) {
         drilldownExport.href = '#';
     }
+
+    drilldownFilterPanel?.classList.add('d-none');
+    drilldownFilterToggle?.classList.add('d-none');
+    drilldownEfficiencyFilterGroups.forEach(group => group.classList.remove('d-none'));
+    syncDrilldownFilterControls();
+    renderDrilldownChips();
 };
 
 const loadDashboardDrilldown = async () => {
@@ -3518,6 +3986,7 @@ const loadDashboardDrilldown = async () => {
     setDrilldownStatus('Məlumatlar yüklənir...');
     drilldownRetry?.classList.add('d-none');
     renderDrilldownRows([]);
+    drilldownModalElement?.classList.add('dashboard-drilldown-loading');
     updateDrilldownFilterButtons();
     updateDrilldownExportUrl();
 
@@ -3539,6 +4008,7 @@ const loadDashboardDrilldown = async () => {
 
         drilldownState.title = payload.title || drilldownState.title || 'Texnika siyahısı';
         drilldownState.meta = payload.meta || null;
+        drilldownState.baseTotal ??= payload.summary?.total ?? 0;
         renderDrilldownColumns(payload.columns || null);
 
         if (drilldownTitle) {
@@ -3546,9 +4016,12 @@ const loadDashboardDrilldown = async () => {
         }
 
         renderDrilldownFilters(payload.filters || {});
+        renderDrilldownFormula(payload.summary?.average_formula || null);
         renderDrilldownRows(payload.data || []);
         updateDrilldownPagination();
-        setDrilldownStatus((payload.data || []).length ? `Cəmi: ${payload.summary?.total ?? 0}` : 'Seçilmiş filtr üzrə texnika tapılmadı.', (payload.data || []).length ? 'success' : 'muted');
+        const filteredTotal = Number(payload.summary?.total ?? 0);
+        const baseTotal = Number(drilldownState.baseTotal ?? filteredTotal);
+        setDrilldownStatus((payload.data || []).length ? `Tapıldı: ${filteredTotal.toLocaleString()} / Cəmi: ${baseTotal.toLocaleString()}` : 'Seçilmiş filtrlərə uyğun məlumat tapılmadı', (payload.data || []).length ? 'success' : 'muted');
     } catch (error) {
         if (error.name === 'AbortError') {
             return;
@@ -3562,6 +4035,10 @@ const loadDashboardDrilldown = async () => {
         updateDrilldownPagination();
         setDrilldownStatus('Məlumatları yükləmək mümkün olmadı.', 'danger');
         drilldownRetry?.classList.remove('d-none');
+    } finally {
+        if (requestId === drilldownRequestId) {
+            drilldownModalElement?.classList.remove('dashboard-drilldown-loading');
+        }
     }
 };
 
@@ -3569,16 +4046,43 @@ const openDashboardDrilldown = (filters = {}) => {
     resetDashboardDrilldownState({ abortRequest: true, clearTitle: false });
     const nextFilters = cleanDrilldownFilters(filters);
 
-    drilldownState.filters = {
+    const initialFilters = {
         ...baseDrilldownFilters(),
         ...nextFilters,
         data_status: nextFilters.data_status || 'all',
+        has_overtime: nextFilters.has_overtime || 'all',
         page: 1,
         search: '',
     };
+    if (!initialFilters.day_status && ['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'over_10_hours'].includes(initialFilters.work_category)) {
+        initialFilters.day_status = initialFilters.work_category;
+    }
+    if ((initialFilters.work_category || initialFilters.day_status) && !initialFilters.sort) {
+        initialFilters.sort = 'date';
+        initialFilters.direction = 'asc';
+    }
+    if (initialFilters.metric && !initialFilters.sort) {
+        initialFilters.sort = 'date';
+        initialFilters.direction = 'asc';
+    }
+    if (initialFilters.metric && !initialFilters.group_by) {
+        initialFilters.group_by = 'details';
+    }
+    const isEfficiencyDrilldown = Boolean(initialFilters.work_category || initialFilters.day_status);
+    const isMetricDrilldown = Boolean(initialFilters.metric);
+    drilldownFilterToggle?.classList.toggle('d-none', !(isEfficiencyDrilldown || isMetricDrilldown));
+    drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
+    if (drilldownGroupMode) {
+        drilldownGroupMode.value = initialFilters.group_by || 'details';
+    }
+    drilldownEfficiencyFilterGroups.forEach(group => group.classList.toggle('d-none', isMetricDrilldown && !isEfficiencyDrilldown));
+    drilldownState.filters = initialFilters;
+    drilldownState.baseFilters = { ...initialFilters };
+    drilldownState.baseTotal = null;
     drilldownState.title = nextFilters.title || '';
 
     delete drilldownState.filters.title;
+    delete drilldownState.baseFilters.title;
 
     if (drilldownSearch) {
         drilldownSearch.value = '';
@@ -3588,6 +4092,8 @@ const openDashboardDrilldown = (filters = {}) => {
         drilldownTitle.textContent = drilldownState.title || 'Texnika siyahısı';
     }
 
+    syncDrilldownFilterControls();
+    renderDrilldownChips();
     drilldownModal?.show();
     loadDashboardDrilldown();
 };
@@ -3610,13 +4116,17 @@ document.addEventListener('click', event => {
         ownership: trigger.dataset.drilldownOwnership || undefined,
         project_id: trigger.dataset.drilldownProjectId || undefined,
         equipment_type_id: trigger.dataset.drilldownEquipmentTypeId || undefined,
+        vehicle_types: trigger.dataset.drilldownVehicleTypes ? [trigger.dataset.drilldownVehicleTypes] : undefined,
         work_category: trigger.dataset.drilldownWorkCategory || undefined,
+        status: trigger.dataset.drilldownStatus || trigger.dataset.drilldownWorkCategory || undefined,
         date_from: trigger.dataset.drilldownDateFrom || undefined,
         date_to: trigger.dataset.drilldownDateTo || undefined,
         metric: trigger.dataset.drilldownMetric || undefined,
+        sort: trigger.dataset.drilldownSort || undefined,
         data_status: trigger.dataset.drilldownDataStatus || undefined,
         top_working_equipment_id: trigger.dataset.drilldownTopEquipmentId || undefined,
         top_working_stat_date: trigger.dataset.drilldownTopStatDate || undefined,
+        top_working_ranking: trigger.dataset.drilldownTopRanking || undefined,
         geofence_violation: trigger.dataset.drilldownGeofenceViolation || undefined,
         current_geozone_project_id: trigger.dataset.drilldownCurrentGeozoneProjectId || undefined,
         current_geozone_id: trigger.dataset.drilldownCurrentGeozoneId || undefined,
@@ -3647,6 +4157,44 @@ document.querySelectorAll('.dashboard-drilldown-filter').forEach(button => {
     });
 });
 
+drilldownFilterToggle?.addEventListener('click', () => {
+    drilldownFilterPanel?.classList.toggle('d-none');
+});
+
+drilldownFilterClose?.addEventListener('click', () => {
+    drilldownFilterPanel?.classList.add('d-none');
+});
+
+drilldownApplyFilters?.addEventListener('click', () => {
+    const controlNames = drilldownFilterControls.map(control => control.dataset.filterName);
+    const panelFilters = collectDrilldownControlFilters();
+
+    controlNames.forEach(name => {
+        delete drilldownState.filters[name];
+    });
+
+    drilldownState.filters = {
+        ...drilldownState.filters,
+        ...panelFilters,
+        page: 1,
+    };
+
+    if (drilldownState.filters.day_status) {
+        drilldownState.filters.work_category = drilldownState.filters.day_status;
+    } else if (['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'over_10_hours'].includes(drilldownState.filters.work_category)) {
+        delete drilldownState.filters.work_category;
+    }
+
+    loadDashboardDrilldown();
+});
+
+drilldownClearFilters?.addEventListener('click', () => {
+    drilldownState.filters = { ...drilldownState.baseFilters, page: 1 };
+    drilldownState.baseTotal = null;
+    syncDrilldownFilterControls();
+    loadDashboardDrilldown();
+});
+
 let drilldownSearchTimer = null;
 drilldownSearch?.addEventListener('input', () => {
     window.clearTimeout(drilldownSearchTimer);
@@ -3655,6 +4203,18 @@ drilldownSearch?.addEventListener('input', () => {
         drilldownState.filters.page = 1;
         loadDashboardDrilldown();
     }, 300);
+});
+
+drilldownPageSize?.addEventListener('change', () => {
+    drilldownState.filters.per_page = Number(drilldownPageSize.value || 50);
+    drilldownState.filters.page = 1;
+    loadDashboardDrilldown();
+});
+
+drilldownGroupMode?.addEventListener('change', () => {
+    drilldownState.filters.group_by = drilldownGroupMode.value || 'details';
+    drilldownState.filters.page = 1;
+    loadDashboardDrilldown();
 });
 
 drilldownPrev?.addEventListener('click', () => {
@@ -3676,32 +4236,63 @@ drilldownNext?.addEventListener('click', () => {
 
 drilldownRetry?.addEventListener('click', loadDashboardDrilldown);
 
+drilldownHeader?.addEventListener('click', event => {
+    const button = event.target.closest('.dashboard-drilldown-sort');
+
+    if (!button) {
+        return;
+    }
+
+    const sort = button.dataset.sort;
+    const currentSort = drilldownState.filters.sort || 'date';
+    const currentDirection = drilldownState.filters.direction || 'asc';
+
+    drilldownState.filters.sort = sort;
+    drilldownState.filters.direction = currentSort === sort && currentDirection === 'asc' ? 'desc' : 'asc';
+    drilldownState.filters.page = 1;
+    loadDashboardDrilldown();
+});
+
 const ownershipDrilldownItems = [
     { title: `${labels.nwc} texnikaları`, ownership: 'nwc' },
     { title: `${labels.icare} texnikaları`, ownership: 'icare' },
 ];
 const projectWorkCategoryNwcDrilldownItems = workCategoryKeys.map((key, index) => ({
-    title: `${labels.nwc} — ${workCategoryLabels[index]}`,
+    title: `${labels.nwc} - ${workCategoryLabels[index]}`,
     ownership: 'nwc',
     work_category: key,
+    status: key,
 }));
 const projectWorkCategoryIcareDrilldownItems = workCategoryKeys.map((key, index) => ({
-    title: `${labels.icare} — ${workCategoryLabels[index]}`,
+    title: `${labels.icare} - ${workCategoryLabels[index]}`,
     ownership: 'icare',
     work_category: key,
+    status: key,
+}));
+const projectWorkCategoryNwcDonutDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
+    title: `${labels.nwc} - ${workCategoryDonutLabels[index]}`,
+    ownership: 'nwc',
+    work_category: key,
+    status: key,
+}));
+const projectWorkCategoryIcareDonutDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
+    title: `${labels.icare} - ${workCategoryDonutLabels[index]}`,
+    ownership: 'icare',
+    work_category: key,
+    status: key,
 }));
 const typeNwcDrilldownItems = typeNwcIds.map((id, index) => ({
-    title: `${labels.nwc} — ${typeNwcLabels[index]}`,
+    title: `${labels.nwc} - ${typeNwcLabels[index]}`,
     ownership: 'nwc',
     equipment_type_id: id,
 }));
 const typeIcareDrilldownItems = typeIcareIds.map((id, index) => ({
-    title: `${labels.icare} — ${typeIcareLabels[index]}`,
+    title: `${labels.icare} - ${typeIcareLabels[index]}`,
     ownership: 'icare',
     equipment_type_id: id,
 }));
 const geofenceViolationDrilldownItems = geofenceViolationProjectIds.map((id, index) => ({
-    title: `${geofenceViolationLabels[index]} — Geozonadan çıxma halları`,
+    title: `${geofenceViolationLabels[index]} - Geozonadan çıxma halları`,
     geofence_violation: 1,
     current_geozone_project_id: id,
     current_geozone_id: geofenceViolationGeofenceIds[index],
@@ -3711,47 +4302,31 @@ const geofenceViolationDrilldownItems = geofenceViolationProjectIds.map((id, ind
 createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], {
     showLegend: false,
     total: ownershipShareTotal,
+    showCenterTotal: true,
     drilldownItems: ownershipDrilldownItems,
     centerDrilldown: { title: 'Bütün texnikalar', ownership: 'all' },
 });
-createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false, total: typeNwcTotal, drilldownItems: typeNwcDrilldownItems });
-createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false, total: typeIcareTotal, drilldownItems: typeIcareDrilldownItems });
+createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false, total: typeNwcTotal, showCenterTotal: true, drilldownItems: typeNwcDrilldownItems });
+createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false, total: typeIcareTotal, showCenterTotal: true, drilldownItems: typeIcareDrilldownItems });
 createDoughnutChart('geofenceViolationsDonut', geofenceViolationLabels, geofenceViolationCounts, geofenceViolationPalette, {
     showLegend: false,
-    showCenterText: false,
     cutout: '66%',
     hoverOffset: 10,
     total: geofenceViolationTotal,
-    centerLabel: 'Ümumi texnika',
     drilldownItems: geofenceViolationDrilldownItems,
     centerDrilldown: { title: 'Geozonadan çıxma halları', geofence_violation: 1 },
 });
-createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcCounts, { drilldownItems: projectWorkCategoryNwcDrilldownItems });
-createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareCounts, { drilldownItems: projectWorkCategoryIcareDrilldownItems });
-createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
-createDailyAverageChart('averageEngineHoursChart', dailyAverageDashboards.engine_hours?.chart || dailyAverageMetrics.engine_hours, 'engine_hours', labels.hours);
-createDailyAverageChart('averageMileageChart', dailyAverageDashboards.mileage?.chart || dailyAverageMetrics.mileage, 'mileage', @json(__('app.km')));
-
-document.querySelectorAll('[data-chart-mode-target] [data-chart-mode]').forEach(button => {
-    button.addEventListener('click', () => {
-        const target = button.closest('[data-chart-mode-target]')?.dataset.chartModeTarget;
-
-        if (!target) {
-            return;
-        }
-
-        window.localStorage?.setItem(`dashboard:${target}:chart-mode`, button.dataset.chartMode || 'line');
-
-        if (target === 'averageEngineHoursChart') {
-            createDailyAverageChart(target, dailyAverageDashboards.engine_hours?.chart || dailyAverageMetrics.engine_hours, 'engine_hours', labels.hours);
-        }
-
-        if (target === 'averageMileageChart') {
-            createDailyAverageChart(target, dailyAverageDashboards.mileage?.chart || dailyAverageMetrics.mileage, 'mileage', @json(__('app.km')));
-        }
-    });
+createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcDonutCounts, {
+    labels: workCategoryDonutLabels,
+    colors: workCategoryDonutColorValues,
+    drilldownItems: projectWorkCategoryNwcDonutDrilldownItems,
 });
-
+createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareDonutCounts, {
+    labels: workCategoryDonutLabels,
+    colors: workCategoryDonutColorValues,
+    drilldownItems: projectWorkCategoryIcareDonutDrilldownItems,
+});
+createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
     new Chart(document.getElementById('utilizationLine'), {
         type: 'line',

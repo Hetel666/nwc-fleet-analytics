@@ -19,6 +19,7 @@ class DashboardDrilldownController extends Controller
             'filters' => $drilldown->filterSummary($filters),
             'summary' => [
                 'total' => $units->total(),
+                ...$drilldown->resultSummary($filters),
             ],
             'columns' => $drilldown->columns($filters),
             'data' => $units->items(),

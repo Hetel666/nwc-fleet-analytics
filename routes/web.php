@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Admin\DashboardAnalyticsController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardDrilldownController;
@@ -46,6 +47,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::resource('equipment', EquipmentController::class)->except(['show'])->middleware('admin');
     Route::resource('geofences', GeofenceController::class)->except(['show'])->middleware('admin');
     Route::resource('users', UserController::class)->except(['show'])->middleware('admin');
+
+    Route::get('/admin/dashboard-analytics', [DashboardAnalyticsController::class, 'index'])
+        ->middleware('admin')
+        ->name('admin.dashboard-analytics.index');
 
     Route::prefix('admin/historical-recalculations')
         ->name('admin.historical-recalculations.')

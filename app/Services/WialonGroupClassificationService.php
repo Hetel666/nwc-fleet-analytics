@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\Equipment;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class WialonGroupClassificationService
 {
@@ -34,7 +36,7 @@ class WialonGroupClassificationService
 
     public function projectGroupIds(): array
     {
-        return $this->projectGroups()
+        return $this->activeProjectGroupQuery()
             ->pluck('wialon_group_id')
             ->map(fn ($id): string => (string) $id)
             ->all();
@@ -203,17 +205,23 @@ class WialonGroupClassificationService
             return $this->projectMappingsByGroupId;
         }
 
-        $configuredGroupIds = $this->projectGroups()->pluck('wialon_group_id')->all();
-
-        return $this->projectMappingsByGroupId = ProjectWialonGroup::query()
-            ->whereIn('wialon_group_id', $configuredGroupIds)
+        return $this->projectMappingsByGroupId = $this->activeProjectGroupQuery()
             ->with('project:id,name,active')
             ->get()
-            ->filter(fn (ProjectWialonGroup $group): bool => $group->project !== null && $group->project->active)
             ->toBase()
             ->mapWithKeys(fn (ProjectWialonGroup $group): array => [
                 $this->groupLookupKey($group->wialon_group_id) => $group,
             ]);
+    }
+
+    private function activeProjectGroupQuery(): Builder
+    {
+        return ProjectWialonGroup::query()
+            ->whereHas('project', fn (Builder $query): Builder => $query->where('active', true))
+            ->when(
+                Schema::hasColumn('project_wialon_groups', 'is_active'),
+                fn (Builder $query): Builder => $query->where('is_active', true)
+            );
     }
 
     private function groupLookupKey(string|int $groupId): string

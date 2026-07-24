@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
+use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,8 +21,8 @@ class DashboardDailyAverageService
     public function chartData(array $filters): array
     {
         return [
-            'engine_hours' => $this->metricChartData($filters, 'engine_hours'),
-            'mileage' => $this->metricChartData($filters, 'mileage'),
+            'engine_hours' => $this->dashboardData($filters, 'engine_hours')['chart'],
+            'mileage' => $this->dashboardData($filters, 'mileage')['chart'],
         ];
     }
 
@@ -31,59 +32,104 @@ class DashboardDailyAverageService
      */
     public function dashboardData(array $filters, string $metric): array
     {
-        $rows = $this->dailyAverages($filters, $metric);
-        $chart = $this->metricChartDataFromRows($rows, $metric);
-        $dates = $rows->pluck('date')->unique()->values();
-        $tableRows = [];
-        $dayCards = [];
-        $previousOverall = null;
-
-        $kpis = [
-            Equipment::OWNERSHIP_NWC => $this->aggregateAverage($rows->where('ownership', Equipment::OWNERSHIP_NWC)->values(), $metric),
-            Equipment::OWNERSHIP_ICARE => $this->aggregateAverage($rows->where('ownership', Equipment::OWNERSHIP_ICARE)->values(), $metric),
-        ];
-        $kpis['TOTAL'] = $this->aggregateAverage($rows, $metric);
-
-        foreach ($dates as $date) {
-            $nwc = $rows->first(fn (array $row): bool => $row['date'] === $date && $row['ownership'] === Equipment::OWNERSHIP_NWC);
-            $icare = $rows->first(fn (array $row): bool => $row['date'] === $date && $row['ownership'] === Equipment::OWNERSHIP_ICARE);
-            $overall = $this->aggregateAverage(collect([$nwc, $icare])->filter()->values(), $metric);
-            $trend = $previousOverall === null || $overall['average'] === null
-                ? 'same'
-                : ($overall['average'] > $previousOverall ? 'up' : ($overall['average'] < $previousOverall ? 'down' : 'same'));
-
-            if ($overall['average'] !== null) {
-                $previousOverall = $overall['average'];
-            }
-
-            $tableRows[] = [
-                'date' => $date,
-                'label' => $this->dateLabel($date),
-                'nwc' => $nwc['average'] ?? null,
-                'icare' => $icare['average'] ?? null,
-                'average' => $overall['average'],
-                'nwc_valid' => (int) ($nwc['valid_units_count'] ?? 0),
-                'icare_valid' => (int) ($icare['valid_units_count'] ?? 0),
-            ];
-
-            $dayCards[] = [
-                'date' => $date,
-                'label' => $this->dateLabel($date),
-                'nwc' => $nwc['average'] ?? null,
-                'icare' => $icare['average'] ?? null,
-                'trend' => $trend,
-            ];
-        }
+        $filters = $this->normalizedFilters($filters);
+        $summary = $this->typeSummary($filters, $metric);
+        $typeRows = $this->typeComparisonRows($summary, $metric);
+        $chart = $this->typeChartData($typeRows);
+        $daysCount = $this->daysCount($filters['from'], $filters['to']);
 
         return [
             'metric' => $metric,
             'unit' => $metric === 'mileage' ? 'km' : 'saat',
+            'days_count' => $daysCount,
+            'allowed_types' => collect($this->allowedTypes($metric))
+                ->map(fn (string $type): array => [
+                    'code' => $type,
+                    'slug' => FleetVehicleType::slug($type),
+                    'label' => FleetVehicleType::label($type),
+                ])
+                ->values()
+                ->all(),
             'chart' => $chart,
-            'kpis' => $kpis,
-            'table_rows' => $tableRows,
-            'day_cards' => $dayCards,
+            'type_rows' => $typeRows,
+            'summary_rows' => $summary->values()->all(),
+            'kpis' => [],
+            'table_rows' => [],
+            'day_cards' => [],
             'has_data' => $chart['has_data'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    public function typeSummary(array $filters, string $metric): Collection
+    {
+        $filters = $this->normalizedFilters($filters);
+        $dates = $this->dates($filters['from'], $filters['to']);
+        $daysCount = max(1, count($dates));
+        $equipment = $this->eligibleEquipment($filters, $metric);
+        $stats = $this->statsFor($filters, $equipment->pluck('id')->all());
+        $typeCodes = $filters['vehicle_types'] === []
+            ? $this->allowedTypes($metric)
+            : array_values(array_intersect($this->allowedTypes($metric), $filters['vehicle_types']));
+        $rows = collect();
+
+        foreach ($typeCodes as $typeCode) {
+            foreach ([Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE] as $ownership) {
+                if ($filters['ownership_type'] && $filters['ownership_type'] !== $ownership) {
+                    continue;
+                }
+
+                $units = $equipment
+                    ->filter(fn (Equipment $item): bool => $item->ownership_type === $ownership && $this->typeCode($item->type?->name) === $typeCode)
+                    ->values();
+                $total = 0.0;
+                $unitsWithData = [];
+
+                foreach ($units as $unit) {
+                    foreach ($dates as $date) {
+                        $value = $this->statMetricValue($stats->get($date.'|'.$unit->id), $metric);
+
+                        if ($value === null) {
+                            continue;
+                        }
+
+                        $total += $value;
+                        $unitsWithData[$unit->id] = true;
+                    }
+                }
+
+                if ($filters['data_status'] === 'available') {
+                    $units = $units->filter(fn (Equipment $unit): bool => isset($unitsWithData[$unit->id]))->values();
+                    $unitsWithData = array_fill_keys($units->pluck('id')->all(), true);
+                } elseif ($filters['data_status'] === 'missing') {
+                    $units = $units->reject(fn (Equipment $unit): bool => isset($unitsWithData[$unit->id]))->values();
+                    $total = 0.0;
+                    $unitsWithData = [];
+                }
+
+                $unitsCount = $units->count();
+                $average = $unitsCount > 0 ? round($total / $unitsCount / $daysCount, 2) : null;
+
+                $rows->push([
+                    'vehicle_type' => FleetVehicleType::label($typeCode),
+                    'type_code' => $typeCode,
+                    'type_slug' => FleetVehicleType::slug($typeCode),
+                    'ownership' => $ownership,
+                    'ownership_label' => $this->ownershipLabel($ownership),
+                    'total_value' => round($total, 2),
+                    'units_count' => $unitsCount,
+                    'days_count' => $daysCount,
+                    'average_per_unit_per_day' => $average,
+                    'units_without_data' => max(0, $unitsCount - count($unitsWithData)),
+                    'has_units' => $unitsCount > 0,
+                ]);
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -92,14 +138,33 @@ class DashboardDailyAverageService
      */
     public function summaryRows(array $filters, string $metric): array
     {
-        return collect($this->dashboardData($filters, $metric)['table_rows'])
+        return $this->typeSummary($filters, $metric)
             ->map(fn (array $row): array => [
-                $row['date'],
-                $this->formatNullableMetric($row['nwc'], $metric),
-                $this->formatNullableMetric($row['icare'], $metric),
-                $this->formatNullableMetric($row['average'], $metric),
+                $row['vehicle_type'],
+                $row['ownership_label'],
+                $this->formatMetricValue((float) $row['total_value'], $metric),
+                $row['units_count'],
+                $row['days_count'],
+                $this->formatNullableMetric($row['average_per_unit_per_day'], $metric),
+                $row['units_without_data'],
             ])
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function summaryColumns(string $metric): array
+    {
+        return [
+            'Texnika növü',
+            'Mənsubiyyət',
+            $metric === 'mileage' ? 'Ümumi yürüş' : 'Ümumi motosaat',
+            'Texnika sayı',
+            'Gün sayı',
+            'Orta gündəlik göstərici',
+            'Məlumatsız texnika',
+        ];
     }
 
     /**
@@ -110,26 +175,20 @@ class DashboardDailyAverageService
     {
         return $this->journalRows($filters, $metric)
             ->values()
-            ->map(function (array $row, int $index) use ($metric): array {
-                $values = [
+            ->map(function (array $row, int $index): array {
+                return [
                     $index + 1,
                     $row['date'],
                     $row['name'],
-                    $row['vehicle_type'],
-                    $row['ownership'],
+                    $row['registration_number'],
                     $row['project'],
+                    $row['ownership'],
+                    $row['vehicle_type'],
+                    $row['engine_hours'] === null ? '' : round((float) $row['engine_hours'], 2),
+                    $row['mileage'] === null ? '' : round((float) $row['mileage'], 1),
+                    $row['data_status'],
+                    $row['wialon_id'],
                 ];
-
-                if ($metric === 'mileage') {
-                    $values[] = $row['mileage'] === null ? '' : round((float) $row['mileage'], 1);
-                } else {
-                    $values[] = $row['engine_hours'] === null ? '' : round((float) $row['engine_hours'], 1);
-                }
-
-                $values[] = $row['data_status'];
-                $values[] = $row['wialon_id'];
-
-                return $values;
             })
             ->all();
     }
@@ -153,6 +212,24 @@ class DashboardDailyAverageService
     }
 
     /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginateGrouped(array $filters, string $metric, string $groupBy): LengthAwarePaginator
+    {
+        $rows = $this->groupRows($filters, $metric, $groupBy);
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perPage = min(100, max(10, (int) ($filters['per_page'] ?? 50)));
+
+        return new LengthAwarePaginator(
+            $rows->forPage($page, $perPage)->values(),
+            $rows->count(),
+            $perPage,
+            $page,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
+    }
+
+    /**
      * @return array<string, string>
      */
     public function journalColumns(string $metric): array
@@ -161,13 +238,89 @@ class DashboardDailyAverageService
             'number' => '№',
             'date' => 'Tarix',
             'name' => 'Texnikanın adı',
-            'vehicle_type' => 'Texnika növü',
-            'ownership' => 'Mənsubiyyət',
+            'registration_number' => 'Qeydiyyat nişanı',
             'project' => 'Layihə',
-            $metric === 'mileage' ? 'mileage' : 'engine_hours' => $metric === 'mileage' ? 'Faktiki yürüş, km' : 'Faktiki motosaat',
+            'ownership' => 'Mənsubiyyət',
+            'vehicle_type' => 'Texnika növü',
+            'engine_hours' => 'Motosaat',
+            'mileage' => 'Yürüş',
             'data_status' => 'Məlumat statusu',
             'wialon_id' => 'Wialon ID',
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function columnsForGroup(string $metric, string $groupBy): array
+    {
+        return match ($groupBy) {
+            'day' => [
+                'number' => '№',
+                'date' => 'Tarix',
+                'total_value' => $metric === 'mileage' ? 'Ümumi yürüş' : 'Ümumi motosaat',
+                'units_count' => 'Texnika sayı',
+                'average_value' => 'Orta göstərici',
+                'data_days' => 'Məlumat var',
+                'missing_days' => 'Məlumat yoxdur',
+            ],
+            'unit' => [
+                'number' => '№',
+                'name' => 'Texnikanın adı',
+                'registration_number' => 'Qeydiyyat nişanı',
+                'project' => 'Layihə',
+                'ownership' => 'Mənsubiyyət',
+                'vehicle_type' => 'Texnika növü',
+                'total_value' => $metric === 'mileage' ? 'Ümumi yürüş' : 'Ümumi motosaat',
+                'average_value' => 'Orta/gün',
+                'data_days' => 'Məlumatlı gün',
+                'missing_days' => 'Məlumatsız gün',
+                'wialon_id' => 'Wialon ID',
+            ],
+            default => $this->journalColumns($metric),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array<int, mixed>>
+     */
+    public function exportRowsForGroup(array $filters, string $metric, string $groupBy): array
+    {
+        if (! in_array($groupBy, ['day', 'unit'], true)) {
+            return $this->journalExportRows($filters, $metric);
+        }
+
+        return $this->groupRows($filters, $metric, $groupBy)
+            ->values()
+            ->map(function (array $row, int $index) use ($groupBy): array {
+                if ($groupBy === 'day') {
+                    return [
+                        $index + 1,
+                        $row['date'],
+                        $row['total_value'],
+                        $row['units_count'],
+                        $row['average_value'],
+                        $row['data_days'],
+                        $row['missing_days'],
+                    ];
+                }
+
+                return [
+                    $index + 1,
+                    $row['name'],
+                    $row['registration_number'],
+                    $row['project'],
+                    $row['ownership'],
+                    $row['vehicle_type'],
+                    $row['total_value'],
+                    $row['average_value'],
+                    $row['data_days'],
+                    $row['missing_days'],
+                    $row['wialon_id'],
+                ];
+            })
+            ->all();
     }
 
     /**
@@ -233,16 +386,22 @@ class DashboardDailyAverageService
         foreach ($dates as $date) {
             foreach ($equipment as $item) {
                 $stat = $stats->get($date.'|'.$item->id);
-                $hasData = $this->hasValidData($stat);
+                $hasRecord = $this->hasValidData($stat);
+                $hasData = $this->statMetricValue($stat, $metric) !== null;
 
                 $rows->push([
                     'date' => $date,
                     'name' => $item->name,
+                    'registration_number' => $item->registration_number ?: '—',
                     'vehicle_type' => $this->displayTypeName($item->type?->name),
+                    'vehicle_type_code' => $this->typeCode($item->type?->name),
                     'ownership' => $this->ownershipLabel($item->ownership_type),
+                    'ownership_type' => $item->ownership_type,
+                    'project_id' => $item->project_id,
                     'project' => $item->project?->name ?: '—',
-                    'engine_hours' => $hasData ? (float) $stat->worked_hours : null,
-                    'mileage' => $hasData ? (float) $stat->distance_km : null,
+                    'engine_hours' => $hasRecord ? (float) $stat->worked_hours : null,
+                    'mileage' => $hasRecord && (float) $stat->distance_km >= 0 ? (float) $stat->distance_km : null,
+                    'data_available' => $hasData,
                     'data_status' => $hasData ? 'Məlumat var' : 'Məlumat yoxdur',
                     'wialon_id' => $item->wialon_unit_id,
                 ]);
@@ -250,25 +409,104 @@ class DashboardDailyAverageService
         }
 
         return $rows
+            ->when($filters['data_status'] !== 'all', function (Collection $rows) use ($filters): Collection {
+                return $rows->filter(fn (array $row): bool => $filters['data_status'] === 'available'
+                    ? (bool) $row['data_available']
+                    : ! (bool) $row['data_available']);
+            })
+            ->when($filters['unit_name'] !== '', function (Collection $rows) use ($filters): Collection {
+                $needle = Str::lower($filters['unit_name']);
+
+                return $rows->filter(fn (array $row): bool => Str::contains(Str::lower((string) $row['name']), $needle));
+            })
+            ->when($filters['registration_number'] !== '', function (Collection $rows) use ($filters): Collection {
+                $needle = Str::lower($filters['registration_number']);
+
+                return $rows->filter(fn (array $row): bool => Str::contains(Str::lower((string) $row['registration_number']), $needle));
+            })
+            ->when($filters['wialon_id'] !== '', function (Collection $rows) use ($filters): Collection {
+                $needle = Str::lower($filters['wialon_id']);
+
+                return $rows->filter(fn (array $row): bool => Str::contains(Str::lower((string) $row['wialon_id']), $needle));
+            })
             ->when($filters['search'] !== '', function (Collection $rows) use ($filters): Collection {
                 $search = Str::lower($filters['search']);
 
                 return $rows->filter(fn (array $row): bool => Str::contains(Str::lower(implode(' ', [
                     $row['date'],
                     $row['name'],
+                    $row['registration_number'],
                     $row['vehicle_type'],
                     $row['ownership'],
                     $row['project'],
+                    $row['data_status'],
                     $row['wialon_id'],
                 ])), $search));
             })
-            ->sortBy([
-                ['date', 'asc'],
-                ['ownership', 'asc'],
-                ['vehicle_type', 'asc'],
-                ['name', 'asc'],
-            ])
+            ->pipe(fn (Collection $rows): Collection => $this->sortJournalRows($rows, $filters, $metric))
             ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function groupRows(array $filters, string $metric, string $groupBy): Collection
+    {
+        $filters = $this->normalizedFilters($filters);
+        $rows = $this->journalRows($filters, $metric);
+        $metricKey = $metric === 'mileage' ? 'mileage' : 'engine_hours';
+        $daysCount = $this->daysCount($filters['from'], $filters['to']);
+
+        if ($groupBy === 'day') {
+            return $rows
+                ->groupBy('date')
+                ->map(function (Collection $items, string $date) use ($metricKey, $metric): array {
+                    $total = $items->sum(fn (array $row): float => (float) ($row[$metricKey] ?? 0));
+                    $unitsCount = $items->unique('wialon_id')->count();
+                    $dataDays = $items->filter(fn (array $row): bool => $row[$metricKey] !== null)->count();
+                    $missingDays = max(0, $items->count() - $dataDays);
+
+                    return [
+                        'date' => $date,
+                        'total_value' => $this->formatMetricValue((float) $total, $metric),
+                        'units_count' => $unitsCount,
+                        'average_value' => $unitsCount > 0 ? $this->formatMetricValue((float) $total / $unitsCount, $metric) : __('app.no_data'),
+                        'data_days' => $dataDays,
+                        'missing_days' => $missingDays,
+                    ];
+                })
+                ->sortBy('date')
+                ->values();
+        }
+
+        if ($groupBy === 'unit') {
+            return $rows
+                ->groupBy(fn (array $row): string => (string) $row['wialon_id'])
+                ->map(function (Collection $items) use ($metricKey, $metric, $daysCount): array {
+                    $first = $items->first();
+                    $total = $items->sum(fn (array $row): float => (float) ($row[$metricKey] ?? 0));
+                    $dataDays = $items->filter(fn (array $row): bool => $row[$metricKey] !== null)->count();
+                    $missingDays = max(0, $daysCount - $dataDays);
+
+                    return [
+                        'name' => $first['name'] ?? '',
+                        'registration_number' => $first['registration_number'] ?? '—',
+                        'project' => $first['project'] ?? '—',
+                        'ownership' => $first['ownership'] ?? '—',
+                        'vehicle_type' => $first['vehicle_type'] ?? '—',
+                        'total_value' => $this->formatMetricValue((float) $total, $metric),
+                        'average_value' => $this->formatMetricValue((float) $total / max(1, $daysCount), $metric),
+                        'data_days' => $dataDays,
+                        'missing_days' => $missingDays,
+                        'wialon_id' => $first['wialon_id'] ?? '',
+                    ];
+                })
+                ->sortBy('name')
+                ->values();
+        }
+
+        return $rows;
     }
 
     /**
@@ -376,10 +614,25 @@ class DashboardDailyAverageService
             ->classifiedForDashboard()
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('equipments.project_id', $projectId))
+            ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('equipments.project_id', $projectIds))
             ->when($filters['equipment_type_id'], fn (Builder $query, int $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('equipments.ownership_type', $ownership))
+            ->when($filters['unit_name'] !== '', fn (Builder $query) => $query->where('equipments.name', 'like', '%'.$filters['unit_name'].'%'))
+            ->when($filters['registration_number'] !== '', fn (Builder $query) => $query->where('equipments.registration_number', 'like', '%'.$filters['registration_number'].'%'))
+            ->when($filters['wialon_id'] !== '', fn (Builder $query) => $query->where('equipments.wialon_unit_id', 'like', '%'.$filters['wialon_id'].'%'))
+            ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
+                $search = '%'.$filters['search'].'%';
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->where('equipments.name', 'like', $search)
+                        ->orWhere('equipments.registration_number', 'like', $search)
+                        ->orWhere('equipments.wialon_unit_id', 'like', $search)
+                        ->orWhereHas('type', fn (Builder $query) => $query->where('name', 'like', $search))
+                        ->orWhereHas('project', fn (Builder $query) => $query->where('name', 'like', $search));
+                });
+            })
             ->get()
             ->filter(fn (Equipment $item): bool => in_array($this->typeCode($item->type?->name), $allowedTypes, true))
+            ->filter(fn (Equipment $item): bool => $filters['vehicle_types'] === [] || in_array($this->typeCode($item->type?->name), $filters['vehicle_types'], true))
             ->values();
     }
 
@@ -394,10 +647,13 @@ class DashboardDailyAverageService
         }
 
         return EquipmentDailyStat::query()
-            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
+            ->whereDate('stat_date', '>=', $filters['from'])
+            ->whereDate('stat_date', '<=', $filters['to'])
             ->whereIn('equipment_id', $equipmentIds)
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
+            ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('project_id', $projectIds))
             ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('ownership_type', $ownership))
+            ->orderBy('id')
             ->get()
             ->keyBy(fn (EquipmentDailyStat $stat): string => $stat->stat_date->toDateString().'|'.$stat->equipment_id);
     }
@@ -447,9 +703,17 @@ class DashboardDailyAverageService
             'from' => $from,
             'to' => $to,
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,
+            'project_ids' => $this->integerArray($filters['project_ids'] ?? []),
             'equipment_type_id' => filled($filters['equipment_type_id'] ?? null) ? (int) $filters['equipment_type_id'] : null,
+            'vehicle_types' => $this->vehicleTypes($filters['vehicle_types'] ?? []),
             'ownership_type' => $ownership,
+            'data_status' => $this->dataStatus($filters['data_status'] ?? null),
+            'unit_name' => trim((string) ($filters['unit_name'] ?? '')),
+            'registration_number' => trim((string) ($filters['registration_number'] ?? '')),
+            'wialon_id' => trim((string) ($filters['wialon_id'] ?? '')),
             'search' => trim((string) ($filters['search'] ?? '')),
+            'sort' => $this->sort($filters['sort'] ?? null),
+            'direction' => ($filters['direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc',
         ];
     }
 
@@ -468,18 +732,12 @@ class DashboardDailyAverageService
 
     private function typeCode(?string $type): string
     {
-        $code = Str::of((string) $type)
-            ->squish()
-            ->lower()
-            ->replace(['-', ' '], '_')
-            ->value();
-
-        return config('fleet_efficiency.type_aliases.'.$code, $code);
+        return FleetVehicleType::normalize($type);
     }
 
     private function displayTypeName(?string $type): string
     {
-        return $this->typeCode($type) === 'backhoe_loader' ? 'Backhoe Loader' : ((string) $type ?: '—');
+        return FleetVehicleType::display($type);
     }
 
     private function ownershipLabel(string $ownership): string
@@ -491,11 +749,220 @@ class DashboardDailyAverageService
     {
         return $metric === 'mileage'
             ? number_format($value, 0, '.', ' ').' km'
-            : number_format($value, 1).' saat';
+            : number_format($value, 2).' saat';
     }
 
     private function formatNullableMetric(mixed $value, string $metric): string
     {
         return $value === null ? __('app.no_data') : $this->formatMetricValue((float) $value, $metric);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $summary
+     * @return array<int, array<string, mixed>>
+     */
+    private function typeComparisonRows(Collection $summary, string $metric): array
+    {
+        return collect($this->allowedTypes($metric))
+            ->map(function (string $typeCode) use ($summary): array {
+                $byOwnership = $summary
+                    ->where('type_code', $typeCode)
+                    ->keyBy('ownership');
+
+                return [
+                    'vehicle_type' => FleetVehicleType::label($typeCode),
+                    'type_code' => $typeCode,
+                    'type_slug' => FleetVehicleType::slug($typeCode),
+                    'nwc' => $byOwnership->get(Equipment::OWNERSHIP_NWC),
+                    'icare' => $byOwnership->get(Equipment::OWNERSHIP_ICARE),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $typeRows
+     * @return array<string, mixed>
+     */
+    private function typeChartData(array $typeRows): array
+    {
+        $labels = [];
+        $series = [
+            Equipment::OWNERSHIP_NWC => [],
+            Equipment::OWNERSHIP_ICARE => [],
+        ];
+        $totals = [
+            Equipment::OWNERSHIP_NWC => [],
+            Equipment::OWNERSHIP_ICARE => [],
+        ];
+        $unitCounts = [
+            Equipment::OWNERSHIP_NWC => [],
+            Equipment::OWNERSHIP_ICARE => [],
+        ];
+        $missingCounts = [
+            Equipment::OWNERSHIP_NWC => [],
+            Equipment::OWNERSHIP_ICARE => [],
+        ];
+        $typeSlugs = [];
+
+        foreach ($typeRows as $row) {
+            $labels[] = $row['vehicle_type'];
+            $typeSlugs[] = $row['type_slug'];
+
+            foreach ([Equipment::OWNERSHIP_NWC => 'nwc', Equipment::OWNERSHIP_ICARE => 'icare'] as $ownership => $key) {
+                $summary = $row[$key] ?? null;
+                $series[$ownership][] = $summary['average_per_unit_per_day'] ?? null;
+                $totals[$ownership][] = $summary['total_value'] ?? 0;
+                $unitCounts[$ownership][] = $summary['units_count'] ?? 0;
+                $missingCounts[$ownership][] = $summary['units_without_data'] ?? 0;
+            }
+        }
+
+        return [
+            'labels' => $labels,
+            'type_slugs' => $typeSlugs,
+            'series' => $series,
+            'totals' => $totals,
+            'unit_counts' => $unitCounts,
+            'missing_counts' => $missingCounts,
+            'has_data' => collect($series)->flatten()->filter(fn ($value): bool => $value !== null)->isNotEmpty(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>|null
+     */
+    public function formulaSummary(array $filters, string $metric): ?array
+    {
+        $summary = $this->typeSummary($filters, $metric);
+
+        if ($summary->count() !== 1) {
+            return null;
+        }
+
+        $row = $summary->first();
+
+        return [
+            'metric' => $metric,
+            'vehicle_type' => $row['vehicle_type'],
+            'ownership' => $row['ownership_label'],
+            'total_label' => $metric === 'mileage' ? 'Ümumi yürüş' : 'Ümumi motosaat',
+            'total_value' => $this->formatMetricValue((float) $row['total_value'], $metric),
+            'units_count' => (int) $row['units_count'],
+            'days_count' => (int) $row['days_count'],
+            'average_value' => $this->formatNullableMetric($row['average_per_unit_per_day'], $metric),
+            'units_without_data' => (int) $row['units_without_data'],
+        ];
+    }
+
+    private function statMetricValue(?EquipmentDailyStat $stat, string $metric): ?float
+    {
+        if (! $this->hasValidData($stat)) {
+            return null;
+        }
+
+        $value = $metric === 'mileage'
+            ? (float) $stat->distance_km
+            : (float) $stat->worked_hours;
+
+        if ($metric === 'mileage' && $value < 0) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function daysCount(string $from, string $to): int
+    {
+        return max(1, CarbonImmutable::parse($from)->diffInDays(CarbonImmutable::parse($to)) + 1);
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<int, int>
+     */
+    private function integerArray(mixed $value): array
+    {
+        return collect(is_array($value) ? $value : [$value])
+            ->filter(fn (mixed $item): bool => filled($item))
+            ->map(fn (mixed $item): int => (int) $item)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param mixed $value
+     * @return array<int, string>
+     */
+    private function vehicleTypes(mixed $value): array
+    {
+        return collect(is_array($value) ? $value : [$value])
+            ->filter(fn (mixed $item): bool => filled($item))
+            ->map(fn (mixed $item): string => FleetVehicleType::normalize((string) $item))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function dataStatus(?string $status): string
+    {
+        return in_array($status, ['available', 'missing'], true) ? $status : 'all';
+    }
+
+    private function sort(?string $sort): string
+    {
+        return in_array($sort, [
+            'date',
+            'name',
+            'registration_number',
+            'vehicle_type',
+            'project',
+            'ownership',
+            'engine_hours',
+            'mileage',
+            'data_status',
+            'wialon_id',
+        ], true) ? $sort : 'date';
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $filters
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function sortJournalRows(Collection $rows, array $filters, string $metric): Collection
+    {
+        $sort = $this->sort($filters['sort'] ?? null);
+        $direction = ($filters['direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc';
+
+        return $rows
+            ->sortBy(fn (array $row): array => [
+                $this->journalSortValue($row, $sort, $metric),
+                (string) $row['date'],
+                mb_strtolower((string) $row['name']),
+            ], SORT_REGULAR, $direction === 'desc')
+            ->values();
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function journalSortValue(array $row, string $sort, string $metric): mixed
+    {
+        return match ($sort) {
+            'name' => mb_strtolower((string) $row['name']),
+            'registration_number' => mb_strtolower((string) $row['registration_number']),
+            'vehicle_type' => mb_strtolower((string) $row['vehicle_type']),
+            'project' => mb_strtolower((string) $row['project']),
+            'ownership' => mb_strtolower((string) $row['ownership']),
+            'engine_hours' => (float) ($row['engine_hours'] ?? -1),
+            'mileage' => (float) ($row['mileage'] ?? -1),
+            'data_status' => mb_strtolower((string) $row['data_status']),
+            'wialon_id' => (string) $row['wialon_id'],
+            default => (string) $row['date'],
+        };
     }
 }

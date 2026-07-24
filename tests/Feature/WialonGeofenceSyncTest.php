@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\Geofence;
 use App\Models\Project;
-use App\Models\ProjectWialonGeofenceGroup;
 use App\Services\WialonService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -13,17 +12,27 @@ class WialonGeofenceSyncTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_geofences_are_imported_from_mapped_wialon_group(): void
+    public function test_configured_geofence_ids_are_the_only_active_wialon_geofences(): void
     {
-        $project = Project::create(['name' => 'Yuxarı Şirvan LOT3', 'active' => true]);
+        config([
+            'wialon_projects.project_geofence_ids' => [
+                'Project A' => ['601701680:7'],
+                'Project B' => ['601701680:8', '601701680:9'],
+                'Project without geofence' => [],
+            ],
+        ]);
 
-        ProjectWialonGeofenceGroup::create([
-            'project_id' => $project->id,
-            'wialon_resource_id' => '601701680',
-            'wialon_resource_name' => 'NWCuser2',
-            'wialon_geofence_group_id' => '3',
-            'name' => 'M00 LOT-3',
-            'zones_count' => 4,
+        $projectA = Project::create(['name' => 'Project A', 'active' => true]);
+        $projectB = Project::create(['name' => 'Project B', 'active' => true]);
+        Project::create(['name' => 'Project without geofence', 'active' => true]);
+
+        Geofence::create([
+            'project_id' => $projectA->id,
+            'name' => 'Old zone',
+            'normalized_name' => 'old zone',
+            'wialon_geofence_id' => '601701680:999',
+            'geometry_json' => ['type' => 'Polygon', 'coordinates' => []],
+            'active' => true,
         ]);
 
         $this->app->instance(WialonService::class, new class extends WialonService
@@ -32,12 +41,12 @@ class WialonGeofenceSyncTest extends TestCase
             {
             }
 
-            public function getGeofenceGroupZones(int|string $resourceId, int|string $groupId): array
+            public function getGeofenceZonesByIds(int|string $resourceId, array $zoneIds): array
             {
-                return [
-                    [
-                        'id' => 22,
-                        'n' => 'M001 Karxana LOT-3',
+                return array_map(
+                    fn (int|string $zoneId): array => [
+                        'id' => (int) $zoneId,
+                        'n' => 'Zone '.$zoneId,
                         't' => 2,
                         'p' => [
                             ['x' => 48.1, 'y' => 40.1],
@@ -46,19 +55,33 @@ class WialonGeofenceSyncTest extends TestCase
                             ['x' => 48.1, 'y' => 40.2],
                         ],
                     ],
-                ];
+                    $zoneIds
+                );
             }
         });
 
         $this->artisan('fleet:sync-geofences')
-            ->expectsOutput('Synced 1 Wialon geofences.')
+            ->expectsOutput('Synced 3 Wialon geofences.')
             ->assertExitCode(0);
 
-        $geofence = Geofence::firstOrFail();
-
-        $this->assertSame('M001 Karxana LOT-3', $geofence->name);
-        $this->assertSame($project->id, $geofence->project_id);
-        $this->assertSame('601701680:22', $geofence->wialon_geofence_id);
-        $this->assertSame('Polygon', $geofence->geometry_json['type']);
+        $this->assertDatabaseHas('geofences', [
+            'wialon_geofence_id' => '601701680:7',
+            'project_id' => $projectA->id,
+            'active' => true,
+        ]);
+        $this->assertDatabaseHas('geofences', [
+            'wialon_geofence_id' => '601701680:8',
+            'project_id' => $projectB->id,
+            'active' => true,
+        ]);
+        $this->assertDatabaseHas('geofences', [
+            'wialon_geofence_id' => '601701680:9',
+            'project_id' => $projectB->id,
+            'active' => true,
+        ]);
+        $this->assertDatabaseHas('geofences', [
+            'wialon_geofence_id' => '601701680:999',
+            'active' => false,
+        ]);
     }
 }

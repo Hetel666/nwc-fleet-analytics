@@ -1,5 +1,7 @@
 <?php
 
+use App\Support\FleetVehicleType;
+
 return [
     'wialon' => [
         'base_url' => env('WIALON_BASE_URL', 'https://hst-api.wialon.com'),
@@ -12,8 +14,13 @@ return [
         'report_rows_delay_ms' => (int) env('WIALON_REPORT_ROWS_DELAY_MS', 1000),
         'engine_hours_report_resource_id' => (int) env('WIALON_ENGINE_HOURS_REPORT_RESOURCE_ID', 601701680),
         'engine_hours_report_template_id' => (int) env('WIALON_ENGINE_HOURS_REPORT_TEMPLATE_ID', 9),
+        'engine_hours_report_template_name' => env('WIALON_ENGINE_HOURS_REPORT_TEMPLATE_NAME', 'Engine hours: NWC vs İCARƏ (Api)'),
         'engine_hours_report_cache_minutes' => (int) env('WIALON_ENGINE_HOURS_REPORT_CACHE_MINUTES', 30),
         'engine_hours_report_timeout' => (int) env('WIALON_ENGINE_HOURS_REPORT_TIMEOUT', 15),
+        'engine_hours_report_chunk_size' => (int) env('WIALON_ENGINE_HOURS_REPORT_CHUNK_SIZE', 500),
+        'engine_hours_report_interval_flags' => (int) env('WIALON_ENGINE_HOURS_REPORT_INTERVAL_FLAGS', 0),
+        'engine_hours_report_nested_depth' => (int) env('WIALON_ENGINE_HOURS_REPORT_NESTED_DEPTH', 2),
+        'engine_hours_sync_lock_seconds' => (int) env('WIALON_ENGINE_HOURS_SYNC_LOCK_SECONDS', 900),
         'daily_engine_hours_report_timeout' => (int) env('WIALON_DAILY_ENGINE_HOURS_REPORT_TIMEOUT', 30),
         'report_stats_sync_timeout' => (int) env('WIALON_REPORT_STATS_SYNC_TIMEOUT', 90),
         'actual_work_report_resource_id' => (int) env('WIALON_ACTUAL_WORK_REPORT_RESOURCE_ID', env('WIALON_ENGINE_HOURS_REPORT_RESOURCE_ID', 601701680)),
@@ -21,6 +28,16 @@ return [
         'actual_work_report_template_name' => env('WIALON_ACTUAL_WORK_REPORT_TEMPLATE_NAME', 'Qrup report DNN,day 24 saat (api)'),
         'actual_work_report_cache_minutes' => (int) env('WIALON_ACTUAL_WORK_REPORT_CACHE_MINUTES', 30),
         'actual_work_report_timeout' => (int) env('WIALON_ACTUAL_WORK_REPORT_TIMEOUT', 10),
+        'shift_report_resource_id' => (int) env('WIALON_SHIFT_REPORT_RESOURCE_ID', env('WIALON_ACTUAL_WORK_REPORT_RESOURCE_ID', env('WIALON_ENGINE_HOURS_REPORT_RESOURCE_ID', 601701680))),
+        'shift_report_template_id' => (int) env('WIALON_SHIFT_REPORT_TEMPLATE_ID', 0),
+        'shift_report_template_name' => env('WIALON_SHIFT_REPORT_TEMPLATE_NAME', 'Qrup report novbe 24 saat (api)'),
+        'shift_report_timeout' => (int) env('WIALON_SHIFT_REPORT_TIMEOUT', 30),
+        'shift_report_chunk_size' => (int) env('WIALON_SHIFT_REPORT_CHUNK_SIZE', 500),
+        'shift_report_interval_flags' => (int) env('WIALON_SHIFT_REPORT_INTERVAL_FLAGS', 0),
+        'shift_report_sleep_ms' => (int) env('WIALON_SHIFT_REPORT_SLEEP_MS', 250),
+        'shift_report_nested_depth' => (int) env('WIALON_SHIFT_REPORT_NESTED_DEPTH', 1),
+        'shift_sync_lock_seconds' => (int) env('WIALON_SHIFT_SYNC_LOCK_SECONDS', 900),
+        'shift_sync_running_timeout_seconds' => (int) env('WIALON_SHIFT_SYNC_RUNNING_TIMEOUT_SECONDS', 1800),
         'geofence_outside_report_resource_id' => (int) env('WIALON_GEOFENCE_OUTSIDE_REPORT_RESOURCE_ID', env('WIALON_ENGINE_HOURS_REPORT_RESOURCE_ID', 601701680)),
         'geofence_outside_report_template_id' => (int) env('WIALON_GEOFENCE_OUTSIDE_REPORT_TEMPLATE_ID', 0),
         'geofence_outside_report_template_name' => env('WIALON_GEOFENCE_OUTSIDE_REPORT_TEMPLATE_NAME', 'Dashboard geofence outside (Api)'),
@@ -58,15 +75,7 @@ return [
         'merge_gap_minutes' => (int) env('GEOFENCE_VISIT_MERGE_GAP_MINUTES', 5),
         'geozon_api_sync_lookback_hours' => (int) env('GEOZON_API_SYNC_LOOKBACK_HOURS', 24),
         'geozon_api_max_concurrent_jobs' => (int) env('GEOZON_API_MAX_CONCURRENT_JOBS', 1),
-        'allowed_vehicle_types' => [
-            'Dump Truck',
-            'Excavator',
-            'Road Grader',
-            'Loader',
-            'Backhoe Loader',
-            'Bakhoe Loader',
-            'Road Roller',
-        ],
+        'allowed_vehicle_types' => FleetVehicleType::names(FleetVehicleType::ANALYTICS_TYPES),
     ],
 
     'demo' => [

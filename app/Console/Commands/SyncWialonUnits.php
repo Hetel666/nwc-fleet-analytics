@@ -39,11 +39,20 @@ class SyncWialonUnits extends Command
         $excludedUnitIds = $unitGroups['excluded'];
         $exclusionsSynced = (bool) $unitGroups['exclusions_synced'];
         $count = 0;
+        $skippedWithoutProjectGroup = 0;
 
         foreach ($units as $unit) {
             try {
                 $unitId = (string) ($unit['id'] ?? '');
                 if ($unitId === '') {
+                    continue;
+                }
+
+                $mapping = $unitMappings[$unitId] ?? null;
+
+                if (($mapping['project_id'] ?? null) === null || ($mapping['project_wialon_group_id'] ?? null) === null) {
+                    $skippedWithoutProjectGroup++;
+
                     continue;
                 }
 
@@ -74,12 +83,11 @@ class SyncWialonUnits extends Command
                     ]);
                 }
 
-                $mapping = $unitMappings[$unitId] ?? null;
                 $ownershipType = $mapping['ownership_type'] ?? null;
 
                 $equipment->fill([
-                    'project_id' => $mapping['project_id'] ?? null,
-                    'project_wialon_group_id' => $mapping['project_wialon_group_id'] ?? null,
+                    'project_id' => $mapping['project_id'],
+                    'project_wialon_group_id' => $mapping['project_wialon_group_id'],
                     'matched_wialon_group_id' => $mapping['matched_group_id'] ?? null,
                     'matched_wialon_group_name' => $mapping['matched_group_name'] ?? null,
                 ]);
@@ -106,6 +114,7 @@ class SyncWialonUnits extends Command
         Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
 
         $this->info("Synced {$count} Wialon units.");
+        $this->line("Skipped {$skippedWithoutProjectGroup} Wialon units without project group.");
 
         return self::SUCCESS;
     }

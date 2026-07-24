@@ -26,6 +26,8 @@ class DashboardExportXlsxTest extends TestCase
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'matched_wialon_group_id' => '601701903',
+            'active' => true,
         ]);
 
         EquipmentDailyStat::create([

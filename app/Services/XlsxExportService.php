@@ -33,16 +33,20 @@ class XlsxExportService
             throw new RuntimeException('Could not open temporary XLSX archive.');
         }
 
-        $worksheet = $this->worksheetXml($export);
+        $sheets = $this->workbookSheets($export);
 
-        $zip->addFromString('[Content_Types].xml', $this->contentTypesXml());
+        $zip->addFromString('[Content_Types].xml', $this->contentTypesXml(count($sheets)));
         $zip->addFromString('_rels/.rels', $this->rootRelsXml());
         $zip->addFromString('docProps/app.xml', $this->appPropsXml());
         $zip->addFromString('docProps/core.xml', $this->corePropsXml());
-        $zip->addFromString('xl/workbook.xml', $this->workbookXml());
-        $zip->addFromString('xl/_rels/workbook.xml.rels', $this->workbookRelsXml());
+        $zip->addFromString('xl/workbook.xml', $this->workbookXml($sheets));
+        $zip->addFromString('xl/_rels/workbook.xml.rels', $this->workbookRelsXml($sheets));
         $zip->addFromString('xl/styles.xml', $this->stylesXml());
-        $zip->addFromString('xl/worksheets/sheet1.xml', $worksheet);
+
+        foreach ($sheets as $index => $sheet) {
+            $zip->addFromString('xl/worksheets/sheet'.($index + 1).'.xml', $this->worksheetXml($sheet));
+        }
+
         $zip->close();
 
         $content = file_get_contents($path);
@@ -53,6 +57,31 @@ class XlsxExportService
         }
 
         return $content;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function workbookSheets(array $export): array
+    {
+        if (! empty($export['sheets']) && is_array($export['sheets'])) {
+            return collect($export['sheets'])
+                ->values()
+                ->map(fn (array $sheet, int $index): array => [
+                    'name' => $sheet['name'] ?? ('Sheet '.($index + 1)),
+                    'title' => $sheet['title'] ?? ($export['title'] ?? 'Dashboard'),
+                    'filters' => $sheet['filters'] ?? ($export['filters'] ?? []),
+                    'sections' => $sheet['sections'] ?? [],
+                ])
+                ->all();
+        }
+
+        return [[
+            'name' => 'Dashboard',
+            'title' => $export['title'] ?? 'Dashboard',
+            'filters' => $export['filters'] ?? [],
+            'sections' => $export['sections'] ?? [],
+        ]];
     }
 
     private function worksheetXml(array $export): string
@@ -182,8 +211,14 @@ class XlsxExportService
         return htmlspecialchars($value, ENT_XML1 | ENT_COMPAT, 'UTF-8');
     }
 
-    private function contentTypesXml(): string
+    private function contentTypesXml(int $sheetCount = 1): string
     {
+        $worksheetOverrides = '';
+
+        for ($index = 1; $index <= max(1, $sheetCount); $index++) {
+            $worksheetOverrides .= '<Override PartName="/xl/worksheets/sheet'.$index.'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+        }
+
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'.
             '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'.
             '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'.
@@ -192,7 +227,7 @@ class XlsxExportService
             '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'.
             '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'.
             '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'.
-            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'.
+            $worksheetOverrides.
             '</Types>';
     }
 
@@ -206,22 +241,52 @@ class XlsxExportService
             '</Relationships>';
     }
 
-    private function workbookXml(): string
+    /**
+     * @param array<int, array<string, mixed>> $sheets
+     */
+    private function workbookXml(array $sheets): string
     {
+        $sheetXml = collect($sheets)
+            ->values()
+            ->map(fn (array $sheet, int $index): string => '<sheet name="'.$this->escapeAttribute($this->sheetName((string) ($sheet['name'] ?? 'Dashboard'))).'" sheetId="'.($index + 1).'" r:id="rId'.($index + 1).'"/>')
+            ->implode('');
+
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'.
             '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '.
             'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'.
-            '<sheets><sheet name="Dashboard" sheetId="1" r:id="rId1"/></sheets>'.
+            '<sheets>'.$sheetXml.'</sheets>'.
             '</workbook>';
     }
 
-    private function workbookRelsXml(): string
+    /**
+     * @param array<int, array<string, mixed>> $sheets
+     */
+    private function workbookRelsXml(array $sheets): string
     {
+        $sheetRels = collect($sheets)
+            ->values()
+            ->map(fn (array $sheet, int $index): string => '<Relationship Id="rId'.($index + 1).'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'.($index + 1).'.xml"/>')
+            ->implode('');
+        $stylesId = count($sheets) + 1;
+
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'.
             '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'.
-            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'.
-            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'.
+            $sheetRels.
+            '<Relationship Id="rId'.$stylesId.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'.
             '</Relationships>';
+    }
+
+    private function sheetName(string $name): string
+    {
+        $name = preg_replace('/[\\\\\\/\\?\\*\\[\\]:]/', ' ', $name) ?: 'Sheet';
+        $name = trim($name);
+
+        return mb_substr($name !== '' ? $name : 'Sheet', 0, 31);
+    }
+
+    private function escapeAttribute(string $value): string
+    {
+        return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
     }
 
     private function stylesXml(): string
