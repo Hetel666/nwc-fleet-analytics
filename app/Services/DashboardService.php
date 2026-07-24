@@ -14,6 +14,7 @@ use App\Models\Setting;
 use App\Support\DashboardDateRangePolicy;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -845,11 +846,7 @@ class DashboardService
             if ($cacheMinutes > 0) {
                 $result = $this->performance->measure(
                     'cache.lookup',
-                    fn (): array => Cache::remember(
-                        $this->dashboardCacheKey($filters),
-                        now()->addMinutes($cacheMinutes),
-                        fn (): array => $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters))
-                    )
+                    fn (): array => $this->rememberDashboardWithLock($filters, $cacheMinutes)
                 );
 
                 return $result;
@@ -915,11 +912,7 @@ class DashboardService
             if ($cacheMinutes > 0) {
                 $result = $this->performance->measure(
                     'cache.lookup',
-                    fn (): array => Cache::remember(
-                        $this->dashboardCacheKey($filters),
-                        now()->addMinutes($cacheMinutes),
-                        fn (): array => $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters))
-                    )
+                    fn (): array => $this->rememberDashboardWithLock($filters, $cacheMinutes)
                 );
             } else {
                 $result = $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters));
@@ -983,6 +976,50 @@ class DashboardService
             'data_version' => (int) Cache::get('dashboard:data-version', 1),
             'filters' => $filters,
         ]));
+    }
+
+    private function rememberDashboardWithLock(array $filters, int $cacheMinutes): array
+    {
+        $cacheKey = $this->dashboardCacheKey($filters);
+        $cached = $this->performance->measure('cache.get', fn () => Cache::get($cacheKey));
+
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $lockKey = 'lock:'.$cacheKey;
+        $lockSeconds = max(1, (int) config('fleet.dashboard.cache_lock_seconds', 30));
+        $waitSeconds = max(0, (int) config('fleet.dashboard.cache_lock_wait_seconds', 5));
+
+        try {
+            return Cache::lock($lockKey, $lockSeconds)->block($waitSeconds, function () use ($cacheKey, $cacheMinutes, $filters): array {
+                $cached = $this->performance->measure('cache.recheck', fn () => Cache::get($cacheKey));
+
+                if (is_array($cached)) {
+                    return $cached;
+                }
+
+                $value = $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters));
+
+                Cache::put($cacheKey, $value, now()->addMinutes($cacheMinutes));
+
+                return $value;
+            });
+        } catch (LockTimeoutException $exception) {
+            $cached = Cache::get($cacheKey);
+
+            if (is_array($cached)) {
+                return $cached;
+            }
+
+            Log::warning('Dashboard cache lock timed out; building without cache lock', [
+                'cache_key' => $cacheKey,
+                'lock_key' => $lockKey,
+                'wait_seconds' => $waitSeconds,
+            ]);
+
+            return $this->performance->measure('buildDashboard', fn (): array => $this->buildDashboard($filters));
+        }
     }
 
     public function getDashboardExport(array $filters, string $block): array

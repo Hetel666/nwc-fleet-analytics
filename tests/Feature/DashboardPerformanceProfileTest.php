@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\DashboardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class DashboardPerformanceProfileTest extends TestCase
@@ -67,5 +68,31 @@ class DashboardPerformanceProfileTest extends TestCase
             '--date-to' => '2026-07-23',
             '--widget' => 'overview',
         ])->assertSuccessful();
+    }
+
+    public function test_dashboard_cache_hit_does_not_rebuild_payload(): void
+    {
+        config([
+            'cache.default' => 'array',
+            'fleet.dashboard.cache_minutes' => 10,
+            'fleet.dashboard.cache_lock_wait_seconds' => 1,
+        ]);
+        Cache::flush();
+
+        $dashboard = app(DashboardService::class);
+        $filters = [
+            'date_from' => '2026-07-23',
+            'date_to' => '2026-07-23',
+        ];
+
+        $dashboard->getDashboardProfile($filters);
+        $firstSegments = collect($dashboard->dashboardPerformanceProfile()['segments'] ?? [])->pluck('name');
+
+        $dashboard->getDashboardProfile($filters);
+        $secondSegments = collect($dashboard->dashboardPerformanceProfile()['segments'] ?? [])->pluck('name');
+
+        $this->assertContains('buildDashboard', $firstSegments->all());
+        $this->assertNotContains('buildDashboard', $secondSegments->all());
+        $this->assertContains('cache.get', $secondSegments->all());
     }
 }

@@ -59,6 +59,8 @@ return [
 
     'dashboard' => [
         'cache_minutes' => (int) env('DASHBOARD_CACHE_MINUTES', 10),
+        'cache_lock_seconds' => (int) env('DASHBOARD_CACHE_LOCK_SECONDS', 30),
+        'cache_lock_wait_seconds' => (int) env('DASHBOARD_CACHE_LOCK_WAIT_SECONDS', 5),
         'export_queue_threshold_rows' => (int) env('DASHBOARD_EXPORT_QUEUE_THRESHOLD_ROWS', 5000),
         'slow_generation_ms' => (int) env('DASHBOARD_SLOW_GENERATION_MS', 5000),
         'performance_logging_enabled' => (bool) env('DASHBOARD_PERFORMANCE_LOGGING_ENABLED', false),
