@@ -31,6 +31,11 @@ class DashboardReadPathArchitectureTest extends TestCase
             'DashboardDrilldownController' => [$base.'app/Http/Controllers/DashboardDrilldownController.php'],
             'DashboardTopWorkingUnitsExportController' => [$base.'app/Http/Controllers/DashboardTopWorkingUnitsExportController.php'],
             'DashboardOwnershipExportController' => [$base.'app/Http/Controllers/DashboardOwnershipExportController.php'],
+            'DashboardFleetDrilldownService' => [$base.'app/Services/DashboardFleetDrilldownService.php'],
+            'DashboardDailyAverageService' => [$base.'app/Services/DashboardDailyAverageService.php'],
+            'FleetEfficiencyService' => [$base.'app/Services/FleetEfficiencyService.php'],
+            'TopWorkingUnitsService' => [$base.'app/Services/TopWorkingUnitsService.php'],
+            'GeofenceViolationService' => [$base.'app/Services/GeofenceViolationService.php'],
         ];
     }
 }
