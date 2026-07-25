@@ -41,6 +41,8 @@ class DashboardOwnershipShareTest extends TestCase
     public function test_equipment_type_distribution_is_split_by_ownership(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT3', 'active' => true]);
+        $this->projectGroup($project, '601701930', Equipment::OWNERSHIP_NWC, 'Yuxari Sirvan LOT3 - NWC');
+        $this->projectGroup($project, '601701933', Equipment::OWNERSHIP_ICARE, 'Yuxari Sirvan LOT3 - Icare');
         $excavator = EquipmentType::create(['name' => 'Excavator']);
         $truck = EquipmentType::create(['name' => 'Truck']);
         $crane = EquipmentType::create(['name' => 'Crane']);
@@ -95,6 +97,7 @@ class DashboardOwnershipShareTest extends TestCase
             'wialon_unit_id' => uniqid('unit-', true),
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
+            'matched_wialon_group_id' => $ownershipType === Equipment::OWNERSHIP_ICARE ? '601701933' : '601701930',
             'ownership_type' => $ownershipType,
         ]);
     }

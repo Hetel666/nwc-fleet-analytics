@@ -6,14 +6,18 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class Equipment extends Model
 {
     public const OWNERSHIP_NWC = 'NWC';
+
     public const OWNERSHIP_ICARE = 'ICARE';
 
     public const MODE_ENGINE_HOURS = 'engine_hours';
+
     public const MODE_IGNITION = 'ignition';
+
     public const MODE_MILEAGE = 'mileage';
 
     public const DASHBOARD_EXCLUSION_GENERATOR_GROUP = 'generator_group';
@@ -65,6 +69,29 @@ class Equipment extends Model
         return $query->where(function (Builder $query): void {
             $query->whereNotNull($query->getModel()->qualifyColumn('project_wialon_group_id'))
                 ->orWhereNotNull($query->getModel()->qualifyColumn('matched_wialon_group_id'));
+        });
+    }
+
+    public function scopeBoundToProjectWialonGroup(Builder $query): Builder
+    {
+        $projectGroupIds = ProjectWialonGroup::query()
+            ->select('project_wialon_groups.id')
+            ->whereHas('project', fn (Builder $query): Builder => $query->where('active', true))
+            ->when(
+                Schema::hasColumn('project_wialon_groups', 'is_active'),
+                fn (Builder $query): Builder => $query->where('is_active', true)
+            );
+        $wialonGroupIds = ProjectWialonGroup::query()
+            ->select('project_wialon_groups.wialon_group_id')
+            ->whereHas('project', fn (Builder $query): Builder => $query->where('active', true))
+            ->when(
+                Schema::hasColumn('project_wialon_groups', 'is_active'),
+                fn (Builder $query): Builder => $query->where('is_active', true)
+            );
+
+        return $query->where(function (Builder $query) use ($projectGroupIds, $wialonGroupIds): void {
+            $query->whereIn($query->getModel()->qualifyColumn('project_wialon_group_id'), $projectGroupIds)
+                ->orWhereIn($query->getModel()->qualifyColumn('matched_wialon_group_id'), $wialonGroupIds);
         });
     }
 

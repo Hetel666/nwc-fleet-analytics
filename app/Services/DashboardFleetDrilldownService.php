@@ -457,7 +457,7 @@ class DashboardFleetDrilldownService
             ->with(['type:id,name', 'project:id,name'])
             ->where('equipments.active', true)
             ->visibleInDashboard()
-            ->classifiedForDashboard()
+            ->boundToProjectWialonGroup()
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->when($filters['ownership'] !== 'all', fn (Builder $query) => $query->where('equipments.ownership_type', $this->ownershipType($filters['ownership'])))
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('equipments.project_id', $projectId))

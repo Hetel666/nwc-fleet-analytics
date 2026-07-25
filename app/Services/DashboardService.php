@@ -154,6 +154,7 @@ class DashboardService
             })
             ->where('equipments.active', true)
             ->visibleInDashboard()
+            ->boundToProjectWialonGroup()
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipments.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipments.ownership_type', $ownershipType))
@@ -1466,6 +1467,7 @@ class DashboardService
         return Equipment::query()
             ->where('equipments.active', true)
             ->visibleInDashboard()
+            ->boundToProjectWialonGroup()
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipments.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipments.ownership_type', $ownershipType));

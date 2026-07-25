@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Services\XlsxExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,6 +21,12 @@ class DashboardExportXlsxTest extends TestCase
     {
         $user = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
         $project = Project::create(['name' => 'Export Project', 'active' => true]);
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701903',
+            'name' => 'Export Project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
         $type = EquipmentType::create(['name' => 'Truck']);
         $equipment = Equipment::create([
             'name' => 'Unit <script>alert(1)</script>',

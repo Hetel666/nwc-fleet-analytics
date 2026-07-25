@@ -8,8 +8,6 @@ use Illuminate\Support\Facades\DB;
 
 class FleetOwnershipStatsService
 {
-    public function __construct(private WialonGroupClassificationService $classification) {}
-
     public function summary(array $filters = []): array
     {
         $rows = $this->baseQuery($filters)
@@ -85,17 +83,13 @@ class FleetOwnershipStatsService
 
     private function baseQuery(array $filters = [], ?string $ownershipType = null): Builder
     {
-        $projectGroupIds = $this->classification->projectGroupIds();
         $ownershipType ??= $filters['ownership_type'] ?? null;
 
         return Equipment::query()
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
-            ->where(function (Builder $query) use ($projectGroupIds): void {
-                $query->whereIn('equipments.matched_wialon_group_id', $projectGroupIds)
-                    ->orWhereHas('projectWialonGroup', fn (Builder $query) => $query->whereIn('wialon_group_id', $projectGroupIds));
-            })
+            ->boundToProjectWialonGroup()
             ->when($ownershipType, fn (Builder $query, string $type) => $query->where('equipments.ownership_type', $type))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('equipments.project_id', $projectId))
             ->when($filters['equipment_type_id'] ?? null, fn (Builder $query, $typeId) => $query->where('equipments.equipment_type_id', $typeId));

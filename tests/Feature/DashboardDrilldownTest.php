@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -25,6 +26,8 @@ class DashboardDrilldownTest extends TestCase
     {
         $user = $this->user();
         $project = Project::query()->create(['name' => 'Yuxarı Şirvan LOT3', 'active' => true]);
+        $this->projectGroup($project, '601701930', Equipment::OWNERSHIP_NWC);
+        $this->projectGroup($project, '601701936', Equipment::OWNERSHIP_ICARE);
         $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
 
@@ -89,6 +92,7 @@ class DashboardDrilldownTest extends TestCase
     {
         $user = $this->user();
         $project = Project::query()->create(['name' => 'Ağdam Azərsu', 'active' => true]);
+        $this->projectGroup($project, '601701958', Equipment::OWNERSHIP_ICARE);
         $type = EquipmentType::query()->create(['name' => 'Loader']);
 
         Equipment::query()->create([
@@ -513,6 +517,16 @@ class DashboardDrilldownTest extends TestCase
             'password' => Hash::make('password'),
             'role' => User::ROLE_VIEWER,
             'active' => true,
+        ]);
+    }
+
+    private function projectGroup(Project $project, string $groupId, string $ownershipType): ProjectWialonGroup
+    {
+        return ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => $groupId,
+            'name' => $project->name.' - '.$ownershipType,
+            'ownership_type' => $ownershipType,
         ]);
     }
 }
