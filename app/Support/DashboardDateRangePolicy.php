@@ -1,0 +1,61 @@
+<?php
+
+namespace App\Support;
+
+use Carbon\CarbonImmutable;
+use InvalidArgumentException;
+
+class DashboardDateRangePolicy
+{
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{from: string, to: string, days: int}
+     */
+    public function normalize(array $input, string $context = 'dashboard'): array
+    {
+        $timezone = (string) config('app.timezone', 'Asia/Baku');
+        $defaultFrom = $input['_default_from'] ?? now($timezone)->startOfMonth();
+        $defaultTo = $input['_default_to'] ?? now($timezone);
+        $from = CarbonImmutable::parse($input['date_from'] ?? $input['from'] ?? $defaultFrom, $timezone)->toDateString();
+        $to = CarbonImmutable::parse($input['date_to'] ?? $input['to'] ?? $defaultTo, $timezone)->toDateString();
+
+        if ($from > $to) {
+            if ($this->reversedRangeMode() === 'reject') {
+                throw new InvalidArgumentException('Dashboard date range start date must not be after end date.');
+            }
+
+            [$from, $to] = [$to, $from];
+        }
+
+        $days = (int) CarbonImmutable::parse($from, $timezone)->diffInDays(CarbonImmutable::parse($to, $timezone)) + 1;
+        $maxDays = $this->maxDays($context);
+
+        if ($maxDays > 0 && $days > $maxDays) {
+            throw new InvalidArgumentException("Dashboard {$context} date range exceeds {$maxDays} days.");
+        }
+
+        return [
+            'from' => $from,
+            'to' => $to,
+            'days' => $days,
+        ];
+    }
+
+    private function maxDays(string $context): int
+    {
+        $key = match ($context) {
+            'modal', 'drilldown' => 'modal_max_period_days',
+            'export', 'excel' => 'export_sync_max_days',
+            default => 'max_period_days',
+        };
+
+        return max(0, (int) config('fleet.dashboard.'.$key, 0));
+    }
+
+    private function reversedRangeMode(): string
+    {
+        return config('fleet.dashboard.reversed_date_range_mode', 'swap') === 'reject'
+            ? 'reject'
+            : 'swap';
+    }
+}
