@@ -23,6 +23,8 @@ class DashboardOwnershipShareTest extends TestCase
 
         $this->equipment($project, $type, $nwcGroup, 'NWC Unit', '1');
         $this->equipment($project, $type, $icareGroup, 'Icare Unit', '2');
+        $this->equipmentMatchedToServiceGroup($project, $type, Equipment::OWNERSHIP_NWC, 'Root NWC Unit', '601701870');
+        $this->equipmentMatchedToServiceGroup($project, $type, Equipment::OWNERSHIP_ICARE, 'Root Icare Unit', '601701871');
 
         $overview = app(DashboardService::class)->getOverview([
             'project_id' => $project->id,
@@ -93,6 +95,23 @@ class DashboardOwnershipShareTest extends TestCase
             'wialon_unit_id' => uniqid('unit-', true),
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
+            'ownership_type' => $ownershipType,
+        ]);
+    }
+
+    private function equipmentMatchedToServiceGroup(
+        Project $project,
+        EquipmentType $type,
+        string $ownershipType,
+        string $name,
+        string $groupId
+    ): Equipment {
+        return Equipment::create([
+            'name' => $name,
+            'wialon_unit_id' => uniqid('unit-', true),
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'matched_wialon_group_id' => $groupId,
             'ownership_type' => $ownershipType,
         ]);
     }

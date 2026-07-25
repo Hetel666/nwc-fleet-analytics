@@ -72,17 +72,7 @@ class DashboardService
             ])
             ->values()
             ->all();
-        $ownershipCounts = $this->equipmentQuery($filters)
-            ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
-            ->select('equipments.ownership_type', DB::raw('COUNT(DISTINCT equipments.id) as total'))
-            ->groupBy('equipments.ownership_type')
-            ->pluck('total', 'equipments.ownership_type');
-        $ownershipShare = collect([Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
-            ->map(fn (string $ownership): array => [
-                'label' => $ownership,
-                'count' => (int) ($ownershipCounts[$ownership] ?? 0),
-            ])
-            ->all();
+        $ownershipShare = $this->ownershipStats->summary($filters)['rows'];
 
         return [
             'filters' => $filters,

@@ -3,15 +3,12 @@
 namespace App\Services;
 
 use App\Models\Equipment;
-use App\Services\WialonGroupClassificationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 class FleetOwnershipStatsService
 {
-    public function __construct(private WialonGroupClassificationService $classification)
-    {
-    }
+    public function __construct(private WialonGroupClassificationService $classification) {}
 
     public function summary(array $filters = []): array
     {
@@ -88,16 +85,16 @@ class FleetOwnershipStatsService
 
     private function baseQuery(array $filters = [], ?string $ownershipType = null): Builder
     {
-        $allowedGroupIds = $this->classification->classificationGroupIds();
+        $projectGroupIds = $this->classification->projectGroupIds();
         $ownershipType ??= $filters['ownership_type'] ?? null;
 
         return Equipment::query()
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
-            ->where(function (Builder $query) use ($allowedGroupIds): void {
-                $query->whereIn('equipments.matched_wialon_group_id', $allowedGroupIds)
-                    ->orWhereHas('projectWialonGroup', fn (Builder $query) => $query->whereIn('wialon_group_id', $allowedGroupIds));
+            ->where(function (Builder $query) use ($projectGroupIds): void {
+                $query->whereIn('equipments.matched_wialon_group_id', $projectGroupIds)
+                    ->orWhereHas('projectWialonGroup', fn (Builder $query) => $query->whereIn('wialon_group_id', $projectGroupIds));
             })
             ->when($ownershipType, fn (Builder $query, string $type) => $query->where('equipments.ownership_type', $type))
             ->when($filters['project_id'] ?? null, fn (Builder $query, $projectId) => $query->where('equipments.project_id', $projectId))

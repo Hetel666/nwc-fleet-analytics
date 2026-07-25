@@ -7,6 +7,7 @@ use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\GeofenceEvent;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Services\DashboardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -18,6 +19,18 @@ class DashboardGeneratorExclusionTest extends TestCase
     public function test_generator_excluded_units_are_removed_from_dashboard_aggregates_rankings_events_and_export(): void
     {
         $project = Project::create(['name' => 'Dashboard exclusion project', 'active' => true]);
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701903',
+            'name' => 'Dashboard exclusion project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701922',
+            'name' => 'Dashboard exclusion project - ICARE',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+        ]);
         $excavator = EquipmentType::create(['name' => 'Excavator']);
         $dumpTruck = EquipmentType::create(['name' => 'Dump Truck']);
         $emptyElectricGenerator = EquipmentType::create(['name' => 'Empty Electric Generator']);
@@ -110,7 +123,7 @@ class DashboardGeneratorExclusionTest extends TestCase
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
             'ownership_type' => $ownershipType,
-            'matched_wialon_group_id' => '601701903',
+            'matched_wialon_group_id' => $ownershipType === Equipment::OWNERSHIP_ICARE ? '601701922' : '601701903',
             'excluded_from_dashboard' => $excluded,
             'dashboard_exclusion_reason' => $excluded ? Equipment::DASHBOARD_EXCLUSION_GENERATOR_GROUP : null,
         ]);

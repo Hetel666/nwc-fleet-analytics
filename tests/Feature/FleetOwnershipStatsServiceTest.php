@@ -21,6 +21,8 @@ class FleetOwnershipStatsServiceTest extends TestCase
         $this->equipment($project, $type, $nwcGroup, 'NWC 1', '1');
         $this->equipment($project, $type, $icareGroup, 'ICARE 1', '2');
         $this->equipmentWithoutProjectGroup($project, $type, 'Service only', '3');
+        $this->equipmentMatchedToServiceGroup($project, $type, 'Root NWC', '4', '601701870', Equipment::OWNERSHIP_NWC);
+        $this->equipmentMatchedToServiceGroup($project, $type, 'Root ICARE', '5', '601701871', Equipment::OWNERSHIP_ICARE);
 
         $summary = app(FleetOwnershipStatsService::class)->summary();
 
@@ -122,6 +124,24 @@ class FleetOwnershipStatsServiceTest extends TestCase
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+    }
+
+    private function equipmentMatchedToServiceGroup(
+        Project $project,
+        EquipmentType $type,
+        string $name,
+        string $unitId,
+        string $groupId,
+        string $ownershipType
+    ): Equipment {
+        return Equipment::create([
+            'name' => $name,
+            'wialon_unit_id' => $unitId,
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'matched_wialon_group_id' => $groupId,
+            'ownership_type' => $ownershipType,
         ]);
     }
 }
