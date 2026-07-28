@@ -24,7 +24,7 @@ class HistoricalRecalculationService
     {
         $dates = $this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']);
         $targets = $this->targets($payload);
-        $aggregateTasks = $this->needsAggregation($payload['operation'])
+        $aggregateTasks = $this->needsAggregation($payload)
             ? max(1, $this->selectedProjectIds($payload)->count() ?: 1)
             : 0;
 
@@ -56,6 +56,7 @@ class HistoricalRecalculationService
             'uuid' => (string) Str::uuid(),
             'signature' => $signature,
             'status' => HistoricalRecalculation::STATUS_PENDING,
+            'dashboard_section' => $payload['dashboard_section'],
             'operation' => $payload['operation'],
             'scope' => $payload['scope'],
             'date_from' => $payload['date_from'],
@@ -272,7 +273,7 @@ class HistoricalRecalculationService
                             'operation' => HistoricalRecalculation::OPERATION_FETCH,
                             'stat_date' => $date,
                             'project_id' => (int) $target->project_id,
-                            'ownership_type' => $target->ownership_type,
+                            'ownership_type' => $target->ownership_type ?? null,
                         ],
                         ['status' => HistoricalRecalculationTask::STATUS_PENDING]
                     );
@@ -280,7 +281,7 @@ class HistoricalRecalculationService
             }
         }
 
-        if ($this->needsAggregation($payload['operation'])) {
+        if ($this->needsAggregation($payload)) {
             $projectIds = $this->selectedProjectIds($payload);
             $aggregateScopes = $projectIds->isEmpty() ? collect([null]) : $projectIds;
 
@@ -342,6 +343,7 @@ class HistoricalRecalculationService
     private function normalizePayload(array $payload): array
     {
         $payload['timezone'] = $payload['timezone'] ?? config('historical_recalculation.timezone');
+        $payload['dashboard_section'] = $payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES;
         $payload['date_from'] = Carbon::parse($payload['date_from'], $payload['timezone'])->toDateString();
         $payload['date_to'] = Carbon::parse($payload['date_to'], $payload['timezone'])->toDateString();
         $payload['force'] = (bool) ($payload['force'] ?? false);
@@ -356,6 +358,7 @@ class HistoricalRecalculationService
             'date_from' => $payload['date_from'],
             'date_to' => $payload['date_to'],
             'timezone' => $payload['timezone'],
+            'dashboard_section' => $payload['dashboard_section'],
             'operation' => $payload['operation'],
             'scope' => $payload['scope'],
             'project_ids' => $payload['project_ids'],
@@ -380,6 +383,19 @@ class HistoricalRecalculationService
     private function targets(array $payload): Collection
     {
         $projectIds = $this->selectedProjectIds($payload);
+
+        if (($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES) === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {
+            return Project::query()
+                ->where('active', true)
+                ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('id', $projectIds))
+                ->whereHas('wialonGroups')
+                ->get(['id'])
+                ->map(fn (Project $project): object => (object) [
+                    'project_id' => $project->id,
+                    'ownership_type' => null,
+                ])
+                ->values();
+        }
 
         return ProjectWialonGroup::query()
             ->whereHas('project', fn ($query) => $query->where('active', true))
@@ -406,9 +422,13 @@ class HistoricalRecalculationService
         ], true);
     }
 
-    private function needsAggregation(string $operation): bool
+    private function needsAggregation(array $payload): bool
     {
-        return in_array($operation, [
+        if (($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES) !== HistoricalRecalculation::SECTION_DAILY_AVERAGES) {
+            return false;
+        }
+
+        return in_array($payload['operation'], [
             HistoricalRecalculation::OPERATION_RECALCULATE,
             HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
         ], true);

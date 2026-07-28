@@ -39,6 +39,24 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($viewer)->get('/projects')->assertForbidden();
     }
 
+    public function test_only_admin_sees_object_list_sync_button(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $admin = User::where('email', 'admin@example.com')->firstOrFail();
+        $viewer = User::where('email', 'viewer@example.com')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertSee('Obyekt siyahısını yenilə');
+
+        $this->actingAs($viewer)
+            ->get('/dashboard')
+            ->assertOk()
+            ->assertDontSee('Obyekt siyahısını yenilə');
+    }
+
     public function test_dashboard_renders_azerbaijani_text_without_mojibake(): void
     {
         $this->seed(DemoSeeder::class);

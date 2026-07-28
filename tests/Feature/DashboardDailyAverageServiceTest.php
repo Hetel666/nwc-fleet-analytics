@@ -185,6 +185,48 @@ class DashboardDailyAverageServiceTest extends TestCase
         ], $summaryRow);
     }
 
+    public function test_published_daily_stats_are_treated_as_available_dashboard_data(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+        $unit = $this->equipment('Excavator 01', $excavator, $project);
+
+        $this->stat($unit, '2026-07-26', 8, 12, 'published');
+
+        $row = app(DashboardDailyAverageService::class)->typeSummary([
+            'from' => '2026-07-26',
+            'to' => '2026-07-26',
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'vehicle_types' => ['excavator'],
+        ], 'engine_hours')->firstWhere('type_code', 'excavator');
+
+        $this->assertSame(8.0, $row['total_value']);
+        $this->assertSame(8.0, $row['average_per_unit_per_day']);
+        $this->assertSame(0, $row['units_without_data']);
+    }
+
+    public function test_ok_daily_stats_remain_available_for_shift_sync_data(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+        $unit = $this->equipment('Loader 01', $loader, $project);
+
+        $this->stat($unit, '2026-07-25', 6.5, 0, 'ok');
+
+        $row = app(DashboardDailyAverageService::class)->typeSummary([
+            'from' => '2026-07-25',
+            'to' => '2026-07-25',
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'vehicle_types' => ['loader'],
+        ], 'engine_hours')->firstWhere('type_code', 'loader');
+
+        $this->assertSame(6.5, $row['total_value']);
+        $this->assertSame(6.5, $row['average_per_unit_per_day']);
+        $this->assertSame(0, $row['units_without_data']);
+    }
+
     public function test_average_journal_uses_database_pagination_and_keeps_missing_rows(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
@@ -262,7 +304,7 @@ class DashboardDailyAverageServiceTest extends TestCase
         ]);
     }
 
-    private function stat(Equipment $equipment, string $date, float $hours, float $distance): void
+    private function stat(Equipment $equipment, string $date, float $hours, float $distance, string $status = 'success'): void
     {
         EquipmentDailyStat::query()->create([
             'stat_date' => $date,
@@ -271,7 +313,7 @@ class DashboardDailyAverageServiceTest extends TestCase
             'ownership_type' => $equipment->ownership_type,
             'worked_hours' => $hours,
             'distance_km' => $distance,
-            'calculation_status' => 'success',
+            'calculation_status' => $status,
         ]);
     }
 }

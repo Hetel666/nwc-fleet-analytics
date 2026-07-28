@@ -78,6 +78,7 @@ class DashboardFleetDrilldownService
             'registration_number' => trim((string) ($input['registration_number'] ?? '')),
             'wialon_id' => trim((string) ($input['wialon_id'] ?? '')),
             'geofence_violation' => filter_var($input['geofence_violation'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'live_only' => filter_var($input['live_only'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'current_geozone_project_id' => filled($input['current_geozone_project_id'] ?? null) ? (int) $input['current_geozone_project_id'] : null,
             'current_geozone_id' => filled($input['current_geozone_id'] ?? null) ? (int) $input['current_geozone_id'] : null,
             'current_geozone_key' => filled($input['current_geozone_key'] ?? null) ? (string) $input['current_geozone_key'] : null,
@@ -641,11 +642,28 @@ class DashboardFleetDrilldownService
      */
     private function vehicleTypes(mixed $value): array
     {
-        $allowed = config('fleet_efficiency.efficiency_vehicle_types', config('fleet_efficiency.allowed_vehicle_types', []));
-
         return collect(is_array($value) ? $value : [$value])
             ->map(fn (mixed $item): string => FleetVehicleType::slug((string) $item))
-            ->filter(fn (string $slug): bool => in_array($slug, $allowed, true))
+            ->filter(fn (string $slug): bool => in_array($slug, $this->allowedVehicleTypeSlugs(), true))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function allowedVehicleTypeSlugs(): array
+    {
+        return collect([
+            ...config('fleet_efficiency.allowed_vehicle_types', []),
+            ...config('fleet_efficiency.efficiency_vehicle_types', []),
+            ...config('fleet_efficiency.average_engine_hours_vehicle_types', []),
+            ...config('fleet_efficiency.average_mileage_vehicle_types', []),
+            ...config('fleet_efficiency.top_working_vehicle_types', []),
+            ...config('fleet.foreign_geofence.allowed_vehicle_types', []),
+        ])
+            ->map(fn (string $type): string => FleetVehicleType::slug($type))
             ->unique()
             ->values()
             ->all();

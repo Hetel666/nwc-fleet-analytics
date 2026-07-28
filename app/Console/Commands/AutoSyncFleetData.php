@@ -102,31 +102,41 @@ class AutoSyncFleetData extends Command
         $dailySuccess = true;
         $top20Success = true;
         $shiftSuccess = true;
+        $geozonSuccess = true;
         $dailyMessages = [];
         $top20Messages = [];
         $shiftMessages = [];
+        $geozonMessages = [];
         $top20Limit = max(1, min(50, (int) $this->setting('auto_sync_top20_batch_limit', 10)));
         $shiftLimit = max(1, min(50, (int) $this->setting('auto_sync_shift_batch_limit', 10)));
 
         for ($offset = $days - 1; $offset >= 0; $offset--) {
-            $date = now(config('app.timezone'))->subDays($offset)->toDateString();
+            $date = now(config('app.timezone'))->subDays($offset + 1)->toDateString();
             $reportOk = $this->runArtisanCommand('fleet:sync-report-stats', ['--date' => $date, '--force' => true]);
             $aggregateOk = $this->runArtisanCommand('fleet:aggregate-daily', ['--date' => $date]);
             $top20Ok = $this->runArtisanCommand('fleet:sync-engine-hours-report', ['--date' => $date, '--limit' => $top20Limit]);
+            $geozonOk = $this->runArtisanCommand('fleet:sync-geozon-api', [
+                '--from' => $date.' 00:00:00',
+                '--to' => $date.' 23:59:59',
+                '--force' => true,
+            ]);
             $shiftPlanOk = $this->runArtisanCommand('fleet:plan-shift-sync', ['--from' => $date, '--to' => $date]);
             $shiftRunOk = $this->runArtisanCommand('fleet:run-shift-sync', ['--date' => $date, '--limit' => $shiftLimit]);
 
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
             $top20Success = $top20Success && $top20Ok['ok'];
+            $geozonSuccess = $geozonSuccess && $geozonOk['ok'];
             $shiftSuccess = $shiftSuccess && $shiftPlanOk['ok'] && $shiftRunOk['ok'];
 
             $dailyMessages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
             $top20Messages[] = $date.': '.trim($top20Ok['output']);
+            $geozonMessages[] = $date.': '.trim($geozonOk['output']);
             $shiftMessages[] = $date.': '.trim($shiftPlanOk['output'].' '.$shiftRunOk['output']);
         }
 
         $this->storeTaskResult('daily', $dailySuccess, implode(' | ', array_filter($dailyMessages)));
         $this->storeTaskResult('top20', $top20Success, implode(' | ', array_filter($top20Messages)));
+        $this->storeTaskResult('geozon', $geozonSuccess, implode(' | ', array_filter($geozonMessages)));
         $this->storeTaskResult('shift', $shiftSuccess, implode(' | ', array_filter($shiftMessages)));
 
         Setting::updateOrCreate(
@@ -134,7 +144,7 @@ class AutoSyncFleetData extends Command
             ['value' => now(config('app.timezone'))->toDateString(), 'is_secret' => false]
         );
 
-        return $dailySuccess && $top20Success && $shiftSuccess;
+        return $dailySuccess && $top20Success && $geozonSuccess && $shiftSuccess;
     }
 
     private function runTask(string $name, string $command): bool

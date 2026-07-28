@@ -388,4 +388,55 @@ class WialonUnitSyncTest extends TestCase
             'wialon_unit_id' => '31',
         ]);
     }
+
+    public function test_sync_deactivates_unit_removed_from_active_project_group(): void
+    {
+        $project = Project::create(['name' => 'Current project', 'active' => true]);
+        $group = ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '500',
+            'name' => 'Current project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+
+        $type = \App\Models\EquipmentType::create(['name' => 'Truck']);
+        Equipment::create([
+            'name' => 'Removed unit',
+            'wialon_unit_id' => '501',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        $this->app->instance(WialonService::class, new class extends WialonService
+        {
+            public function __construct()
+            {
+            }
+
+            public function getUnits(bool $full = false): array
+            {
+                return [];
+            }
+
+            public function getUnitGroups(array $groupIds = []): array
+            {
+                return [
+                    ['id' => 500, 'nm' => 'Current project - NWC', 'u' => []],
+                ];
+            }
+        });
+
+        $this->artisan('fleet:sync-units')
+            ->expectsOutput('Synced 0 Wialon units.')
+            ->expectsOutput('Deactivated 1 units no longer present in active project groups.')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseHas('equipments', [
+            'wialon_unit_id' => '501',
+            'active' => false,
+        ]);
+    }
 }

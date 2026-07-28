@@ -95,6 +95,13 @@ class Equipment extends Model
         });
     }
 
+    public function scopeOperationalDashboardProject(Builder $query): Builder
+    {
+        return $query->whereHas('project', fn (Builder $query): Builder => $query
+            ->where('active', true)
+            ->excludeDashboardUnassigned());
+    }
+
     public static function isGeneratorGroup(?string $groupName): bool
     {
         return str_contains(mb_strtolower(trim((string) $groupName)), 'generator');

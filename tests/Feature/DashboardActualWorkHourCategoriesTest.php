@@ -318,7 +318,10 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'daytime_hours' => $hours,
                 'overtime_hours' => $overtimeHours,
                 'total_hours' => $overtimeHours === null ? null : $hours + $overtimeHours,
-                'day_status' => app(FleetEfficiencyService::class)->daytimeStatusForHours($hours),
+                'day_status' => app(FleetEfficiencyService::class)->efficiencyStatusForHours(
+                    $hours,
+                    $overtimeHours === null ? null : $hours + $overtimeHours
+                ),
                 'has_overtime' => $overtimeHours === null ? null : $overtimeHours > 0,
                 'data_available' => $dataAvailable,
                 'daytime_data_available' => true,
@@ -522,7 +525,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'daytime_hours' => $workedHours,
                 'overtime_hours' => 0,
                 'total_hours' => $workedHours,
-                'day_status' => app(FleetEfficiencyService::class)->daytimeStatusForHours((float) $workedHours),
+                'day_status' => app(FleetEfficiencyService::class)->efficiencyStatusForHours((float) $workedHours, (float) $workedHours),
                 'has_overtime' => false,
                 'data_available' => true,
                 'daytime_data_available' => true,

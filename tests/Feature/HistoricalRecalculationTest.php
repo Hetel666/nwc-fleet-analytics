@@ -61,6 +61,7 @@ class HistoricalRecalculationTest extends TestCase
                 'date_from' => '2026-07-13',
                 'date_to' => '2026-07-15',
                 'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
                 'operation' => 'fetch_and_recalculate',
                 'scope' => 'selected_projects',
                 'project_ids' => [$project->id],
@@ -73,6 +74,84 @@ class HistoricalRecalculationTest extends TestCase
                 'fetch_tasks' => 6,
                 'aggregate_tasks' => 1,
                 'total_tasks' => 7,
+            ]);
+    }
+
+    public function test_preview_for_top20_section_has_no_aggregate_tasks(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Top project', 'active' => true]);
+
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '200',
+            'name' => 'Top project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '201',
+            'name' => 'Top project - ICARE',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-13',
+                'date_to' => '2026-07-15',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'operation' => 'fetch_and_recalculate',
+                'scope' => 'selected_projects',
+                'project_ids' => [$project->id],
+                'force' => false,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 3,
+                'project_groups' => 2,
+                'fetch_tasks' => 6,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 6,
+            ]);
+    }
+
+    public function test_preview_for_geofence_section_counts_projects_once(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Geofence project', 'active' => true]);
+
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '300',
+            'name' => 'Geofence project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '301',
+            'name' => 'Geofence project - ICARE',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-13',
+                'date_to' => '2026-07-15',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+                'operation' => 'fetch_and_recalculate',
+                'scope' => 'selected_projects',
+                'project_ids' => [$project->id],
+                'force' => false,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 3,
+                'project_groups' => 1,
+                'fetch_tasks' => 3,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 3,
             ]);
     }
 

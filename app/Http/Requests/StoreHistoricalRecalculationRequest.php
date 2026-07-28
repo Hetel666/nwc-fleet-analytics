@@ -10,6 +10,13 @@ use Illuminate\Validation\Validator;
 
 class StoreHistoricalRecalculationRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'dashboard_section' => $this->input('dashboard_section', HistoricalRecalculation::SECTION_DAILY_AVERAGES),
+        ]);
+    }
+
     public function authorize(): bool
     {
         return (bool) $this->user()?->can('manage-historical-recalculations');
@@ -21,6 +28,11 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date', 'after_or_equal:date_from'],
             'timezone' => ['required', 'timezone'],
+            'dashboard_section' => ['required', Rule::in([
+                HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+                HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            ])],
             'operation' => ['required', Rule::in([
                 HistoricalRecalculation::OPERATION_FETCH,
                 HistoricalRecalculation::OPERATION_RECALCULATE,

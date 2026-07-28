@@ -37,6 +37,19 @@
                             <input type="text" name="timezone" class="form-control" value="{{ old('timezone', $defaultTimezone) }}" required>
                         </div>
                         <div class="col-12">
+                            <label class="form-label">Bölmə</label>
+                            <div class="d-grid gap-2">
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-daily-averages" value="daily_averages" autocomplete="off" @checked(old('dashboard_section', 'daily_averages') === 'daily_averages')>
+                                <label class="btn btn-outline-primary text-start" for="section-daily-averages">Orta motosaat göstəricisi / Orta yürüş göstəricisi</label>
+
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-top-working-units" value="top_working_units" autocomplete="off" @checked(old('dashboard_section') === 'top_working_units')>
+                                <label class="btn btn-outline-primary text-start" for="section-top-working-units">Top 20 az işləyənlər / Top 20 çox işləyənlər</label>
+
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-outside" value="geofence_outside" autocomplete="off" @checked(old('dashboard_section') === 'geofence_outside')>
+                                <label class="btn btn-outline-primary text-start" for="section-geofence-outside">Geozonadan çıxma halları</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
                             <label class="form-label">Əməliyyat növü</label>
                             <select name="operation" class="form-select" required>
                                 <option value="fetch_and_recalculate" @selected(old('operation', 'fetch_and_recalculate') === 'fetch_and_recalculate')>Məlumatları yüklə və statistikanı hesabla</option>
@@ -96,6 +109,7 @@
                         <tr>
                             <th>Dövr</th>
                             <th>Əməliyyat</th>
+                            <th>Bölmə</th>
                             <th>Status</th>
                             <th>Progress</th>
                             <th>Obyekt</th>
@@ -111,6 +125,11 @@
                             <tr>
                                 <td>{{ $run->date_from->toDateString() }} - {{ $run->date_to->toDateString() }}</td>
                                 <td>{{ $run->operation }}</td>
+                                <td>{{ [
+                                    'daily_averages' => 'Orta göstəricilər',
+                                    'top_working_units' => 'Top 20',
+                                    'geofence_outside' => 'Geozonadan çıxma',
+                                ][$run->dashboard_section] ?? $run->dashboard_section }}</td>
                                 <td><span class="badge text-bg-secondary">{{ $run->status }}</span></td>
                                 <td style="min-width: 150px;">
                                     <div class="progress" style="height: 8px;">
@@ -125,7 +144,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-secondary">Məlumat yoxdur</td>
+                                <td colspan="7" class="text-secondary">Məlumat yoxdur</td>
                             </tr>
                         @endforelse
                         </tbody>
@@ -172,7 +191,7 @@
                     throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Ön baxış alınmadı.');
                 }
 
-                previewResult.textContent = `${data.days} gün, ${data.project_groups} layihə qrupu, ${data.fetch_tasks} yükləmə tapşırığı, ${data.aggregate_tasks} hesablama tapşırığı. Cəmi: ${data.total_tasks}.`;
+                previewResult.textContent = `${data.days} gün, ${data.project_groups} obyekt, ${data.fetch_tasks} yükləmə tapşırığı, ${data.aggregate_tasks} hesablama tapşırığı. Cəmi: ${data.total_tasks}.`;
             } catch (error) {
                 previewResult.classList.remove('alert-secondary');
                 previewResult.classList.add('alert-danger');

@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends(($dashboardTabFragment ?? false) ? 'dashboard.partials.fragment-layout' : 'layouts.app')
 
 @section('title', __('app.dashboard').' | '.__('app.app_name'))
 @section('page-title', $selectedProject ? $selectedProject->name : __('app.dashboard'))
@@ -9,7 +9,7 @@
     $icare = \App\Models\Equipment::OWNERSHIP_ICARE;
     $overview = $data['overview'];
     $ownershipLabelFor = fn (?string $value): string => $value === $icare ? __('app.ownership_icare') : __('app.ownership_nwc');
-    $typeGroups = $data['equipmentTypesByOwnership'];
+    $typeGroups = $data['equipmentTypesByOwnership'] ?? [$nwc => [], $icare => []];
     $typeNwc = collect($typeGroups[$nwc] ?? [])->sortByDesc('total')->values();
     $typeIcare = collect($typeGroups[$icare] ?? [])->sortByDesc('total')->values();
     $typeNwcTop = $typeNwc->take(10)->values();
@@ -85,13 +85,19 @@
     $geofenceViolationPalette = ['#2563EB', '#22C55E', '#F59E0B', '#8B5CF6', '#14B8A6', '#EF4444', '#64748B', '#0EA5E9', '#A855F7', '#F97316'];
     $geofenceHomeProjectLabel = $selectedProject?->name ?? ($filters['project_id'] ? 'ID '.$filters['project_id'] : __('app.all_projects'));
     $utilizationTrendByOwnership = $data['utilizationTrendByOwnership'] ?? ['labels' => [], 'series' => [$nwc => [], $icare => []], 'has_data' => false];
+    $latestPublishedReportDate = $latestPublishedReportDate
+        ?? ($data['latestPublishedReportDate'] ?? null)
+        ?? ($data['overview']['latestPublishedReportDate'] ?? null);
     $today = \Illuminate\Support\Carbon::today(config('app.timezone'));
+    $reportThrough = $latestPublishedReportDate
+        ? \Illuminate\Support\Carbon::parse($latestPublishedReportDate, config('app.timezone'))->startOfDay()
+        : $today;
     $periodPresets = [
-        'today' => ['label' => __('app.period_today'), 'from' => $today->toDateString(), 'to' => $today->toDateString()],
-        'yesterday' => ['label' => __('app.period_yesterday'), 'from' => $today->copy()->subDay()->toDateString(), 'to' => $today->copy()->subDay()->toDateString()],
-        'last_7_days' => ['label' => __('app.period_last_7_days'), 'from' => $today->copy()->subDays(6)->toDateString(), 'to' => $today->toDateString()],
-        'this_month' => ['label' => __('app.period_this_month'), 'from' => $today->copy()->startOfMonth()->toDateString(), 'to' => $today->toDateString()],
-        'last_month' => ['label' => __('app.period_last_month'), 'from' => $today->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(), 'to' => $today->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()],
+        'today' => ['label' => __('app.period_latest_completed'), 'from' => $reportThrough->toDateString(), 'to' => $reportThrough->toDateString()],
+        'yesterday' => ['label' => __('app.period_yesterday'), 'from' => $reportThrough->copy()->subDay()->toDateString(), 'to' => $reportThrough->copy()->subDay()->toDateString()],
+        'last_7_days' => ['label' => __('app.period_last_7_days'), 'from' => $reportThrough->copy()->subDays(6)->toDateString(), 'to' => $reportThrough->toDateString()],
+        'this_month' => ['label' => __('app.period_this_month'), 'from' => $reportThrough->copy()->startOfMonth()->toDateString(), 'to' => $reportThrough->toDateString()],
+        'last_month' => ['label' => __('app.period_last_month'), 'from' => $reportThrough->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(), 'to' => $reportThrough->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()],
         'custom' => ['label' => __('app.period_custom'), 'from' => $filters['from'], 'to' => $filters['to']],
     ];
     $selectedPeriod = request()->query('period', 'custom');
@@ -109,11 +115,16 @@
             'ownership_type' => $filters['ownership_type'],
         ], fn ($value) => $value !== null && $value !== ''));
     };
-    $ownershipExportUrl = function (?string $type = null) use ($filters): string {
+    $defaultOwnershipExportType = match ($filters['ownership_type']) {
+        $nwc => 'nwc',
+        $icare => 'icare',
+        default => null,
+    };
+    $ownershipExportUrl = function (?string $type = null) use ($filters, $defaultOwnershipExportType): string {
         return route('dashboard.ownership.export', array_filter([
             'project_id' => $filters['project_id'],
             'equipment_type_id' => $filters['equipment_type_id'],
-            'type' => $type,
+            'type' => $type ?? $defaultOwnershipExportType,
         ], fn ($value) => $value !== null && $value !== ''));
     };
     $kpis = [
@@ -140,6 +151,49 @@
     };
     $dashboardWidgetVisibleFor = fn (string $key): bool => (bool) ($dashboardLayoutItems->get($key, [])['visible'] ?? true);
     $dashboardWidgetVisibilityClassFor = fn (string $key): string => $dashboardWidgetVisibleFor($key) ? '' : ' dashboard-widget-hidden';
+    $dashboardWidgetDefaultTitles = [
+        'ownership-share' => __('app.ownership_share'),
+        'equipment-types-nwc' => __('app.equipment_type_distribution').': '.__('app.ownership_nwc'),
+        'equipment-types-icare' => __('app.equipment_type_distribution').': '.__('app.ownership_icare'),
+        'project-work-categories-nwc' => 'Project üzrə: '.__('app.ownership_nwc'),
+        'project-work-categories-icare' => 'Project üzrə: '.__('app.ownership_icare'),
+        'average-engine-hours' => 'Orta motosaat göstəricisi',
+        'average-mileage' => 'Orta yürüş göstəricisi',
+        'least-working' => __('app.least_working'),
+        'most-working' => __('app.most_working'),
+        'geofence-analysis' => __('app.geofence_analysis'),
+        'current-live' => __('app.current_live'),
+        'utilization-trend' => __('app.utilization_trend'),
+        'project-comparison' => __('app.work_hours_by_ownership'),
+    ];
+    $dashboardTabs = $dashboardTabs ?? config('dashboard.tabs', []);
+    $selectedDashboardTab = $selectedDashboardTab ?? (string) config('dashboard.default_tab', 'overview');
+    $dashboardChartData = [
+        'ownershipShareLabels' => $ownershipShare->pluck('label')->map($ownershipLabelFor)->values()->all(),
+        'ownershipShareCounts' => $ownershipShare->pluck('count')->values()->all(),
+        'ownershipShareTotal' => $totalOwnershipCount,
+        'typeNwcLabels' => $typeNwcTop->pluck('name')->values()->all(),
+        'typeNwcTotals' => $typeNwcTop->pluck('total')->values()->all(),
+        'typeNwcIds' => $typeNwcTop->pluck('id')->values()->all(),
+        'typeNwcTotal' => (int) $typeNwc->sum('total'),
+        'typeIcareLabels' => $typeIcareTop->pluck('name')->values()->all(),
+        'typeIcareTotals' => $typeIcareTop->pluck('total')->values()->all(),
+        'typeIcareIds' => $typeIcareTop->pluck('id')->values()->all(),
+        'typeIcareTotal' => (int) $typeIcare->sum('total'),
+        'projectWorkCategoryNwcCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values()->all(),
+        'projectWorkCategoryIcareCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
+        'utilizationTrend' => $utilizationTrendByOwnership,
+        'projectComparisonLabels' => $projectComparisonTop->pluck('name')->values()->all(),
+        'projectComparisonIds' => $projectComparisonTop->pluck('id')->values()->all(),
+        'projectComparisonNwc' => $projectComparisonTop->pluck($nwc)->values()->all(),
+        'projectComparisonIcare' => $projectComparisonTop->pluck($icare)->values()->all(),
+        'geofenceViolationLabels' => $geofenceViolations['labels'] ?? [],
+        'geofenceViolationCounts' => $geofenceViolations['counts'] ?? [],
+        'geofenceViolationProjectIds' => $geofenceViolations['project_ids'] ?? [],
+        'geofenceViolationGeofenceIds' => $geofenceViolations['geofence_ids'] ?? [],
+        'geofenceViolationSectorKeys' => $geofenceViolations['sector_keys'] ?? [],
+        'geofenceViolationTotal' => (int) ($geofenceViolations['total'] ?? 0),
+    ];
 @endphp
 
 @push('styles')
@@ -1892,14 +1946,20 @@
         data-dashboard-layout-editable="{{ $canManageDashboardLayout ? '1' : '0' }}"
         data-dashboard-layout-update-url="{{ route('dashboard.layout.update') }}"
         data-dashboard-layout-reset-url="{{ route('dashboard.layout.destroy') }}"
+        data-dashboard-tab-url-template="{{ route('dashboard.tabs.show', ['tab' => '__TAB__']) }}"
         data-dashboard-drilldown-url="{{ route('dashboard.drilldown.units') }}"
         data-dashboard-drilldown-export-url="{{ route('dashboard.drilldown.units.export') }}"
         data-dashboard-date-from="{{ $filters['from'] }}"
         data-dashboard-date-to="{{ $filters['to'] }}"
+        data-dashboard-today="{{ $today->toDateString() }}"
         data-dashboard-project-id="{{ $filters['project_id'] ?? '' }}"
         data-dashboard-equipment-type-id="{{ $filters['equipment_type_id'] ?? '' }}"
         data-dashboard-ownership="{{ $filters['ownership_type'] === $nwc ? 'nwc' : ($filters['ownership_type'] === $icare ? 'icare' : 'all') }}"
+        data-dashboard-saved-layout="{{ json_encode($dashboardLayout ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
+        data-dashboard-default-titles="{{ json_encode($dashboardWidgetDefaultTitles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
+        data-dashboard-layout-revision="{{ (int) ($dashboardLayoutRevision ?? 0) }}"
     >
+        @unless ($dashboardTabFragment ?? false)
         <div class="dashboard-loading-overlay" id="dashboardLoadingOverlay" aria-hidden="true">
             <div class="dashboard-loading-card" role="status" aria-live="polite">
                 <div class="d-flex align-items-center gap-3 mb-4">
@@ -1921,6 +1981,7 @@
 
         <form method="GET" action="{{ $selectedProject ? route('projects.dashboard', $selectedProject) : route('dashboard') }}" class="panel p-3 mb-4" id="dashboardFilterForm">
             <input type="hidden" name="period" id="dashboardPeriodInput" value="{{ $selectedPeriod }}">
+            <input type="hidden" name="tab" id="dashboardSelectedTabInput" value="{{ $selectedDashboardTab }}">
             <div class="row g-3 align-items-end">
                 @unless($selectedProject)
                     <div class="col-12 col-xl-3 col-lg-4">
@@ -2004,8 +2065,51 @@
             @endforeach
         </div>
 
+        <nav class="dashboard-tabs mb-3" aria-label="{{ __('app.dashboard_sections') }}">
+            <div class="nav nav-tabs" role="tablist">
+                @foreach ($dashboardTabs as $tabKey => $tab)
+                    @php
+                        $isSelectedDashboardTab = $selectedDashboardTab === $tabKey;
+                    @endphp
+                    <button
+                        type="button"
+                        class="nav-link{{ $isSelectedDashboardTab ? ' active' : '' }}"
+                        id="dashboardTab{{ \Illuminate\Support\Str::studly($tabKey) }}"
+                        role="tab"
+                        aria-selected="{{ $isSelectedDashboardTab ? 'true' : 'false' }}"
+                        aria-controls="dashboardGrid"
+                        tabindex="{{ $isSelectedDashboardTab ? '0' : '-1' }}"
+                        data-dashboard-tab="{{ $tabKey }}"
+                    >
+                        {{ __($tab['label_key']) }}
+                    </button>
+                @endforeach
+            </div>
+            <span class="visually-hidden" id="dashboardGeozonesDescription">Öz layihəsinin geozonasından kənarda olan texnikalar</span>
+        </nav>
+
+        @if ($latestPublishedReportDate)
+            <div class="alert alert-info py-2 px-3 mb-3" role="status" aria-live="polite" data-dashboard-freshness>
+                <i class="bi bi-database-check me-1" aria-hidden="true"></i>
+                {{ __('app.data_updated_through', ['date' => $latestPublishedReportDate]) }}
+            </div>
+        @endif
+
         <div class="dashboard-layout-actions d-flex flex-wrap align-items-center justify-content-end gap-2 mb-2">
             <div class="dashboard-layout-status small me-auto" id="dashboardLayoutStatus" aria-live="polite"></div>
+            @if ($canManageDashboardLayout)
+                <form method="POST" action="{{ route('settings.sync-units') }}" data-dashboard-object-sync-form>
+                    @csrf
+                    <button
+                        type="submit"
+                        class="btn btn-outline-primary btn-sm btn-icon"
+                        data-dashboard-object-sync-button
+                        title="Wialon layihə qruplarından obyekt siyahısını yenilə"
+                    >
+                        <i class="bi bi-arrow-repeat"></i><span>Obyekt siyahısını yenilə</span>
+                    </button>
+                </form>
+            @endif
             <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
                 <i class="bi bi-download"></i><span>Excel</span>
             </a>
@@ -2024,8 +2128,19 @@
             </button>
             @endif
         </div>
+        @endunless
 
-        <div class="row g-3 dashboard-grid" id="dashboardGrid">
+        <div
+            class="row g-3 dashboard-grid"
+            id="dashboardGrid"
+            role="tabpanel"
+            aria-labelledby="dashboardTab{{ \Illuminate\Support\Str::studly($selectedDashboardTab) }}"
+            aria-live="polite"
+            aria-busy="false"
+            data-dashboard-active-tab="{{ $selectedDashboardTab }}"
+            data-dashboard-chart-data="{{ json_encode($dashboardChartData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
+        >
+            @if ($selectedDashboardTab === 'overview')
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('ownership-share', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
@@ -2052,11 +2167,16 @@
                                             $dotColor = $code === $nwc ? '#24b35b' : '#1f6feb';
                                         @endphp
                                         <div
-                                            class="dashboard-share-row dashboard-drilldown-trigger"
-                                            role="button"
-                                            tabindex="0"
-                                            data-drilldown-title="{{ $ownershipLabelFor($code) }} texnikaları"
-                                            data-drilldown-ownership="{{ $code === $nwc ? 'nwc' : 'icare' }}"
+                                            class="dashboard-share-row{{ $row['count'] > 0 ? ' dashboard-drilldown-trigger' : '' }}"
+                                            @if ($row['count'] > 0)
+                                                role="button"
+                                                tabindex="0"
+                                                data-drilldown-title="{{ $ownershipLabelFor($code) }} texnikaları"
+                                                data-drilldown-ownership="{{ $code === $nwc ? 'nwc' : 'icare' }}"
+                                                data-drilldown-ownership-scope="project_groups"
+                                            @else
+                                                aria-disabled="true"
+                                            @endif
                                         >
                                             <span class="dashboard-color-dot" style="background: {{ $dotColor }}"></span>
                                             <span class="fw-semibold">{{ $ownershipLabelFor($code) }}</span>
@@ -2107,7 +2227,9 @@
                     ])
                 </section>
             </div>
+            @endif
 
+            @if ($selectedDashboardTab === 'efficiency')
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-xl-6', 6);
             @endphp
@@ -2180,7 +2302,7 @@
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'], 'ranking' => 'least'])
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
                 </section>
             </div>
 
@@ -2190,10 +2312,12 @@
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'], 'ranking' => 'most'])
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
                 </section>
             </div>
+            @endif
 
+            @if ($selectedDashboardTab === 'geozones')
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('geofence-analysis', 'col-12', 12);
                 $geofenceAnalysisTitle = $dashboardWidgetTitleFor('geofence-analysis', __('app.geofence_analysis'));
@@ -2339,7 +2463,33 @@
                             <div class="foreign-geofence-kpi-note">{{ $geofenceViolationTopRow['label'] ?? __('app.no_data') }}</div>
                         </div>
                     </div>
+                </section>
+            </div>
 
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('current-live', 'col-12', 12);
+                $currentLiveTitle = $dashboardWidgetTitleFor('current-live', __('app.current_live'));
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('current-live') }}" data-dashboard-widget="current-live" data-widget-key="current-live" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('current-live') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+                <section class="panel dashboard-card foreign-geofence-shell" aria-labelledby="currentLiveTitle">
+                    <div class="foreign-geofence-header">
+                        <div class="min-w-0">
+                            <div class="d-flex align-items-center gap-2">
+                                <h2 class="foreign-geofence-title dashboard-card-title-text" id="currentLiveTitle">{{ $currentLiveTitle }}</h2>
+                                <span class="badge text-bg-success" aria-label="{{ __('app.live_data') }}">LIVE</span>
+                            </div>
+                            <input type="text" class="form-control form-control-sm dashboard-title-input mt-1 d-none" value="{{ $currentLiveTitle }}" maxlength="120" aria-label="Dashboard başlığı">
+                            <div class="foreign-geofence-subtitle" id="currentLiveDescription">{{ __('app.current_live_description') }}</div>
+                        </div>
+                        <div class="foreign-geofence-actions">
+                            <button type="button" class="btn btn-sm dashboard-visibility-toggle foreign-geofence-action" title="Bloku gizlət" aria-label="Bloku gizlət">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm dashboard-drag-handle foreign-geofence-action" title="Bloku daşı" aria-label="Bloku daşı">
+                                <i class="bi bi-grip-vertical"></i>
+                            </button>
+                        </div>
+                    </div>
                     <div class="foreign-geofence-table-card">
                         <div class="foreign-geofence-table-toolbar">
                             <div class="min-w-0">
@@ -2348,7 +2498,8 @@
                             </div>
                         </div>
                         <div class="foreign-geofence-table-wrap">
-                            <table class="table foreign-geofence-detail-table align-middle">
+                            <table class="table foreign-geofence-detail-table align-middle" aria-describedby="currentLiveDescription">
+                                <caption class="visually-hidden">{{ __('app.current_live_description') }}</caption>
                                 <colgroup>
                                     <col style="width: 100px;">
                                     <col style="width: 110px;">
@@ -2378,15 +2529,17 @@
                                 </tbody>
                             </table>
                         </div>
-                        <div class="foreign-geofence-pagination" aria-label="Geozonadan çıxma halları səhifələmə">
-                            <button type="button" class="btn btn-outline-secondary" id="foreignGeofencePrev">Əvvəlki</button>
-                            <span id="foreignGeofencePageInfo">1 / 1</span>
-                            <button type="button" class="btn btn-outline-secondary" id="foreignGeofenceNext">Növbəti</button>
+                        <div class="foreign-geofence-pagination" aria-label="{{ __('app.pagination') }}">
+                            <button type="button" class="btn btn-outline-secondary" id="foreignGeofencePrev" aria-label="{{ __('app.previous_page') }}">Əvvəlki</button>
+                            <span id="foreignGeofencePageInfo" aria-live="polite">1 / 1</span>
+                            <button type="button" class="btn btn-outline-secondary" id="foreignGeofenceNext" aria-label="{{ __('app.next_page') }}">Növbəti</button>
                         </div>
                     </div>
                 </section>
             </div>
+            @endif
 
+            @if ($selectedDashboardTab === 'overview')
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('utilization-trend', 'col-12 col-xl-5', 5);
             @endphp
@@ -2468,10 +2621,12 @@
                     @endif
                 </section>
             </div>
+            @endif
         </div>
     </div>
 
-    <div class="modal fade" id="dashboardDrilldownModal" tabindex="-1" aria-hidden="true">
+    @unless ($dashboardTabFragment ?? false)
+    <div class="modal fade" id="dashboardDrilldownModal" tabindex="-1" aria-hidden="true" aria-labelledby="dashboardDrilldownTitle" aria-describedby="dashboardDrilldownStatus">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
@@ -2481,19 +2636,24 @@
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Bağla"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="modal-body" id="dashboardDrilldownBody" aria-busy="false">
+                    <div class="nav nav-tabs mb-3" role="tablist" aria-label="{{ __('app.equipment_details') }}">
+                        <button type="button" class="nav-link active" id="dashboardDrilldownTabData" role="tab" aria-selected="true" aria-controls="dashboardDrilldownDataControls dashboardDrilldownTable dashboardDrilldownPagination" data-drilldown-tab-target="data">{{ __('app.modal_tab_data') }}</button>
+                        <button type="button" class="nav-link" id="dashboardDrilldownTabSummary" role="tab" aria-selected="false" aria-controls="dashboardDrilldownChips dashboardDrilldownStatus dashboardDrilldownFormula" data-drilldown-tab-target="summary" tabindex="-1">{{ __('app.modal_tab_summary') }}</button>
+                        <button type="button" class="nav-link" id="dashboardDrilldownTabFilters" role="tab" aria-selected="false" aria-controls="dashboardDrilldownFilterPanel" data-drilldown-tab-target="filters" tabindex="-1">{{ __('app.modal_tab_filters') }}</button>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="dashboardDrilldownDataControls" data-drilldown-tab-section="data">
                         <div class="btn-group btn-group-sm" role="group" aria-label="Mənsubiyyət">
-                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="all">Hamısı</button>
-                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="nwc">NWC</button>
-                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="icare">İCARƏ</button>
+                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="all" aria-pressed="false">Hamısı</button>
+                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="nwc" aria-pressed="false">NWC</button>
+                            <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="icare" aria-pressed="false">İCARƏ</button>
                         </div>
                         <div class="btn-group btn-group-sm" role="group" aria-label="Məlumat statusu">
-                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="all">Hamısı</button>
-                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="available">Məlumat var</button>
-                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="missing">Məlumat yoxdur</button>
+                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="all" aria-pressed="false">Hamısı</button>
+                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="available" aria-pressed="false">Məlumat var</button>
+                            <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="missing" aria-pressed="false">Məlumat yoxdur</button>
                         </div>
-                        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="dashboardDrilldownFilterToggle">
+                        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="dashboardDrilldownFilterToggle" aria-expanded="false" aria-controls="dashboardDrilldownFilterPanel">
                             <i class="bi bi-funnel"></i> Filtrlər
                         </button>
                         <select class="form-select form-select-sm d-none" id="dashboardDrilldownGroupMode" aria-label="Qruplaşdırma" style="max-width: 190px;">
@@ -2501,9 +2661,10 @@
                             <option value="day">Gün üzrə</option>
                             <option value="unit">Texnika üzrə</option>
                         </select>
-                        <input type="search" class="form-control form-control-sm" id="dashboardDrilldownSearch" placeholder="Axtarış..." style="max-width: 260px;">
+                        <label class="visually-hidden" for="dashboardDrilldownSearch">{{ __('app.search_equipment') }}</label>
+                        <input type="search" class="form-control form-control-sm" id="dashboardDrilldownSearch" placeholder="Axtarış..." aria-label="{{ __('app.search_equipment') }}" style="max-width: 260px;">
                     </div>
-                    <div class="dashboard-drilldown-filter-panel d-none" id="dashboardDrilldownFilterPanel">
+                    <div class="dashboard-drilldown-filter-panel d-none" id="dashboardDrilldownFilterPanel" role="tabpanel" aria-labelledby="dashboardDrilldownTabFilters" data-drilldown-tab-section="filters">
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                             <strong>Əlavə filtrlər</strong>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardDrilldownFilterClose">Bağla</button>
@@ -2613,11 +2774,12 @@
                             <button type="button" class="btn btn-sm btn-primary" id="dashboardDrilldownApplyFilters">Filtrləri tətbiq et</button>
                         </div>
                     </div>
-                    <div class="dashboard-drilldown-chips" id="dashboardDrilldownChips"></div>
-                    <div class="dashboard-drilldown-status small text-secondary mb-2" id="dashboardDrilldownStatus">Məlumatlar yüklənir...</div>
-                    <div class="dashboard-drilldown-formula d-none" id="dashboardDrilldownFormula"></div>
-                    <div class="dashboard-drilldown-table-wrapper border rounded">
+                    <div class="dashboard-drilldown-chips d-none" id="dashboardDrilldownChips" role="tabpanel" aria-labelledby="dashboardDrilldownTabSummary" data-drilldown-tab-section="summary"></div>
+                    <div class="dashboard-drilldown-status small text-secondary mb-2 d-none" id="dashboardDrilldownStatus" aria-live="polite" data-drilldown-tab-section="summary">Məlumatlar yüklənir...</div>
+                    <div class="dashboard-drilldown-formula d-none" id="dashboardDrilldownFormula" data-drilldown-tab-section="summary"></div>
+                    <div class="dashboard-drilldown-table-wrapper border rounded" id="dashboardDrilldownTable" role="tabpanel" aria-labelledby="dashboardDrilldownTabData" data-drilldown-tab-section="data">
                         <table class="table table-sm align-middle mb-0 dashboard-drilldown-table">
+                            <caption class="visually-hidden">{{ __('app.equipment_details') }}</caption>
                             <thead>
                                 <tr id="dashboardDrilldownHeader">
                                     <th>#</th>
@@ -2631,10 +2793,10 @@
                             <tbody id="dashboardDrilldownRows"></tbody>
                         </table>
                     </div>
-                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
-                        <div class="small text-secondary" id="dashboardDrilldownPageInfo"></div>
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3" id="dashboardDrilldownPagination" data-drilldown-tab-section="data">
+                        <div class="small text-secondary" id="dashboardDrilldownPageInfo" aria-live="polite"></div>
                         <div class="d-flex align-items-center gap-2">
-                            <select class="form-select form-select-sm" id="dashboardDrilldownPageSize" style="width: auto;">
+                            <select class="form-select form-select-sm" id="dashboardDrilldownPageSize" aria-label="{{ __('app.pagination') }}" style="width: auto;">
                                 <option value="20" selected>20</option>
                                 <option value="50">50</option>
                                 <option value="100">100</option>
@@ -2656,6 +2818,7 @@
             </div>
         </div>
     </div>
+    @endunless
 @endsection
 
 @push('scripts')
@@ -2669,51 +2832,98 @@ const workCategoryColors = {
     over_10_hours: '#8b5cf6',
     overtime: '#ef4444',
 };
-const ownershipShareLabels = @json($ownershipShare->pluck('label')->map($ownershipLabelFor)->values());
-const ownershipShareCounts = @json($ownershipShare->pluck('count')->values());
-const ownershipShareTotal = {{ (int) $totalOwnershipCount }};
-const typeNwcLabels = @json($typeNwcTop->pluck('name')->values());
-const typeNwcTotals = @json($typeNwcTop->pluck('total')->values());
-const typeNwcIds = @json($typeNwcTop->pluck('id')->values());
-const typeNwcTotal = {{ (int) $typeNwc->sum('total') }};
-const typeIcareLabels = @json($typeIcareTop->pluck('name')->values());
-const typeIcareTotals = @json($typeIcareTop->pluck('total')->values());
-const typeIcareIds = @json($typeIcareTop->pluck('id')->values());
-const typeIcareTotal = {{ (int) $typeIcare->sum('total') }};
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
-const projectWorkCategoryNwcCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values());
-const projectWorkCategoryIcareCounts = @json($actualWorkCategoryLabels->keys()->map(fn (string $key) => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values());
 const workCategoryDonutKeys = workCategoryKeys.filter(key => key !== 'overtime');
 const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
 const workCategoryDonutLabels = workCategoryDonutIndexes.map(index => workCategoryLabels[index]);
 const workCategoryDonutColorValues = workCategoryDonutKeys.map(key => workCategoryColors[key]);
-const projectWorkCategoryNwcDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryNwcCounts[index] || 0);
-const projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
-const utilizationTrend = @json($utilizationTrendByOwnership);
-const projectComparisonLabels = @json($projectComparisonTop->pluck('name')->values());
-const projectComparisonIds = @json($projectComparisonTop->pluck('id')->values());
-const projectComparisonNwc = @json($projectComparisonTop->pluck($nwc)->values());
-const projectComparisonIcare = @json($projectComparisonTop->pluck($icare)->values());
-const dailyAverageDashboards = @json($dailyAverageDashboards);
-const geofenceViolationLabels = @json($geofenceViolations['labels'] ?? []);
-const geofenceViolationCounts = @json($geofenceViolations['counts'] ?? []);
-const geofenceViolationProjectIds = @json($geofenceViolations['project_ids'] ?? []);
-const geofenceViolationGeofenceIds = @json($geofenceViolations['geofence_ids'] ?? []);
-const geofenceViolationSectorKeys = @json($geofenceViolations['sector_keys'] ?? []);
-const geofenceViolationTotal = {{ (int) ($geofenceViolations['total'] ?? 0) }};
 const geofenceViolationPalette = @json($geofenceViolationPalette);
+let ownershipShareLabels = [];
+let ownershipShareCounts = [];
+let ownershipShareTotal = 0;
+let typeNwcLabels = [];
+let typeNwcTotals = [];
+let typeNwcIds = [];
+let typeNwcTotal = 0;
+let typeIcareLabels = [];
+let typeIcareTotals = [];
+let typeIcareIds = [];
+let typeIcareTotal = 0;
+let projectWorkCategoryNwcCounts = [];
+let projectWorkCategoryIcareCounts = [];
+let projectWorkCategoryNwcDonutCounts = [];
+let projectWorkCategoryIcareDonutCounts = [];
+let utilizationTrend = { labels: [], dates: [], series: {}, has_data: false };
+let projectComparisonLabels = [];
+let projectComparisonIds = [];
+let projectComparisonNwc = [];
+let projectComparisonIcare = [];
+let geofenceViolationLabels = [];
+let geofenceViolationCounts = [];
+let geofenceViolationProjectIds = [];
+let geofenceViolationGeofenceIds = [];
+let geofenceViolationSectorKeys = [];
+let geofenceViolationTotal = 0;
+
+const applyDashboardChartData = data => {
+    ownershipShareLabels = data?.ownershipShareLabels || [];
+    ownershipShareCounts = data?.ownershipShareCounts || [];
+    ownershipShareTotal = Number(data?.ownershipShareTotal || 0);
+    typeNwcLabels = data?.typeNwcLabels || [];
+    typeNwcTotals = data?.typeNwcTotals || [];
+    typeNwcIds = data?.typeNwcIds || [];
+    typeNwcTotal = Number(data?.typeNwcTotal || 0);
+    typeIcareLabels = data?.typeIcareLabels || [];
+    typeIcareTotals = data?.typeIcareTotals || [];
+    typeIcareIds = data?.typeIcareIds || [];
+    typeIcareTotal = Number(data?.typeIcareTotal || 0);
+    projectWorkCategoryNwcCounts = data?.projectWorkCategoryNwcCounts || [];
+    projectWorkCategoryIcareCounts = data?.projectWorkCategoryIcareCounts || [];
+    projectWorkCategoryNwcDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryNwcCounts[index] || 0);
+    projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
+    utilizationTrend = data?.utilizationTrend || { labels: [], dates: [], series: {}, has_data: false };
+    projectComparisonLabels = data?.projectComparisonLabels || [];
+    projectComparisonIds = data?.projectComparisonIds || [];
+    projectComparisonNwc = data?.projectComparisonNwc || [];
+    projectComparisonIcare = data?.projectComparisonIcare || [];
+    geofenceViolationLabels = data?.geofenceViolationLabels || [];
+    geofenceViolationCounts = data?.geofenceViolationCounts || [];
+    geofenceViolationProjectIds = data?.geofenceViolationProjectIds || [];
+    geofenceViolationGeofenceIds = data?.geofenceViolationGeofenceIds || [];
+    geofenceViolationSectorKeys = data?.geofenceViolationSectorKeys || [];
+    geofenceViolationTotal = Number(data?.geofenceViolationTotal || 0);
+};
+
+applyDashboardChartData(@json($dashboardChartData));
 const dashboardPage = document.querySelector('.dashboard-page');
 const dashboardGrid = document.getElementById('dashboardGrid');
+const dashboardTabButtons = Array.from(document.querySelectorAll('[data-dashboard-tab]'));
+const dashboardTabUrlTemplate = dashboardPage?.dataset.dashboardTabUrlTemplate || '';
+const dashboardSelectedTabInput = document.getElementById('dashboardSelectedTabInput');
 const dashboardResetButton = document.getElementById('resetDashboardLayout');
 const dashboardEditButton = document.getElementById('editDashboardLayout');
 const dashboardSaveButton = document.getElementById('saveDashboardLayout');
 const dashboardCancelButton = document.getElementById('cancelDashboardLayout');
 const dashboardLayoutStatus = document.getElementById('dashboardLayoutStatus');
+const dashboardObjectSyncForm = document.querySelector('[data-dashboard-object-sync-form]');
+const dashboardObjectSyncButton = document.querySelector('[data-dashboard-object-sync-button]');
 const dashboardLayoutEditable = dashboardPage?.dataset.dashboardLayoutEditable === '1';
 const dashboardLayoutUpdateUrl = dashboardPage?.dataset.dashboardLayoutUpdateUrl || '';
 const dashboardLayoutResetUrl = dashboardPage?.dataset.dashboardLayoutResetUrl || '';
+const parseDashboardDatasetJson = (value, fallback) => {
+    try {
+        return JSON.parse(value || '');
+    } catch (error) {
+        return fallback;
+    }
+};
+const dashboardSavedLayout = new Map(parseDashboardDatasetJson(dashboardPage?.dataset.dashboardSavedLayout, [])
+    .filter(item => item && typeof item === 'object' && item.key)
+    .map(item => [String(item.key), item]));
+const dashboardDefaultTitles = parseDashboardDatasetJson(dashboardPage?.dataset.dashboardDefaultTitles, {});
+let dashboardLayoutRevision = Number(dashboardPage?.dataset.dashboardLayoutRevision || 0);
 const dashboardFilterForm = document.getElementById('dashboardFilterForm');
 const dashboardFilterButton = document.getElementById('dashboardFilterButton');
 const dashboardLoadingOverlay = document.getElementById('dashboardLoadingOverlay');
@@ -2730,6 +2940,15 @@ const dashboardLoadingMessages = {
     wialon: @json(__('app.loading_wialon')),
     dashboard: @json(__('app.loading_dashboard')),
 };
+
+dashboardObjectSyncForm?.addEventListener('submit', () => {
+    if (!dashboardObjectSyncButton) {
+        return;
+    }
+
+    dashboardObjectSyncButton.disabled = true;
+    dashboardObjectSyncButton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Yenilənir...</span>';
+});
 const labels = {
     noData: @json(__('app.no_data')),
     nwc: @json(__('app.ownership_nwc')),
@@ -2749,6 +2968,8 @@ const truncateLabel = value => String(value ?? '').length > 28 ? `${String(value
 let draggedWidget = null;
 let dragOverWidget = null;
 let dashboardLoadingTimer = null;
+let dashboardTabController = null;
+let dashboardTabRequestId = 0;
 
 const commonTooltip = {
     callbacks: {
@@ -3129,22 +3350,29 @@ window.addEventListener('pageshow', () => {
     hideDashboardLoading();
 });
 
-document.querySelectorAll('[data-expand-toggle]').forEach(button => {
-    button.addEventListener('click', () => {
-        const targetId = button.dataset.expandToggle;
-        const container = document.querySelector(`[data-expandable="${targetId}"]`);
+document.addEventListener('click', event => {
+    const button = event.target.closest('[data-expand-toggle]');
 
-        if (!container) {
-            return;
-        }
+    if (!button) {
+        return;
+    }
 
-        const expanded = container.dataset.expanded === '1';
-        container.dataset.expanded = expanded ? '0' : '1';
-        container.classList.toggle('is-expanded', !expanded);
-        container.querySelectorAll('.expandable-extra').forEach(row => row.classList.toggle('d-none', expanded));
-        button.textContent = expanded ? button.dataset.showLabel : button.dataset.hideLabel;
-        requestAnimationFrame(refreshDashboardVisuals);
-    });
+    const targetId = button.dataset.expandToggle;
+    const container = document.querySelector(`[data-expandable="${targetId}"]`);
+
+    if (!container) {
+        return;
+    }
+
+    const expanded = container.dataset.expanded === '1';
+    container.dataset.expanded = expanded ? '0' : '1';
+    container.classList.toggle('is-expanded', !expanded);
+    container.querySelectorAll('.expandable-extra').forEach(row => row.classList.toggle('d-none', expanded));
+    button.textContent = expanded ? button.dataset.showLabel : button.dataset.hideLabel;
+    button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    button.setAttribute('aria-controls', `dashboardExpandable${targetId.replace(/[^a-z0-9_-]/gi, '')}`);
+    container.id ||= `dashboardExpandable${targetId.replace(/[^a-z0-9_-]/gi, '')}`;
+    requestAnimationFrame(refreshDashboardVisuals);
 });
 
 const dashboardWidgets = () => dashboardGrid
@@ -3205,10 +3433,16 @@ const refreshWidgetVisibilityControls = () => {
 
 const collectDashboardLayoutPayload = () => dashboardWidgets().map((widget, index) => {
     const titleInput = widget.querySelector('.dashboard-title-input');
-    const title = titleInput ? (titleInput.value.trim() || titleInput.defaultValue || '') : '';
+    const key = widget.dataset.widgetKey || widget.dataset.dashboardWidget;
+    const enteredTitle = titleInput?.value.trim() || '';
+    const savedTitle = String(dashboardSavedLayout.get(key)?.title || '').trim();
+    const displayedTitle = String(titleInput?.defaultValue || '').trim();
+    const title = enteredTitle === displayedTitle
+        ? (savedTitle || null)
+        : (enteredTitle || null);
 
     return {
-        key: widget.dataset.widgetKey || widget.dataset.dashboardWidget,
+        key,
         order: (index + 1) * 10,
         width: Number(widget.dataset.widgetWidth || 12),
         title,
@@ -3228,6 +3462,9 @@ const setDashboardLayoutEditing = enabled => {
     dashboardSaveButton?.classList.toggle('d-none', !enabled);
     dashboardCancelButton?.classList.toggle('d-none', !enabled);
     dashboardResetButton?.classList.toggle('d-none', !enabled);
+    dashboardTabButtons.forEach(button => {
+        button.disabled = enabled;
+    });
 
     dashboardWidgets().forEach(widget => {
         widget.classList.toggle('is-editable', enabled);
@@ -3266,12 +3503,21 @@ const persistDashboardLayout = async () => {
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrfToken(),
             },
-            body: JSON.stringify({ widgets: payload }),
+            body: JSON.stringify({
+                revision: dashboardLayoutRevision,
+                tab: dashboardGrid?.dataset.dashboardActiveTab || @json($selectedDashboardTab),
+                widgets: payload,
+            }),
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            const error = new Error(`HTTP ${response.status}`);
+            error.status = response.status;
+            throw error;
         }
+
+        const responsePayload = await response.json();
+        dashboardLayoutRevision = Number(responsePayload.revision ?? dashboardLayoutRevision);
 
         payload.forEach(item => {
             const widget = dashboardWidgets().find(candidate => (candidate.dataset.widgetKey || candidate.dataset.dashboardWidget) === item.key);
@@ -3286,9 +3532,11 @@ const persistDashboardLayout = async () => {
                 const titleText = widget.querySelector('.dashboard-card-title-text');
 
                 if (titleInput && titleText) {
-                    titleInput.value = item.title;
-                    titleInput.defaultValue = item.title;
-                    titleText.textContent = item.title;
+                    const effectiveTitle = item.title || dashboardDefaultTitles[item.key] || titleText.textContent;
+                    titleInput.value = effectiveTitle;
+                    titleInput.defaultValue = effectiveTitle;
+                    titleText.textContent = effectiveTitle;
+                    dashboardSavedLayout.set(item.key, { ...(dashboardSavedLayout.get(item.key) || {}), title: item.title });
                 }
             }
         });
@@ -3296,7 +3544,12 @@ const persistDashboardLayout = async () => {
         setDashboardLayoutEditing(false);
         setDashboardLayoutStatus('Düzülüş yadda saxlanıldı.', 'success');
     } catch (error) {
-        setDashboardLayoutStatus('Düzülüş saxlanmadı. Yenidən cəhd edin.', 'danger');
+        setDashboardLayoutStatus(
+            error.status === 409
+                ? 'Düzülüş başqa administrator tərəfindən dəyişdirilib. Səhifəni yeniləyin.'
+                : 'Düzülüş saxlanmadı. Yenidən cəhd edin.',
+            'danger'
+        );
     } finally {
         dashboardSaveButton?.removeAttribute('disabled');
     }
@@ -3312,12 +3565,13 @@ const setDragOverWidget = widget => {
     }
 };
 
-if (dashboardGrid) {
-    sortWidgetsByServerOrder();
-    refreshWidgetVisibilityControls();
-    disableDashboardDragging();
+const bindDashboardWidgetControls = () => {
+    if (!dashboardGrid) {
+        return;
+    }
 
-    dashboardGrid.querySelectorAll('.dashboard-drag-handle').forEach(handle => {
+    dashboardGrid.querySelectorAll('.dashboard-drag-handle:not([data-dashboard-bound])').forEach(handle => {
+        handle.dataset.dashboardBound = '1';
         handle.addEventListener('pointerdown', () => {
             if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing')) {
                 return;
@@ -3330,7 +3584,8 @@ if (dashboardGrid) {
         });
     });
 
-    dashboardGrid.querySelectorAll('.dashboard-visibility-toggle').forEach(toggle => {
+    dashboardGrid.querySelectorAll('.dashboard-visibility-toggle:not([data-dashboard-bound])').forEach(toggle => {
+        toggle.dataset.dashboardBound = '1';
         toggle.addEventListener('click', () => {
             if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing')) {
                 return;
@@ -3347,6 +3602,13 @@ if (dashboardGrid) {
             refreshDashboardVisuals();
         });
     });
+};
+
+if (dashboardGrid) {
+    sortWidgetsByServerOrder();
+    refreshWidgetVisibilityControls();
+    disableDashboardDragging();
+    bindDashboardWidgetControls();
 
     document.addEventListener('pointerup', () => {
         if (!draggedWidget) {
@@ -3415,6 +3677,181 @@ if (dashboardGrid) {
     });
 }
 
+const setActiveDashboardTab = tab => {
+    dashboardTabButtons.forEach(button => {
+        const selected = button.dataset.dashboardTab === tab;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        button.tabIndex = selected ? 0 : -1;
+    });
+
+    if (dashboardGrid) {
+        dashboardGrid.dataset.dashboardActiveTab = tab;
+        dashboardGrid.setAttribute('aria-labelledby', `dashboardTab${tab.charAt(0).toUpperCase()}${tab.slice(1)}`);
+    }
+
+    if (dashboardSelectedTabInput) {
+        dashboardSelectedTabInput.value = tab;
+    }
+};
+
+const dashboardTabRequestUrl = tab => {
+    const path = dashboardTabUrlTemplate.replace('__TAB__', encodeURIComponent(tab));
+    const url = new URL(path, window.location.origin);
+    const globalFilters = {
+        date_from: dashboardPage?.dataset.dashboardDateFrom || '',
+        date_to: dashboardPage?.dataset.dashboardDateTo || '',
+        project_id: dashboardPage?.dataset.dashboardProjectId || '',
+        equipment_type_id: dashboardPage?.dataset.dashboardEquipmentTypeId || '',
+        ownership_type: dashboardPage?.dataset.dashboardOwnership === 'all' ? '' : (dashboardPage?.dataset.dashboardOwnership || ''),
+    };
+
+    Object.entries(globalFilters).forEach(([key, value]) => {
+        if (value !== '') {
+            url.searchParams.set(key, value);
+        }
+    });
+
+    return url;
+};
+
+const replaceDashboardTabWidgets = remoteGrid => {
+    const widgets = Array.from(remoteGrid.children)
+        .filter(node => node.classList?.contains('dashboard-widget'));
+    let chartData = {};
+
+    try {
+        chartData = JSON.parse(remoteGrid.dataset.dashboardChartData || '{}');
+    } catch (error) {
+        chartData = {};
+    }
+
+    dashboardGrid.querySelectorAll('canvas').forEach(canvas => {
+        window.Chart?.getChart?.(canvas)?.destroy();
+    });
+    dashboardGrid.replaceChildren(...widgets);
+    dashboardGrid.dataset.dashboardChartData = remoteGrid.dataset.dashboardChartData || '{}';
+    applyDashboardChartData(chartData);
+    sortWidgetsByServerOrder();
+    refreshWidgetVisibilityControls();
+    disableDashboardDragging();
+    bindDashboardWidgetControls();
+    initializeDashboardCharts();
+
+    if (remoteGrid.dataset.dashboardActiveTab === 'geozones') {
+        foreignGeofencePage = 1;
+        bindForeignGeofenceControls();
+    } else {
+        foreignGeofenceController?.abort();
+    }
+};
+
+const renderDashboardTabError = (tab, button) => {
+    document.getElementById('dashboardTabLoadError')?.remove();
+    const alert = document.createElement('div');
+    alert.id = 'dashboardTabLoadError';
+    alert.className = 'alert alert-danger';
+    alert.setAttribute('role', 'alert');
+    alert.textContent = @json(__('app.tab_load_failed'));
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn-sm btn-outline-danger ms-2';
+    retry.textContent = @json(__('app.tab_load_retry'));
+    retry.addEventListener('click', () => loadDashboardTab(tab, button));
+    alert.appendChild(retry);
+    dashboardGrid.before(alert);
+};
+
+const loadDashboardTab = async (tab, button, { updateHistory = true } = {}) => {
+    if (!dashboardGrid || !dashboardTabUrlTemplate || !dashboardTabButtons.some(item => item.dataset.dashboardTab === tab)) {
+        return;
+    }
+
+    dashboardTabController?.abort();
+    dashboardTabController = new AbortController();
+    const requestId = ++dashboardTabRequestId;
+    document.getElementById('dashboardTabLoadError')?.remove();
+    if (dashboardGrid.contains(document.activeElement)) {
+        dashboardTabButtons.find(item => item.getAttribute('aria-selected') === 'true')?.focus({ preventScroll: true });
+    }
+    dashboardGrid.setAttribute('aria-busy', 'true');
+    dashboardGrid.inert = true;
+    setDashboardLayoutStatus(@json(__('app.loading_tab')));
+
+    try {
+        const response = await fetch(dashboardTabRequestUrl(tab), {
+            headers: { 'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+            signal: dashboardTabController.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const remoteDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const remoteGrid = remoteDocument.getElementById('dashboardGrid');
+
+        if (!remoteGrid || requestId !== dashboardTabRequestId) {
+            throw new Error('Dashboard tab fragment is invalid.');
+        }
+
+        replaceDashboardTabWidgets(remoteGrid);
+        document.getElementById('dashboardTabLoadError')?.remove();
+        setActiveDashboardTab(tab);
+        setDashboardLayoutStatus('');
+
+        if (updateHistory) {
+            const locationUrl = new URL(window.location.href);
+            locationUrl.searchParams.set('tab', tab);
+            window.history.pushState({ dashboardTab: tab }, '', locationUrl);
+        }
+
+        button?.focus({ preventScroll: true });
+    } catch (error) {
+        if (error.name !== 'AbortError' && requestId === dashboardTabRequestId) {
+            renderDashboardTabError(tab, button);
+            setDashboardLayoutStatus(@json(__('app.tab_load_failed')), 'danger');
+        }
+    } finally {
+        if (requestId === dashboardTabRequestId) {
+            dashboardGrid.setAttribute('aria-busy', 'false');
+            dashboardGrid.inert = false;
+        }
+    }
+};
+
+dashboardTabButtons.forEach((button, index) => {
+    button.addEventListener('click', () => {
+        if (button.getAttribute('aria-selected') !== 'true') {
+            loadDashboardTab(button.dataset.dashboardTab, button);
+        }
+    });
+
+    button.addEventListener('keydown', event => {
+        let nextIndex = null;
+
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % dashboardTabButtons.length;
+        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + dashboardTabButtons.length) % dashboardTabButtons.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = dashboardTabButtons.length - 1;
+
+        if (nextIndex !== null) {
+            event.preventDefault();
+            dashboardTabButtons[nextIndex].focus();
+        }
+    });
+});
+
+window.addEventListener('popstate', () => {
+    const tab = new URL(window.location.href).searchParams.get('tab') || @json(config('dashboard.default_tab', 'overview'));
+    const button = dashboardTabButtons.find(item => item.dataset.dashboardTab === tab);
+
+    if (button && dashboardGrid?.dataset.dashboardActiveTab !== tab) {
+        loadDashboardTab(tab, button, { updateHistory: false });
+    }
+});
+
 dashboardEditButton?.addEventListener('click', () => {
     sortWidgetsByServerOrder();
     setDashboardLayoutEditing(true);
@@ -3469,6 +3906,9 @@ dashboardResetButton?.addEventListener('click', () => {
 
 const drilldownModalElement = document.getElementById('dashboardDrilldownModal');
 const drilldownModal = drilldownModalElement && window.bootstrap ? new bootstrap.Modal(drilldownModalElement) : null;
+const drilldownBody = document.getElementById('dashboardDrilldownBody');
+const drilldownTabButtons = Array.from(document.querySelectorAll('[data-drilldown-tab-target]'));
+const drilldownTabSections = Array.from(document.querySelectorAll('[data-drilldown-tab-section]'));
 const drilldownTitle = document.getElementById('dashboardDrilldownTitle');
 const drilldownFilters = document.getElementById('dashboardDrilldownFilters');
 const drilldownStatus = document.getElementById('dashboardDrilldownStatus');
@@ -3493,15 +3933,77 @@ const drilldownRetry = document.getElementById('dashboardDrilldownRetry');
 const drilldownFormula = document.getElementById('dashboardDrilldownFormula');
 let drilldownController = null;
 let drilldownRequestId = 0;
+let drilldownReturnFocus = null;
 let drilldownState = {
     title: '',
     filters: {},
     baseFilters: {},
     baseTotal: null,
+    initialized: false,
     page: 1,
     meta: null,
     columns: {},
 };
+
+const setDrilldownControlsDisabled = disabled => {
+    [
+        ...document.querySelectorAll('.dashboard-drilldown-filter'),
+        ...drilldownFilterControls,
+        drilldownSearch,
+        drilldownFilterToggle,
+        drilldownGroupMode,
+        drilldownApplyFilters,
+        drilldownClearFilters,
+        drilldownPageSize,
+        drilldownPrev,
+        drilldownNext,
+    ].filter(Boolean).forEach(control => {
+        control.disabled = disabled;
+    });
+};
+
+const activateDrilldownTab = (tab, { focus = false } = {}) => {
+    drilldownTabButtons.forEach(button => {
+        const selected = button.dataset.drilldownTabTarget === tab;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+        button.tabIndex = selected ? 0 : -1;
+
+        if (selected && focus) {
+            button.focus();
+        }
+    });
+
+    drilldownTabSections.forEach(section => {
+        const selected = section.dataset.drilldownTabSection === tab;
+        section.hidden = !selected;
+
+        if (section.id === 'dashboardDrilldownFilterPanel') {
+            section.classList.toggle('d-none', !selected);
+        } else if (section.id !== 'dashboardDrilldownFormula' || selected) {
+            section.classList.toggle('d-none', !selected);
+        }
+    });
+
+    drilldownFilterToggle?.setAttribute('aria-expanded', tab === 'filters' ? 'true' : 'false');
+};
+
+drilldownTabButtons.forEach((button, index) => {
+    button.addEventListener('click', () => activateDrilldownTab(button.dataset.drilldownTabTarget));
+    button.addEventListener('keydown', event => {
+        let nextIndex = null;
+
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % drilldownTabButtons.length;
+        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + drilldownTabButtons.length) % drilldownTabButtons.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = drilldownTabButtons.length - 1;
+
+        if (nextIndex !== null) {
+            event.preventDefault();
+            activateDrilldownTab(drilldownTabButtons[nextIndex].dataset.drilldownTabTarget, { focus: true });
+        }
+    });
+});
 
 const baseDrilldownFilters = () => ({
     date_from: dashboardPage?.dataset.dashboardDateFrom || '',
@@ -3593,21 +4095,37 @@ const drilldownUrl = (baseUrl, filters) => {
     return `${baseUrl}?${params.toString()}`;
 };
 
-const foreignGeofenceRows = document.getElementById('foreignGeofenceRows');
-const foreignGeofenceTableMeta = document.getElementById('foreignGeofenceTableMeta');
-const foreignGeofenceSearch = document.getElementById('foreignGeofenceSearch');
-const foreignGeofenceOwnershipFilter = document.getElementById('foreignGeofenceOwnershipFilter');
-const foreignGeofenceTableExport = document.getElementById('foreignGeofenceTableExport');
-const foreignGeofencePeriodSelect = document.getElementById('foreignGeofencePeriodSelect');
-const foreignGeofenceRefresh = document.getElementById('foreignGeofenceRefresh');
-const foreignGeofencePageSize = document.getElementById('foreignGeofencePageSize');
-const foreignGeofencePrev = document.getElementById('foreignGeofencePrev');
-const foreignGeofenceNext = document.getElementById('foreignGeofenceNext');
-const foreignGeofencePageInfo = document.getElementById('foreignGeofencePageInfo');
+let foreignGeofenceRows = null;
+let foreignGeofenceTableMeta = null;
+let foreignGeofenceSearch = null;
+let foreignGeofenceOwnershipFilter = null;
+let foreignGeofenceTableExport = null;
+let foreignGeofencePeriodSelect = null;
+let foreignGeofenceRefresh = null;
+let foreignGeofencePageSize = null;
+let foreignGeofencePrev = null;
+let foreignGeofenceNext = null;
+let foreignGeofencePageInfo = null;
 let foreignGeofenceController = null;
 let foreignGeofenceRequestId = 0;
 let foreignGeofencePage = 1;
 let foreignGeofenceMeta = { current_page: 1, last_page: 1, total: 0, per_page: 20 };
+
+const refreshForeignGeofenceElements = () => {
+    foreignGeofenceRows = document.getElementById('foreignGeofenceRows');
+    foreignGeofenceTableMeta = document.getElementById('foreignGeofenceTableMeta');
+    foreignGeofenceSearch = document.getElementById('foreignGeofenceSearch');
+    foreignGeofenceOwnershipFilter = document.getElementById('foreignGeofenceOwnershipFilter');
+    foreignGeofenceTableExport = document.getElementById('foreignGeofenceTableExport');
+    foreignGeofencePeriodSelect = document.getElementById('foreignGeofencePeriodSelect');
+    foreignGeofenceRefresh = document.getElementById('foreignGeofenceRefresh');
+    foreignGeofencePageSize = document.getElementById('foreignGeofencePageSize');
+    foreignGeofencePrev = document.getElementById('foreignGeofencePrev');
+    foreignGeofenceNext = document.getElementById('foreignGeofenceNext');
+    foreignGeofencePageInfo = document.getElementById('foreignGeofencePageInfo');
+};
+
+refreshForeignGeofenceElements();
 
 if (foreignGeofenceOwnershipFilter) {
     foreignGeofenceOwnershipFilter.value = dashboardPage?.dataset.dashboardOwnership || 'all';
@@ -3615,7 +4133,10 @@ if (foreignGeofenceOwnershipFilter) {
 
 const foreignGeofenceFilters = () => ({
     ...baseDrilldownFilters(),
+    date_from: dashboardPage?.dataset.dashboardToday || '',
+    date_to: dashboardPage?.dataset.dashboardToday || '',
     geofence_violation: 1,
+    live_only: 1,
     ownership: foreignGeofenceOwnershipFilter?.value || dashboardPage?.dataset.dashboardOwnership || 'all',
     data_status: 'all',
     search: foreignGeofenceSearch?.value.trim() || '',
@@ -3706,7 +4227,13 @@ const renderForeignGeofencePagination = () => {
 
 const setForeignGeofenceLoading = message => {
     if (foreignGeofenceRows) {
-        foreignGeofenceRows.innerHTML = `<tr><td colspan="9" class="foreign-geofence-loading">${message}</td></tr>`;
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 9;
+        cell.className = 'foreign-geofence-loading';
+        cell.textContent = message;
+        row.appendChild(cell);
+        foreignGeofenceRows.replaceChildren(row);
     }
 
     if (foreignGeofenceTableMeta) {
@@ -3815,64 +4342,64 @@ const loadForeignGeofenceTable = async () => {
     }
 };
 
-foreignGeofencePeriodSelect?.addEventListener('change', () => {
-    const option = foreignGeofencePeriodSelect.selectedOptions?.[0];
-
-    if (dashboardDateFrom && option?.dataset.from) {
-        dashboardDateFrom.value = option.dataset.from;
-    }
-
-    if (dashboardDateTo && option?.dataset.to) {
-        dashboardDateTo.value = option.dataset.to;
-    }
-
-    if (dashboardPeriodInput) {
-        dashboardPeriodInput.value = foreignGeofencePeriodSelect.value || 'custom';
-    }
-
-    dashboardFilterForm?.requestSubmit();
-});
-
-foreignGeofenceRefresh?.addEventListener('click', () => {
-    dashboardFilterForm?.requestSubmit();
-});
-
 let foreignGeofenceSearchTimer = null;
-foreignGeofenceSearch?.addEventListener('input', () => {
-    window.clearTimeout(foreignGeofenceSearchTimer);
-    foreignGeofenceSearchTimer = window.setTimeout(() => {
+const bindForeignGeofenceControls = () => {
+    refreshForeignGeofenceElements();
+
+    if (foreignGeofenceOwnershipFilter) {
+        foreignGeofenceOwnershipFilter.value = dashboardPage?.dataset.dashboardOwnership || 'all';
+    }
+
+    const bindOnce = (element, eventName, listener) => {
+        if (!element || element.dataset.foreignGeofenceBound === '1') {
+            return;
+        }
+
+        element.dataset.foreignGeofenceBound = '1';
+        element.addEventListener(eventName, listener);
+    };
+
+    bindOnce(foreignGeofencePeriodSelect, 'change', () => {
+        const option = foreignGeofencePeriodSelect.selectedOptions?.[0];
+
+        if (dashboardDateFrom && option?.dataset.from) dashboardDateFrom.value = option.dataset.from;
+        if (dashboardDateTo && option?.dataset.to) dashboardDateTo.value = option.dataset.to;
+        if (dashboardPeriodInput) dashboardPeriodInput.value = foreignGeofencePeriodSelect.value || 'custom';
+        dashboardFilterForm?.requestSubmit();
+    });
+    bindOnce(foreignGeofenceRefresh, 'click', () => dashboardFilterForm?.requestSubmit());
+    bindOnce(foreignGeofenceSearch, 'input', () => {
+        window.clearTimeout(foreignGeofenceSearchTimer);
+        foreignGeofenceSearchTimer = window.setTimeout(() => {
+            foreignGeofencePage = 1;
+            loadForeignGeofenceTable();
+        }, 300);
+    });
+    bindOnce(foreignGeofenceOwnershipFilter, 'change', () => {
         foreignGeofencePage = 1;
         loadForeignGeofenceTable();
-    }, 300);
-});
+    });
+    bindOnce(foreignGeofencePageSize, 'change', () => {
+        foreignGeofencePage = 1;
+        loadForeignGeofenceTable();
+    });
+    bindOnce(foreignGeofencePrev, 'click', () => {
+        if (foreignGeofencePage > 1) {
+            foreignGeofencePage -= 1;
+            loadForeignGeofenceTable();
+        }
+    });
+    bindOnce(foreignGeofenceNext, 'click', () => {
+        if (foreignGeofencePage < Number(foreignGeofenceMeta.last_page || 1)) {
+            foreignGeofencePage += 1;
+            loadForeignGeofenceTable();
+        }
+    });
 
-foreignGeofenceOwnershipFilter?.addEventListener('change', () => {
-    foreignGeofencePage = 1;
     loadForeignGeofenceTable();
-});
-foreignGeofencePageSize?.addEventListener('change', () => {
-    foreignGeofencePage = 1;
-    loadForeignGeofenceTable();
-});
-foreignGeofencePrev?.addEventListener('click', () => {
-    if (foreignGeofencePage <= 1) {
-        return;
-    }
+};
 
-    foreignGeofencePage -= 1;
-    loadForeignGeofenceTable();
-});
-foreignGeofenceNext?.addEventListener('click', () => {
-    const lastPage = Number(foreignGeofenceMeta.last_page || 1);
-
-    if (foreignGeofencePage >= lastPage) {
-        return;
-    }
-
-    foreignGeofencePage += 1;
-    loadForeignGeofenceTable();
-});
-loadForeignGeofenceTable();
+bindForeignGeofenceControls();
 
 const setDrilldownStatus = (message, tone = 'muted') => {
     if (!drilldownStatus) {
@@ -4021,7 +4548,7 @@ const renderDrilldownChips = () => {
         const button = document.createElement('button');
         button.type = 'button';
         button.setAttribute('aria-label', `${label} filtrini sil`);
-        button.textContent = '?';
+        button.textContent = '×';
         button.addEventListener('click', () => {
             if (name === 'day_status' && drilldownState.filters.work_category === value) {
                 delete drilldownState.filters.work_category;
@@ -4089,13 +4616,16 @@ const renderDrilldownColumns = columns => {
         if (drilldownSortableColumns.has(key)) {
             const button = document.createElement('button');
             const isActive = drilldownState.filters.sort === key;
+            const direction = drilldownState.filters.direction === 'desc' ? 'descending' : 'ascending';
+            th.setAttribute('aria-sort', isActive ? direction : 'none');
             button.type = 'button';
             button.className = 'dashboard-drilldown-sort';
             button.dataset.sort = key;
+            button.setAttribute('aria-label', `${label}: sırala`);
             button.textContent = label;
 
             const marker = document.createElement('span');
-            marker.textContent = isActive ? (drilldownState.filters.direction === 'desc' ? '?' : '?') : '?';
+            marker.textContent = isActive ? (drilldownState.filters.direction === 'desc' ? '↓' : '↑') : '↕';
             button.appendChild(marker);
             th.appendChild(button);
         } else {
@@ -4130,7 +4660,9 @@ const updateDrilldownFilterButtons = () => {
     document.querySelectorAll('.dashboard-drilldown-filter').forEach(button => {
         const name = button.dataset.filterName;
         const value = button.dataset.filterValue;
-        button.classList.toggle('active', String(drilldownState.filters[name] || 'all') === value);
+        const selected = String(drilldownState.filters[name] || 'all') === value;
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
 
     syncDrilldownFilterControls();
@@ -4158,6 +4690,7 @@ const resetDashboardDrilldownState = (options = {}) => {
         filters: {},
         baseFilters: {},
         baseTotal: null,
+        initialized: false,
         page: 1,
         meta: null,
         columns: defaultDrilldownColumns(),
@@ -4212,6 +4745,7 @@ const loadDashboardDrilldown = async () => {
     drilldownRetry?.classList.add('d-none');
     renderDrilldownRows([]);
     drilldownModalElement?.classList.add('dashboard-drilldown-loading');
+    drilldownBody?.setAttribute('aria-busy', 'true');
     updateDrilldownFilterButtons();
     updateDrilldownExportUrl();
 
@@ -4233,7 +4767,11 @@ const loadDashboardDrilldown = async () => {
 
         drilldownState.title = payload.title || drilldownState.title || 'Texnika siyahısı';
         drilldownState.meta = payload.meta || null;
-        drilldownState.baseTotal ??= payload.summary?.total ?? 0;
+        if (!drilldownState.initialized) {
+            drilldownState.baseTotal = payload.summary?.total ?? 0;
+            drilldownState.initialized = true;
+            setDrilldownControlsDisabled(false);
+        }
         renderDrilldownColumns(payload.columns || null);
 
         if (drilldownTitle) {
@@ -4263,11 +4801,13 @@ const loadDashboardDrilldown = async () => {
     } finally {
         if (requestId === drilldownRequestId) {
             drilldownModalElement?.classList.remove('dashboard-drilldown-loading');
+            drilldownBody?.setAttribute('aria-busy', 'false');
         }
     }
 };
 
 const openDashboardDrilldown = (filters = {}) => {
+    drilldownReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     resetDashboardDrilldownState({ abortRequest: true, clearTitle: false });
     const nextFilters = cleanDrilldownFilters(filters);
 
@@ -4304,6 +4844,7 @@ const openDashboardDrilldown = (filters = {}) => {
     drilldownState.filters = initialFilters;
     drilldownState.baseFilters = { ...initialFilters };
     drilldownState.baseTotal = null;
+    drilldownState.initialized = false;
     drilldownState.title = nextFilters.title || '';
 
     delete drilldownState.filters.title;
@@ -4319,12 +4860,22 @@ const openDashboardDrilldown = (filters = {}) => {
 
     syncDrilldownFilterControls();
     renderDrilldownChips();
+    activateDrilldownTab('data');
+    setDrilldownControlsDisabled(true);
     drilldownModal?.show();
     loadDashboardDrilldown();
 };
 
 drilldownModalElement?.addEventListener('hidden.bs.modal', () => {
     resetDashboardDrilldownState({ abortRequest: true, clearTitle: true });
+
+    if (drilldownReturnFocus?.isConnected) {
+        drilldownReturnFocus.focus({ preventScroll: true });
+    } else {
+        document.querySelector('[data-dashboard-tab].active')?.focus?.({ preventScroll: true });
+    }
+
+    drilldownReturnFocus = null;
 });
 
 document.addEventListener('click', event => {
@@ -4339,6 +4890,7 @@ document.addEventListener('click', event => {
     openDashboardDrilldown({
         title: trigger.dataset.drilldownTitle || '',
         ownership: trigger.dataset.drilldownOwnership || undefined,
+        ownership_scope: trigger.dataset.drilldownOwnershipScope || undefined,
         project_id: trigger.dataset.drilldownProjectId || undefined,
         equipment_type_id: trigger.dataset.drilldownEquipmentTypeId || undefined,
         vehicle_types: trigger.dataset.drilldownVehicleTypes ? [trigger.dataset.drilldownVehicleTypes] : undefined,
@@ -4383,11 +4935,11 @@ document.querySelectorAll('.dashboard-drilldown-filter').forEach(button => {
 });
 
 drilldownFilterToggle?.addEventListener('click', () => {
-    drilldownFilterPanel?.classList.toggle('d-none');
+    activateDrilldownTab('filters', { focus: true });
 });
 
 drilldownFilterClose?.addEventListener('click', () => {
-    drilldownFilterPanel?.classList.add('d-none');
+    activateDrilldownTab('data', { focus: true });
 });
 
 drilldownApplyFilters?.addEventListener('click', () => {
@@ -4410,12 +4962,12 @@ drilldownApplyFilters?.addEventListener('click', () => {
         delete drilldownState.filters.work_category;
     }
 
+    activateDrilldownTab('data');
     loadDashboardDrilldown();
 });
 
 drilldownClearFilters?.addEventListener('click', () => {
     drilldownState.filters = { ...drilldownState.baseFilters, page: 1 };
-    drilldownState.baseTotal = null;
     syncDrilldownFilterControls();
     loadDashboardDrilldown();
 });
@@ -4479,8 +5031,8 @@ drilldownHeader?.addEventListener('click', event => {
 });
 
 const ownershipDrilldownItems = [
-    { title: `${labels.nwc} texnikaları`, ownership: 'nwc' },
-    { title: `${labels.icare} texnikaları`, ownership: 'icare' },
+    { title: `${labels.nwc} texnikaları`, ownership: 'nwc', ownership_scope: 'project_groups' },
+    { title: `${labels.icare} texnikaları`, ownership: 'icare', ownership_scope: 'project_groups' },
 ];
 const projectWorkCategoryNwcDrilldownItems = workCategoryKeys.map((key, index) => ({
     title: `${labels.nwc} - ${workCategoryLabels[index]}`,
@@ -4506,17 +5058,17 @@ const projectWorkCategoryIcareDonutDrilldownItems = workCategoryDonutKeys.map((k
     work_category: key,
     status: key,
 }));
-const typeNwcDrilldownItems = typeNwcIds.map((id, index) => ({
+const typeNwcDrilldownItems = () => typeNwcIds.map((id, index) => ({
     title: `${labels.nwc} - ${typeNwcLabels[index]}`,
     ownership: 'nwc',
     equipment_type_id: id,
 }));
-const typeIcareDrilldownItems = typeIcareIds.map((id, index) => ({
+const typeIcareDrilldownItems = () => typeIcareIds.map((id, index) => ({
     title: `${labels.icare} - ${typeIcareLabels[index]}`,
     ownership: 'icare',
     equipment_type_id: id,
 }));
-const geofenceViolationDrilldownItems = geofenceViolationProjectIds.map((id, index) => ({
+const geofenceViolationDrilldownItems = () => geofenceViolationProjectIds.map((id, index) => ({
     title: `${geofenceViolationLabels[index]} - Geozonadan çıxma halları`,
     geofence_violation: 1,
     current_geozone_project_id: id,
@@ -4524,36 +5076,38 @@ const geofenceViolationDrilldownItems = geofenceViolationProjectIds.map((id, ind
     current_geozone_key: geofenceViolationSectorKeys[index],
 }));
 
-createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], {
-    showLegend: false,
-    total: ownershipShareTotal,
-    showCenterTotal: true,
-    drilldownItems: ownershipDrilldownItems,
-    centerDrilldown: { title: 'Bütün texnikalar', ownership: 'all' },
-});
-createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false, total: typeNwcTotal, showCenterTotal: true, drilldownItems: typeNwcDrilldownItems });
-createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false, total: typeIcareTotal, showCenterTotal: true, drilldownItems: typeIcareDrilldownItems });
-createDoughnutChart('geofenceViolationsDonut', geofenceViolationLabels, geofenceViolationCounts, geofenceViolationPalette, {
-    showLegend: false,
-    cutout: '66%',
-    hoverOffset: 10,
-    total: geofenceViolationTotal,
-    drilldownItems: geofenceViolationDrilldownItems,
-    centerDrilldown: { title: 'Geozonadan çıxma halları', geofence_violation: 1 },
-});
-createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcDonutCounts, {
-    labels: workCategoryDonutLabels,
-    colors: workCategoryDonutColorValues,
-    drilldownItems: projectWorkCategoryNwcDonutDrilldownItems,
-});
-createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareDonutCounts, {
-    labels: workCategoryDonutLabels,
-    colors: workCategoryDonutColorValues,
-    drilldownItems: projectWorkCategoryIcareDonutDrilldownItems,
-});
-createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
-if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
-    new Chart(document.getElementById('utilizationLine'), {
+const initializeDashboardCharts = () => {
+    createDoughnutChart('ownershipDonut', ownershipShareLabels, ownershipShareCounts, [ownershipColor.NWC, ownershipColor.ICARE], {
+        showLegend: false,
+        total: ownershipShareTotal,
+        showCenterTotal: true,
+        drilldownItems: ownershipDrilldownItems,
+        centerDrilldown: { title: 'Bütün texnikalar', ownership_scope: 'project_groups' },
+    });
+    createDoughnutChart('typeDonutNwc', typeNwcLabels, typeNwcTotals, typePalette, { showLegend: false, total: typeNwcTotal, showCenterTotal: true, drilldownItems: typeNwcDrilldownItems() });
+    createDoughnutChart('typeDonutIcare', typeIcareLabels, typeIcareTotals, typePalette, { showLegend: false, total: typeIcareTotal, showCenterTotal: true, drilldownItems: typeIcareDrilldownItems() });
+    createDoughnutChart('geofenceViolationsDonut', geofenceViolationLabels, geofenceViolationCounts, geofenceViolationPalette, {
+        showLegend: false,
+        cutout: '66%',
+        hoverOffset: 10,
+        total: geofenceViolationTotal,
+        drilldownItems: geofenceViolationDrilldownItems(),
+        centerDrilldown: { title: 'Geozonadan çıxma halları', geofence_violation: 1 },
+    });
+    createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcDonutCounts, {
+        labels: workCategoryDonutLabels,
+        colors: workCategoryDonutColorValues,
+        drilldownItems: projectWorkCategoryNwcDonutDrilldownItems,
+    });
+    createProjectWorkCategoryChart('projectWorkCategoriesIcare', projectWorkCategoryIcareDonutCounts, {
+        labels: workCategoryDonutLabels,
+        colors: workCategoryDonutColorValues,
+        drilldownItems: projectWorkCategoryIcareDonutDrilldownItems,
+    });
+    createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
+
+    if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
+        new Chart(document.getElementById('utilizationLine'), {
         type: 'line',
         data: {
             labels: utilizationTrend.labels,
@@ -4576,8 +5130,11 @@ if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
                 }
             }
         }
-    });
-}
+        });
+    }
+};
+
+initializeDashboardCharts();
 
 </script>
 @endpush

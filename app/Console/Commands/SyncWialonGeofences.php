@@ -62,11 +62,6 @@ class SyncWialonGeofences extends Command
             }
         }
 
-        Geofence::query()
-            ->whereNotNull('wialon_geofence_id')
-            ->whereNotIn('wialon_geofence_id', array_keys($projectByGeofenceId))
-            ->update(['active' => false]);
-
         foreach ($zoneIdsByResourceId as $resourceId => $zoneIds) {
             try {
                 $zones = $wialon->getGeofenceZonesByIds($resourceId, array_values(array_unique($zoneIds)));

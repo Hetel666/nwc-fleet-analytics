@@ -1,6 +1,49 @@
 <?php
 
 return [
+    'update_sections' => [
+        'static_fleet' => [
+            'title' => 'Struktur və texnika siyahısı',
+            'dashboard_section' => null,
+            'manual' => 'Parametrlər -> Texnikaları sinxronlaşdır',
+            'auto' => 'Gündəlik 00:00 paketində texnika və geofence siyahısı yenilənir.',
+            'wialon_command' => 'fleet:sync-units / fleet:sync-geofences',
+            'local_tables' => 'equipments, equipment_types, projects, project_wialon_groups, geofences',
+        ],
+        'daily_averages' => [
+            'title' => 'Orta motosaat / Orta yürüş',
+            'dashboard_section' => 'daily_averages',
+            'manual' => 'Tarixi məlumatların yenilənməsi -> Orta motosaat göstəricisi / Orta yürüş göstəricisi',
+            'auto' => 'Gündəlik 00:00-da dünənki və seçilmiş əvvəlki günlər yenilənir.',
+            'wialon_command' => 'fleet:sync-report-stats + fleet:aggregate-daily',
+            'local_tables' => 'equipment_daily_stats, daily_unit_aggregates',
+        ],
+        'top_working_units' => [
+            'title' => 'Top 20 az işləyənlər / Top 20 çox işləyənlər',
+            'dashboard_section' => 'top_working_units',
+            'manual' => 'Tarixi məlumatların yenilənməsi -> Top 20 az işləyənlər / Top 20 çox işləyənlər',
+            'auto' => 'Gündəlik 00:00 paketində Wialon Engine hours report yenilənir.',
+            'wialon_command' => 'fleet:sync-engine-hours-report',
+            'local_tables' => 'engine_hours_report_unit_days, wialon_report_sync_items',
+        ],
+        'geofence_outside' => [
+            'title' => 'Geozonadan çıxma halları',
+            'dashboard_section' => 'geofence_outside',
+            'manual' => 'Tarixi məlumatların yenilənməsi -> Geozonadan çıxma halları',
+            'auto' => 'Gündəlik 00:00 paketində dünənki geozon api intervalı yenilənir.',
+            'wialon_command' => 'fleet:sync-geozon-api',
+            'local_tables' => 'unit_foreign_geofence_intervals',
+        ],
+        'shift_efficiency' => [
+            'title' => 'Effektivlik və shift hesabatı',
+            'dashboard_section' => null,
+            'manual' => 'Tarixi məlumatların yenilənməsi hazırda bu bölməni ayrıca seçmir; gecə paketində işləyir.',
+            'auto' => 'Gündəlik 00:00 paketində plan-shift-sync və run-shift-sync icra olunur.',
+            'wialon_command' => 'fleet:plan-shift-sync + fleet:run-shift-sync',
+            'local_tables' => 'equipment_daily_stats, wialon_report_sync_items',
+        ],
+    ],
+
     'shared_bindings' => [
         [
             'title' => 'Project binding',
@@ -117,7 +160,9 @@ return [
             'report_rows' => [
                 'Smena 1 / Daytime: 08:00-17:59 -> daytime_hours',
                 'Smena 2 / Overtime: 18:00-07:59 -> overtime_hours',
-                'day_status yalnız daytime_hours ilə hesablanır',
+                'day_status categories use daytime_hours only',
+                'over_10_hours also includes rows where total_hours > 10',
+                'overtime_hours is shown as a separate marker and does not change day_status',
                 'has_overtime = overtime_hours > 0',
             ],
             'click' => 'Day status kliklənəndə həmin status; Overtime kliklənəndə overtime_hours > 0 modalı açılır.',
@@ -135,7 +180,9 @@ return [
             'report_rows' => [
                 'Smena 1 / Daytime: 08:00-17:59 -> daytime_hours',
                 'Smena 2 / Overtime: 18:00-07:59 -> overtime_hours',
-                'day_status yalnız daytime_hours ilə hesablanır',
+                'day_status categories use daytime_hours only',
+                'over_10_hours also includes rows where total_hours > 10',
+                'overtime_hours is shown as a separate marker and does not change day_status',
                 'has_overtime = overtime_hours > 0',
             ],
             'click' => 'Day status kliklənəndə həmin status; Overtime kliklənəndə overtime_hours > 0 modalı açılır.',

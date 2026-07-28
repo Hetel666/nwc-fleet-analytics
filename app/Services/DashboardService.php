@@ -155,6 +155,7 @@ class DashboardService
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->boundToProjectWialonGroup()
+            ->operationalDashboardProject()
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipments.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipments.ownership_type', $ownershipType))
@@ -183,7 +184,7 @@ class DashboardService
             Equipment::OWNERSHIP_ICARE => [],
         ];
 
-        $rows = $this->equipmentQuery($filters)
+        $rows = $this->shareEquipmentQuery($filters)
             ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
             ->select(
                 'equipments.ownership_type',
@@ -271,6 +272,7 @@ class DashboardService
         return Project::query()
             ->leftJoinSub($stats, 'stats', fn ($join) => $join->on('stats.project_id', '=', 'projects.id'))
             ->where('projects.active', true)
+            ->excludeDashboardUnassigned()
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('projects.id', $projectId))
             ->select(
                 'projects.id',
@@ -316,7 +318,7 @@ class DashboardService
     {
         $filters = $this->normalizeFilters($filters);
 
-        $rows = $this->equipmentQuery($filters)
+        $rows = $this->shareEquipmentQuery($filters)
             ->join('projects', 'projects.id', '=', 'equipments.project_id')
             ->select(
                 'projects.id',
@@ -1468,6 +1470,18 @@ class DashboardService
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->boundToProjectWialonGroup()
+            ->operationalDashboardProject()
+            ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipments.project_id', $projectId))
+            ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
+            ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipments.ownership_type', $ownershipType));
+    }
+
+    private function shareEquipmentQuery(array $filters): Builder
+    {
+        return Equipment::query()
+            ->where('equipments.active', true)
+            ->visibleInDashboard()
+            ->boundToProjectWialonGroup()
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipments.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipments.ownership_type', $ownershipType));
@@ -1518,6 +1532,7 @@ class DashboardService
             ->whereHas('equipment', function (Builder $query) use ($filters): void {
                 $query->where('equipments.active', true)
                     ->visibleInDashboard()
+                    ->operationalDashboardProject()
                     ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId));
             });
     }

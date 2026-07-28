@@ -349,6 +349,31 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $this->assertContains('Visible unit', $exportRows[0]);
     }
 
+    public function test_live_only_geofence_table_excludes_closed_report_intervals(): void
+    {
+        [$home, $foreign] = $this->projectsWithGeofences();
+        $foreignGeofence = Geofence::query()->where('project_id', $foreign->id)->firstOrFail();
+        $reportUnit = $this->equipment($home, 'Excavator', 'Closed report unit');
+        $liveUnit = $this->equipment($home, 'Dump Truck', 'Live open unit');
+
+        $this->reportInterval($reportUnit, $home, $foreign, $foreignGeofence);
+        $this->monitoring->processUnitPosition($liveUnit, $this->position(25, 25, '2026-07-17 08:00:00'));
+        $this->monitoring->processUnitPosition($liveUnit, $this->position(25, 25, '2026-07-17 11:01:00'));
+        Carbon::setTestNow('2026-07-17 11:01:00');
+
+        $service = app(GeofenceViolationService::class);
+        $filters = $this->filters();
+        $historical = $service->paginate($filters);
+        $live = $service->paginate([...$filters, 'live_only' => true]);
+        $liveRows = $service->exportRows([...$filters, 'live_only' => true]);
+
+        $this->assertSame(2, $historical->total());
+        $this->assertSame(1, $live->total());
+        $this->assertCount(1, $liveRows);
+        $this->assertContains('Live open unit', $liveRows[0]);
+        $this->assertNotContains('Closed report unit', $liveRows[0]);
+    }
+
     public function test_modal_filter_returns_only_selected_current_geozone(): void
     {
         [$home, $foreign, $third] = $this->projectsWithGeofences();

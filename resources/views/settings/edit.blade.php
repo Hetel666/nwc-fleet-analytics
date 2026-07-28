@@ -28,7 +28,7 @@
                 <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
                     <div>
                         <h2 class="h6 fw-bold mb-1">Avtomatik sinxronizasiya</h2>
-                        <div class="text-secondary small">Planlayici her 5 deqiqeden bir yoxlayir ve yalniz vaxti catmis tapsiriqlari ise salir.</div>
+                        <div class="text-secondary small">Planlayici avtomatik yenilenmeni her gun saat 00:00-da ise salir. Ferdi intervallar Tarixi melumatlarin yenilenmesi bolmesinden el ile icra olunur.</div>
                     </div>
                     <label class="form-check form-switch m-0">
                         <input type="checkbox" name="auto_sync_enabled" value="1" class="form-check-input" @checked(old('auto_sync_enabled', $settings['auto_sync_enabled'] ?? '1'))>
@@ -43,14 +43,8 @@
                                 <input type="checkbox" name="auto_sync_units_enabled" value="1" class="form-check-input" @checked(old('auto_sync_units_enabled', $settings['auto_sync_units_enabled'] ?? '1'))>
                                 <span class="form-check-label fw-semibold">Texnikalari avtomatik sinxronlasdir</span>
                             </label>
-                            <label class="form-label">Interval</label>
-                            <select name="auto_sync_units_interval_minutes" class="form-select">
-                                @foreach ([30, 60, 180, 360, 720, 1440] as $minutes)
-                                    <option value="{{ $minutes }}" @selected((string) old('auto_sync_units_interval_minutes', $settings['auto_sync_units_interval_minutes'] ?? 60) === (string) $minutes)>
-                                        {{ $syncIntervalOptions[$minutes] }}
-                                    </option>
-                                @endforeach
-                            </select>
+                            <input type="hidden" name="auto_sync_units_interval_minutes" value="1440">
+                            <div class="text-secondary small">Her gun saat 00:00-da yenilenir.</div>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -59,14 +53,8 @@
                                 <input type="checkbox" name="auto_sync_geofences_enabled" value="1" class="form-check-input" @checked(old('auto_sync_geofences_enabled', $settings['auto_sync_geofences_enabled'] ?? '1'))>
                                 <span class="form-check-label fw-semibold">Geofence-leri avtomatik sinxronlasdir</span>
                             </label>
-                            <label class="form-label">Interval</label>
-                            <select name="auto_sync_geofences_interval_minutes" class="form-select">
-                                @foreach ([360, 720, 1440, 10080] as $minutes)
-                                    <option value="{{ $minutes }}" @selected((string) old('auto_sync_geofences_interval_minutes', $settings['auto_sync_geofences_interval_minutes'] ?? 1440) === (string) $minutes)>
-                                        {{ $syncIntervalOptions[$minutes] }}
-                                    </option>
-                                @endforeach
-                            </select>
+                            <input type="hidden" name="auto_sync_geofences_interval_minutes" value="1440">
+                            <div class="text-secondary small">Her gun saat 00:00-da yenilenir.</div>
                         </div>
                     </div>
                     <div class="col-12">
@@ -77,14 +65,9 @@
                             </label>
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label">Interval</label>
-                                    <select name="auto_sync_daily_interval_minutes" class="form-select">
-                                        @foreach ([60, 180, 360, 720, 1440] as $minutes)
-                                            <option value="{{ $minutes }}" @selected((string) old('auto_sync_daily_interval_minutes', $settings['auto_sync_daily_interval_minutes'] ?? 180) === (string) $minutes)>
-                                                {{ $syncIntervalOptions[$minutes] }}
-                                            </option>
-                                        @endforeach
-                                    </select>
+                                    <label class="form-label">Icra vaxti</label>
+                                    <input type="hidden" name="auto_sync_daily_interval_minutes" value="1440">
+                                    <div class="form-control bg-body-secondary">00:00</div>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Son nece gun yenilensin</label>
@@ -108,15 +91,15 @@
                         {{ $wialonTokenConfigured ? __('app.token_configured') : __('app.token_missing') }}
                     </span>
                 </div>
-                <form method="POST" action="{{ route('settings.sync-units') }}">
+                <form method="POST" action="{{ route('settings.sync-units') }}" data-sync-form>
                     @csrf
-                    <button class="btn btn-outline-primary btn-icon">
+                    <button type="submit" class="btn btn-outline-primary btn-icon" data-loading-text="Sinxronizasiya gedir...">
                         <i class="bi bi-arrow-repeat"></i><span>{{ __('app.sync_units') }}</span>
                     </button>
                 </form>
-                <form method="POST" action="{{ route('settings.sync-geofences') }}" class="mt-2">
+                <form method="POST" action="{{ route('settings.sync-geofences') }}" class="mt-2" data-sync-form>
                     @csrf
-                    <button class="btn btn-outline-primary btn-icon">
+                    <button type="submit" class="btn btn-outline-primary btn-icon" data-loading-text="Sinxronizasiya gedir...">
                         <i class="bi bi-bounding-box"></i><span>Geofence-lari sinxronlasdir</span>
                     </button>
                 </form>
@@ -155,3 +138,20 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+    <script>
+        document.querySelectorAll('[data-sync-form]').forEach(form => {
+            form.addEventListener('submit', () => {
+                const button = form.querySelector('button[type="submit"]');
+
+                if (!button) {
+                    return;
+                }
+
+                button.disabled = true;
+                button.querySelector('span').textContent = button.dataset.loadingText || 'Sinxronizasiya gedir...';
+            });
+        });
+    </script>
+@endpush

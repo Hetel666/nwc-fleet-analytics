@@ -93,6 +93,10 @@
             border: 1px solid #e2e8f0;
             border-radius: 14px;
         }
+
+        .analytics-map-update {
+            border-left: 4px solid #2563eb;
+        }
     </style>
 @endpush
 
@@ -141,6 +145,37 @@
     </div>
 
     <div class="row g-3 mb-4">
+        @foreach ($updateSections as $key => $section)
+            <div class="col-12 col-xl-6">
+                <div class="analytics-map-binding analytics-map-update h-100 p-3">
+                    <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
+                        <div class="analytics-map-section-title">{{ $section['title'] }}</div>
+                        <span class="analytics-map-key">{{ $key }}</span>
+                    </div>
+                    <div class="row g-2 small">
+                        <div class="col-12">
+                            <span class="analytics-map-label">Əl ilə yenilə</span>
+                            <div class="analytics-map-value">{{ $section['manual'] }}</div>
+                        </div>
+                        <div class="col-12">
+                            <span class="analytics-map-label">Avtomatik yenilə</span>
+                            <div>{{ $section['auto'] }}</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <span class="analytics-map-label">Wialon əmri</span>
+                            <div class="small text-secondary">{{ $section['wialon_command'] }}</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <span class="analytics-map-label">Lokal cədvəllər</span>
+                            <div class="small text-secondary">{{ $section['local_tables'] }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endforeach
+    </div>
+
+    <div class="row g-3 mb-4">
         @foreach ($sharedBindings as $binding)
             <div class="col-12 col-lg-4">
                 <div class="analytics-map-binding h-100 p-3">
@@ -175,6 +210,11 @@
                     $widget['binding'],
                     $widget['click'],
                     $widget['excel'],
+                    $widget['update_section'],
+                    $updateSections[$widget['update_section']]['title'] ?? '',
+                    $updateSections[$widget['update_section']]['manual'] ?? '',
+                    $updateSections[$widget['update_section']]['wialon_command'] ?? '',
+                    $updateSections[$widget['update_section']]['local_tables'] ?? '',
                     implode(' ', $widget['report_rows'] ?? []),
                 ])) }}">
                     <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
@@ -183,7 +223,10 @@
                             <h4 class="h5 fw-bold mt-3 mb-1">{{ $widget['title'] }}</h4>
                             <p class="text-secondary mb-0">{{ $widget['purpose'] }}</p>
                         </div>
-                        <span class="analytics-map-chip"><i class="bi bi-shield-check"></i> Read only</span>
+                        <div class="d-flex flex-wrap gap-2">
+                            <span class="analytics-map-chip"><i class="bi bi-shield-check"></i> Read only</span>
+                            <span class="analytics-map-chip"><i class="bi bi-arrow-repeat"></i> {{ $updateSections[$widget['update_section']]['title'] ?? $widget['update_section'] }}</span>
+                        </div>
                     </div>
 
                     <div class="row g-3">
@@ -210,6 +253,14 @@
                     <div class="mb-3">
                         <div class="analytics-map-label mb-1">Bağlılıq prinsipi</div>
                         <div>{{ $widget['binding'] }}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="analytics-map-label mb-1">Yenilənmə məntiqi</div>
+                        <div class="small text-secondary">
+                            Əl ilə: {{ $updateSections[$widget['update_section']]['manual'] ?? '-' }}<br>
+                            Avto: {{ $updateSections[$widget['update_section']]['auto'] ?? '-' }}
+                        </div>
                     </div>
 
                     <div class="mb-3">

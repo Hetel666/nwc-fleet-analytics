@@ -9,6 +9,7 @@ use App\Services\WialonReportStatsSyncService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
@@ -91,14 +92,9 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
                 'last_heartbeat_at' => now(config('app.timezone')),
             ])->save();
 
-            $result = $sync->syncDailyEngineHoursReport([
-                'date_from' => $task->stat_date->toDateString(),
-                'date_to' => $task->stat_date->toDateString(),
-                'project_id' => $task->project_id,
-                'ownership_type' => $task->ownership_type,
-            ], (bool) $run->force);
+            $equipmentCount = $this->runSectionFetch($run, $task, $sync);
 
-            $service->markFetchTaskCompleted($task, (int) ($result['equipment_count'] ?? 0));
+            $service->markFetchTaskCompleted($task, $equipmentCount);
         } catch (Throwable $exception) {
             $service->markTaskFailed($task, $exception->getMessage());
         } finally {
@@ -106,5 +102,45 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
             optional($runLock)->release();
             $service->dispatchNextPendingFetchTask($run->refresh());
         }
+    }
+
+    private function runSectionFetch(
+        HistoricalRecalculation $run,
+        HistoricalRecalculationTask $task,
+        WialonReportStatsSyncService $sync
+    ): int {
+        $date = $task->stat_date->toDateString();
+
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_TOP_WORKING_UNITS) {
+            Artisan::call('fleet:sync-engine-hours-report', array_filter([
+                '--date' => $date,
+                '--project' => $task->project_id,
+                '--ownership' => $task->ownership_type,
+                '--force' => (bool) $run->force,
+                '--limit' => 50,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+
+            return 0;
+        }
+
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {
+            Artisan::call('fleet:sync-geozon-api', array_filter([
+                '--from' => $date.' 00:00:00',
+                '--to' => $date.' 23:59:59',
+                '--project' => $task->project_id,
+                '--force' => (bool) $run->force,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+
+            return 0;
+        }
+
+        $result = $sync->syncDailyEngineHoursReport([
+            'date_from' => $date,
+            'date_to' => $date,
+            'project_id' => $task->project_id,
+            'ownership_type' => $task->ownership_type,
+        ], (bool) $run->force);
+
+        return (int) ($result['equipment_count'] ?? 0);
     }
 }

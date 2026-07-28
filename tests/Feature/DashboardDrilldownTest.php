@@ -509,6 +509,69 @@ class DashboardDrilldownTest extends TestCase
             ->assertJsonPath('data.0.units_count', 1);
     }
 
+    public function test_average_metric_drilldown_keeps_bulldozer_vehicle_type_filter(): void
+    {
+        $user = $this->user();
+        $project = Project::query()->create(['name' => 'Yuxari Shirvan LOT3', 'active' => true]);
+        $bulldozer = EquipmentType::query()->create(['name' => 'Bulldozer']);
+        $roadGrader = EquipmentType::query()->create(['name' => 'Road Grader']);
+
+        $target = Equipment::query()->create([
+            'name' => 'Bulldozer 01',
+            'wialon_unit_id' => '81001',
+            'equipment_type_id' => $bulldozer->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'matched_wialon_group_id' => '601701935',
+            'active' => true,
+        ]);
+
+        $other = Equipment::query()->create([
+            'name' => 'Road Grader 01',
+            'wialon_unit_id' => '81002',
+            'equipment_type_id' => $roadGrader->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'matched_wialon_group_id' => '601701935',
+            'active' => true,
+        ]);
+
+        foreach ([[$target, 7.5], [$other, 4.25]] as [$unit, $hours]) {
+            EquipmentDailyStat::query()->create([
+                'stat_date' => '2026-07-26',
+                'equipment_id' => $unit->id,
+                'project_id' => $project->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'worked_hours' => $hours,
+                'distance_km' => 0,
+                'calculation_status' => 'ok',
+            ]);
+        }
+
+        $query = [
+            'date_from' => '2026-07-26',
+            'date_to' => '2026-07-26',
+            'ownership' => 'nwc',
+            'metric' => 'engine_hours',
+            'vehicle_types' => ['bulldozer'],
+            'sort' => 'name',
+        ];
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', $query))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('summary.average_formula.vehicle_type', 'Bulldozer')
+            ->assertJsonPath('data.0.name', 'Bulldozer 01')
+            ->assertJsonPath('data.0.vehicle_type', 'Bulldozer')
+            ->assertJsonMissing(['name' => 'Road Grader 01']);
+
+        $this->actingAs($user)
+            ->get(route('dashboard.drilldown.units.export', $query))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+
     private function user(): User
     {
         return User::query()->create([

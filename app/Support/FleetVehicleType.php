@@ -7,11 +7,17 @@ use Illuminate\Support\Str;
 final class FleetVehicleType
 {
     public const DUMP_TRUCK = 'dump_truck';
+
     public const BULLDOZER = 'bulldozer';
+
     public const EXCAVATOR = 'excavator';
+
     public const LOADER = 'loader';
+
     public const BACKHOE_LOADER = 'backhoe_loader';
+
     public const ROAD_GRADER = 'road_grader';
+
     public const ROAD_ROLLER = 'road_roller';
 
     public const ANALYTICS_TYPES = [
@@ -25,6 +31,16 @@ final class FleetVehicleType
 
     public const EFFICIENCY_TYPES = [
         self::DUMP_TRUCK,
+        self::EXCAVATOR,
+        self::ROAD_GRADER,
+        self::LOADER,
+        self::BACKHOE_LOADER,
+        self::ROAD_ROLLER,
+    ];
+
+    public const FOREIGN_GEOFENCE_TYPES = [
+        self::DUMP_TRUCK,
+        self::BULLDOZER,
         self::EXCAVATOR,
         self::ROAD_GRADER,
         self::LOADER,

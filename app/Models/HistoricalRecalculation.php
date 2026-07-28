@@ -19,6 +19,10 @@ class HistoricalRecalculation extends Model
     public const OPERATION_RECALCULATE = 'recalculate';
     public const OPERATION_FETCH_AND_RECALCULATE = 'fetch_and_recalculate';
 
+    public const SECTION_DAILY_AVERAGES = 'daily_averages';
+    public const SECTION_TOP_WORKING_UNITS = 'top_working_units';
+    public const SECTION_GEOFENCE_OUTSIDE = 'geofence_outside';
+
     public const SCOPE_ALL_PROJECTS = 'all_projects';
     public const SCOPE_SELECTED_PROJECTS = 'selected_projects';
 
@@ -26,6 +30,7 @@ class HistoricalRecalculation extends Model
         'uuid',
         'signature',
         'status',
+        'dashboard_section',
         'operation',
         'scope',
         'date_from',

@@ -4,6 +4,12 @@
     </div>
 @endif
 
+@if (session('error'))
+    <div class="alert alert-danger border-0 shadow-sm" role="alert">
+        {{ session('error') }}
+    </div>
+@endif
+
 @if ($errors->any())
     <div class="alert alert-danger border-0 shadow-sm" role="alert">
         <div class="fw-semibold mb-1">Formada xəta var</div>

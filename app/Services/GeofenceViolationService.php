@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
 use App\Support\FleetVehicleType;
+use App\Support\ForeignGeofenceSettings;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -132,8 +133,6 @@ class GeofenceViolationService
             'entered_at' => 'Geozonaya giriş vaxtı',
             'left_at' => 'Geozonadan çıxış vaxtı',
             'duration' => 'Geozonada qalma müddəti',
-            'reported_project' => 'Reported project',
-            'project_mismatch' => 'Project mismatch',
         ];
     }
 
@@ -275,6 +274,11 @@ class GeofenceViolationService
     private function eligibleIntervalRecords(array $filters): Collection
     {
         $open = $this->eligibleIntervalQuery($filters, UnitForeignGeofenceInterval::STATUS_OPEN, false);
+
+        if ((bool) ($filters['live_only'] ?? false)) {
+            return $open->get();
+        }
+
         $report = $this->eligibleIntervalQuery($filters, UnitForeignGeofenceInterval::STATUS_CLOSED, true);
 
         return DB::query()
@@ -291,7 +295,9 @@ class GeofenceViolationService
             ->when(filled($filters['current_geozone_key'] ?? null), fn (Collection $rows): Collection => $rows
                 ->filter(fn (object $row): bool => $this->recordSectorKey($row) === (string) $filters['current_geozone_key']))
             ->sortByDesc(fn (object $row): int => (int) $row->sort_duration)
-            ->unique(fn (object $row): string => $this->recordUnitKey($row).'|'.$this->recordSectorKey($row))
+            ->unique(fn (object $row): string => (bool) ($filters['live_only'] ?? false)
+                ? $this->recordUnitKey($row)
+                : $this->recordUnitKey($row).'|'.$this->recordSectorKey($row))
             ->pluck('id')
             ->map(fn ($id): int => (int) $id)
             ->values();
@@ -340,7 +346,9 @@ class GeofenceViolationService
             ->leftJoin('geofences as foreign_geofences', 'foreign_geofences.id', '=', 'intervals.foreign_geofence_id')
             ->where('intervals.status', $status)
             ->whereNotNull('intervals.home_project_id')
-            ->whereColumn('intervals.home_project_id', 'units.project_id')
+            ->whereNotIn('intervals.home_project_id', Project::query()
+                ->select('id')
+                ->whereIn('name', Project::DASHBOARD_UNASSIGNED_NAMES))
             ->where('units.active', true)
             ->where(function (QueryBuilder $query): void {
                 $query->where('units.excluded_from_dashboard', false)
@@ -361,11 +369,12 @@ class GeofenceViolationService
             })
             ->where('intervals.entered_at', '<=', $to)
             ->where(function (QueryBuilder $query) use ($from): void {
-                $query->where('intervals.left_at', '>=', $from)
+                $query->where('intervals.left_at', '>', $from)
                     ->orWhereNull('intervals.left_at');
             })
             ->when($reportSource, fn (QueryBuilder $query) => $query->where('intervals.source', GeofenceReportViolationCalculator::SOURCE))
             ->when(! $reportSource, fn (QueryBuilder $query) => $query
+                ->whereColumn('intervals.home_project_id', 'units.project_id')
                 ->whereColumn('intervals.home_project_id', '<>', 'intervals.foreign_project_id')
                 ->where('intervals.last_position_at', '>=', $from))
             ->when($filters['project_id'] ?? null, fn (QueryBuilder $query, int $projectId) => $query->where('intervals.home_project_id', $projectId))
@@ -394,7 +403,7 @@ class GeofenceViolationService
             });
 
         if (! (bool) config('fleet.foreign_geofence.show_all', false)) {
-            $query->whereRaw($durationExpression.' >= ?', [(int) config('fleet.foreign_geofence.min_minutes', 180) * 60]);
+            $query->whereRaw($durationExpression.' >= ?', [ForeignGeofenceSettings::minimumMinutes() * 60]);
 
             if ($status === UnitForeignGeofenceInterval::STATUS_OPEN && ! $this->monitoring->includeStaleIntervals()) {
                 $query->where('intervals.last_position_at', '>=', now(config('app.timezone'))->subMinutes($this->monitoring->staleAfterMinutes()));
@@ -505,9 +514,12 @@ class GeofenceViolationService
             ])
             ->where('source', GeofenceReportViolationCalculator::SOURCE)
             ->where('status', UnitForeignGeofenceInterval::STATUS_CLOSED)
+            ->whereNotIn('home_project_id', Project::query()
+                ->select('id')
+                ->whereIn('name', Project::DASHBOARD_UNASSIGNED_NAMES))
             ->where('entered_at', '<=', $to)
             ->where(function (Builder $query) use ($from): void {
-                $query->where('left_at', '>=', $from)
+                $query->where('left_at', '>', $from)
                     ->orWhereNull('left_at');
             })
             ->when($filters['project_id'] ?? null, fn (Builder $query, int $projectId) => $query->where('home_project_id', $projectId))
@@ -561,8 +573,6 @@ class GeofenceViolationService
             'entered_at' => $this->formatDateTime($interval->entered_at),
             'left_at' => $this->formatDateTime($interval->left_at),
             'duration' => $this->durationLabel($durationSeconds),
-            'reported_project' => $interval->reported_project ?? '',
-            'project_mismatch' => $interval->project_mismatch ? 'yes' : 'no',
             'wialon_id' => $interval->wialon_unit_id ?: ($unit?->wialon_unit_id ?? ''),
         ];
     }
@@ -579,7 +589,7 @@ class GeofenceViolationService
 
         $durationSeconds = (int) ($interval->duration_seconds ?: $this->monitoring->effectiveDurationSeconds($interval));
 
-        return $durationSeconds >= (int) config('fleet.foreign_geofence.min_minutes', 180) * 60;
+        return $durationSeconds >= ForeignGeofenceSettings::minimumMinutes() * 60;
     }
 
     private function unitKey(UnitForeignGeofenceInterval $interval): string
@@ -630,11 +640,18 @@ class GeofenceViolationService
     {
         $unit = $interval->unit;
 
-        if (! $unit instanceof Equipment || ! $this->monitoring->unitCanBeMonitored($unit)) {
+        if (! $unit instanceof Equipment || ! $this->unitCanBeShownInGeofenceReport($unit)) {
             return false;
         }
 
-        if ((int) $interval->home_project_id !== (int) $unit->project_id) {
+        if ($interval->homeProject instanceof Project
+            && in_array($interval->homeProject->name, Project::DASHBOARD_UNASSIGNED_NAMES, true)) {
+            return false;
+        }
+
+        $isReportInterval = $interval->source === GeofenceReportViolationCalculator::SOURCE;
+
+        if (! $isReportInterval && (int) $interval->home_project_id !== (int) $unit->project_id) {
             return false;
         }
 
@@ -650,7 +667,11 @@ class GeofenceViolationService
             return false;
         }
 
-        if ($this->monitoring->homeProjectGeofences($unit)->contains('id', $interval->foreign_geofence_id)) {
+        $homeGeofences = $isReportInterval && $interval->homeProject instanceof Project
+            ? $this->monitoring->resolveAllowedHomeGeofences($interval->homeProject)
+            : $this->monitoring->homeProjectGeofences($unit);
+
+        if ($homeGeofences->isEmpty() || $homeGeofences->contains('id', $interval->foreign_geofence_id)) {
             return false;
         }
 
@@ -659,6 +680,17 @@ class GeofenceViolationService
         }
 
         return true;
+    }
+
+    private function unitCanBeShownInGeofenceReport(Equipment $unit): bool
+    {
+        $unit->loadMissing('type');
+
+        return $unit->active
+            && ! $unit->excluded_from_dashboard
+            && ($unit->project_wialon_group_id !== null || $unit->matched_wialon_group_id !== null)
+            && in_array($unit->ownership_type, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)
+            && in_array($this->monitoring->normalizedVehicleTypeName($unit->type?->name), $this->monitoring->normalizedAllowedVehicleTypeNames(), true);
     }
 
     private function currentGeozoneLabel(UnitForeignGeofenceInterval $interval): string

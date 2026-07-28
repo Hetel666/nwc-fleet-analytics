@@ -86,5 +86,17 @@ return [
             'Müşviqabad beton boru zavodu',
             'Müşviqabad kanalizasiya k.',
         ],
+        'Kəlbəcər yol' => [
+            'Prefabrik tabor məntəqəsi',
+        ],
+        'Kəlbəcər yol ümumi' => [
+            'Prefabrik tabor məntəqəsi',
+        ],
+        'Laçın yol' => [
+            'Prefabrik tabor məntəqəsi',
+        ],
+        'Laçın yol ümumi' => [
+            'Prefabrik tabor məntəqəsi',
+        ],
     ],
 ];

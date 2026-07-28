@@ -12,7 +12,7 @@ class WialonGeofenceSyncTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_configured_geofence_ids_are_the_only_active_wialon_geofences(): void
+    public function test_sync_updates_configured_geofences_without_deactivating_existing_geofences(): void
     {
         config([
             'wialon_projects.project_geofence_ids' => [
@@ -81,7 +81,7 @@ class WialonGeofenceSyncTest extends TestCase
         ]);
         $this->assertDatabaseHas('geofences', [
             'wialon_geofence_id' => '601701680:999',
-            'active' => false,
+            'active' => true,
         ]);
     }
 }

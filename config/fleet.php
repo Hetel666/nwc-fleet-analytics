@@ -83,7 +83,7 @@ return [
         'merge_gap_minutes' => (int) env('GEOFENCE_VISIT_MERGE_GAP_MINUTES', 5),
         'geozon_api_sync_lookback_hours' => (int) env('GEOZON_API_SYNC_LOOKBACK_HOURS', 24),
         'geozon_api_max_concurrent_jobs' => (int) env('GEOZON_API_MAX_CONCURRENT_JOBS', 1),
-        'allowed_vehicle_types' => FleetVehicleType::names(FleetVehicleType::ANALYTICS_TYPES),
+        'allowed_vehicle_types' => FleetVehicleType::names(FleetVehicleType::FOREIGN_GEOFENCE_TYPES),
     ],
 
     'demo' => [

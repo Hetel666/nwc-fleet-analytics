@@ -7,6 +7,7 @@ use App\Models\Geofence;
 use App\Models\Project;
 use App\Models\UnitForeignGeofenceInterval;
 use App\Support\FleetVehicleType;
+use App\Support\ForeignGeofenceSettings;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -414,11 +415,12 @@ class ForeignProjectGeofenceMonitoringService
     public function allowedVehicleTypeNames(): array
     {
         return config('fleet.foreign_geofence.allowed_vehicle_types', [
+            'Dump Truck',
             'Bulldozer',
             'Excavator',
+            'Road Grader',
             'Loader',
             'Backhoe Loader',
-            'Road Grader',
             'Road Roller',
         ]);
     }
@@ -460,7 +462,7 @@ class ForeignProjectGeofenceMonitoringService
 
     public function minimumMinutes(): int
     {
-        return max(0, (int) config('fleet.foreign_geofence.min_minutes', 180));
+        return ForeignGeofenceSettings::minimumMinutes();
     }
 
     public function staleAfterMinutes(): int

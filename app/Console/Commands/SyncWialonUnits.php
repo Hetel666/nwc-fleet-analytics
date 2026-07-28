@@ -24,8 +24,16 @@ class SyncWialonUnits extends Command
         WialonGroupClassificationService $classification,
         ForeignProjectGeofenceMonitoringService $foreignGeofences
     ): int {
+        $unitGroups = $this->unitGroups($wialon, $classification);
+        $unitMappings = $unitGroups['mappings'];
+        $excludedUnitIds = $unitGroups['excluded'];
+        $exclusionsSynced = (bool) $unitGroups['exclusions_synced'];
+        $groupsSynced = (bool) $unitGroups['groups_synced'];
+        $activeProjectGroupIds = $unitGroups['active_project_group_ids'];
+
         try {
-            $units = $wialon->getUnits(full: true);
+            $unitSelection = $this->projectGroupUnits($wialon->getUnits(full: true), $unitMappings);
+            $units = $unitSelection['units'];
         } catch (Throwable $exception) {
             Log::warning('Wialon unit sync failed', ['message' => $exception->getMessage()]);
             $this->error($exception->getMessage());
@@ -34,12 +42,8 @@ class SyncWialonUnits extends Command
         }
 
         $typeCache = [];
-        $unitGroups = $this->unitGroups($wialon, $classification);
-        $unitMappings = $unitGroups['mappings'];
-        $excludedUnitIds = $unitGroups['excluded'];
-        $exclusionsSynced = (bool) $unitGroups['exclusions_synced'];
         $count = 0;
-        $skippedWithoutProjectGroup = 0;
+        $skippedWithoutProjectGroup = $unitSelection['skipped_without_project_group'];
 
         foreach ($units as $unit) {
             try {
@@ -111,16 +115,52 @@ class SyncWialonUnits extends Command
             }
         }
 
+        $deactivatedCount = $groupsSynced
+            ? $this->deactivateUnitsMissingFromProjectGroups($unitMappings, $activeProjectGroupIds)
+            : 0;
+
         Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
 
         $this->info("Synced {$count} Wialon units.");
+        $this->line("Deactivated {$deactivatedCount} units no longer present in active project groups.");
         $this->line("Skipped {$skippedWithoutProjectGroup} Wialon units without project group.");
 
         return self::SUCCESS;
     }
 
+    /**
+     * @return array{units: array<int, array<string, mixed>>, skipped_without_project_group: int}
+     */
+    private function projectGroupUnits(array $units, array $unitMappings): array
+    {
+        if ($unitMappings === []) {
+            return [
+                'units' => $units,
+                'skipped_without_project_group' => 0,
+            ];
+        }
+
+        $projectUnits = collect($units)
+            ->filter(function (array $unit) use ($unitMappings): bool {
+                $unitId = (string) ($unit['id'] ?? '');
+                $mapping = $unitMappings[$unitId] ?? null;
+
+                return ($mapping['project_id'] ?? null) !== null
+                    && ($mapping['project_wialon_group_id'] ?? null) !== null;
+            })
+            ->values()
+            ->all();
+
+        return [
+            'units' => $projectUnits,
+            'skipped_without_project_group' => max(0, count($units) - count($projectUnits)),
+        ];
+    }
+
     private function unitGroups(WialonService $wialon, WialonGroupClassificationService $classification): array
     {
+        $activeProjectGroupIds = $classification->projectGroupIds();
+
         try {
             $groups = $wialon->getUnitGroups($classification->classificationGroupIds());
         } catch (Throwable $exception) {
@@ -130,6 +170,8 @@ class SyncWialonUnits extends Command
                 'mappings' => [],
                 'excluded' => [],
                 'exclusions_synced' => false,
+                'groups_synced' => false,
+                'active_project_group_ids' => $activeProjectGroupIds,
             ];
         }
 
@@ -184,7 +226,29 @@ class SyncWialonUnits extends Command
             'mappings' => $unitMappings,
             'excluded' => $excludedUnitIds,
             'exclusions_synced' => true,
+            'groups_synced' => true,
+            'active_project_group_ids' => $activeProjectGroupIds,
         ];
+    }
+
+    private function deactivateUnitsMissingFromProjectGroups(array $unitMappings, array $activeProjectGroupIds): int
+    {
+        if ($activeProjectGroupIds === []) {
+            return 0;
+        }
+
+        $currentUnitIds = collect($unitMappings)
+            ->filter(fn (array $mapping): bool => ($mapping['project_wialon_group_id'] ?? null) !== null)
+            ->keys()
+            ->map(fn ($unitId): string => (string) $unitId)
+            ->values()
+            ->all();
+
+        return Equipment::query()
+            ->where('active', true)
+            ->whereHas('projectWialonGroup', fn ($query) => $query->whereIn('wialon_group_id', $activeProjectGroupIds))
+            ->when($currentUnitIds !== [], fn ($query) => $query->whereNotIn('wialon_unit_id', $currentUnitIds))
+            ->update(['active' => false]);
     }
 
     private function unitIds(array $group): Collection

@@ -14,6 +14,24 @@ class DashboardController extends Controller
 {
     public function index(Request $request, DashboardService $dashboard, DashboardLayoutService $layout): View
     {
+        return $this->renderDashboard($request, $dashboard, $layout);
+    }
+
+    public function tab(Request $request, string $tab, DashboardService $dashboard, DashboardLayoutService $layout): View
+    {
+        $tabs = config('dashboard.tabs', []);
+        $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
+
+        return $this->renderDashboard($request, $dashboard, $layout, $selectedTab, true);
+    }
+
+    private function renderDashboard(
+        Request $request,
+        DashboardService $dashboard,
+        DashboardLayoutService $layout,
+        ?string $selectedTab = null,
+        bool $fragment = false
+    ): View {
         $filters = $dashboard->normalizeFilters($request->only([
             'date_from',
             'date_to',
@@ -45,6 +63,12 @@ class DashboardController extends Controller
                 : null,
             'dashboardLayout' => $layout->getResolvedLayout(),
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
+            'dashboardTabs' => config('dashboard.tabs', []),
+            'selectedDashboardTab' => $selectedTab
+                ?? (array_key_exists((string) $request->query('tab'), config('dashboard.tabs', []))
+                    ? (string) $request->query('tab')
+                    : (string) config('dashboard.default_tab', 'overview')),
+            'dashboardTabFragment' => $fragment,
         ]);
     }
 }

@@ -582,7 +582,7 @@ class DashboardDailyAverageService
 
     private function metricAvailableSql(string $metric): string
     {
-        $valid = "(stats.id is not null and (stats.calculation_status is null or stats.calculation_status = 'success'))";
+        $valid = "(stats.id is not null and (stats.calculation_status is null or stats.calculation_status in ('success', 'ok', 'published')))";
 
         if ($metric === 'mileage') {
             return $valid.' and stats.distance_km >= 0';
@@ -637,7 +637,7 @@ class DashboardDailyAverageService
     private function databaseJournalRow(object $row, string $metric): array
     {
         $hasRecord = $row->stat_id !== null
-            && ($row->calculation_status === null || $row->calculation_status === 'success');
+            && $this->isValidCalculationStatus($row->calculation_status);
         $metricValue = null;
 
         if ($hasRecord) {
@@ -663,7 +663,7 @@ class DashboardDailyAverageService
             'engine_hours' => $hasRecord ? (float) $row->worked_hours : null,
             'mileage' => $hasRecord && (float) $row->distance_km >= 0 ? (float) $row->distance_km : null,
             'data_available' => $metricValue !== null,
-            'data_status' => $metricValue !== null ? 'MЙ™lumat var' : 'MЙ™lumat yoxdur',
+            'data_status' => $metricValue !== null ? 'Məlumat var' : 'Məlumat yoxdur',
             'wialon_id' => $row->wialon_unit_id,
         ];
     }
@@ -833,6 +833,7 @@ class DashboardDailyAverageService
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->classifiedForDashboard()
+            ->operationalDashboardProject()
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('equipments.project_id', $projectId))
             ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('equipments.project_id', $projectIds))
@@ -885,11 +886,16 @@ class DashboardDailyAverageService
             return false;
         }
 
-        if ($stat->calculation_status !== null && $stat->calculation_status !== 'success') {
+        if (! $this->isValidCalculationStatus($stat->calculation_status)) {
             return false;
         }
 
         return true;
+    }
+
+    private function isValidCalculationStatus(?string $status): bool
+    {
+        return $status === null || in_array($status, ['success', 'ok', 'published'], true);
     }
 
     /**

@@ -123,6 +123,7 @@ class DashboardDrilldownRequest extends FormRequest
             'total_hours_min' => ['nullable', 'numeric', 'min:0'],
             'total_hours_max' => ['nullable', 'numeric', 'min:0'],
             'geofence_violation' => ['nullable', 'boolean'],
+            'live_only' => ['nullable', 'boolean'],
             'current_geozone_project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'current_geozone_id' => ['nullable', 'integer', 'exists:geofences,id'],
             'current_geozone_key' => ['nullable', 'string', 'max:255'],

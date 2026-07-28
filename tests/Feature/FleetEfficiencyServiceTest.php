@@ -80,6 +80,43 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame(1, $summary['total']);
     }
 
+    public function test_daytime_status_ignores_overtime_total_hours(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Loader']);
+        $tenWithOvertime = $this->equipment('Loader 10 with overtime', $type, $project);
+        $betweenWithoutOvertime = $this->equipment('Loader daytime only', $type, $project);
+        $overTenDaytime = $this->equipment('Loader daytime over ten', $type, $project);
+
+        $this->stat($tenWithOvertime, '2026-07-01', 10, 2);
+        $this->stat($betweenWithoutOvertime, '2026-07-01', 9, 0);
+        $this->stat($overTenDaytime, '2026-07-01', 10.5, 0);
+
+        $service = app(FleetEfficiencyService::class);
+        $summary = $service->summaryForOwnership([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(2, $summary['between_7_and_10_hours']);
+        $this->assertSame(2, $summary['over_10_hours']);
+        $this->assertSame(1, $summary['overtime']);
+        $this->assertSame(3, $summary['total']);
+
+        $tenPlusRows = $service->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => FleetEfficiencyService::DAY_STATUS_OVER_10,
+            'per_page' => 20,
+        ]);
+
+        $this->assertSame(2, $tenPlusRows->total());
+        $this->assertEqualsCanonicalizing(
+            ['Loader 10 with overtime', 'Loader daytime over ten'],
+            collect($tenPlusRows->items())->pluck('name')->all()
+        );
+    }
+
     public function test_overtime_requires_positive_stored_hours(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
@@ -256,7 +293,7 @@ class FleetEfficiencyServiceTest extends TestCase
             'daytime_hours' => $hours,
             'overtime_hours' => $overtimeHours,
             'total_hours' => $totalHours,
-            'day_status' => app(FleetEfficiencyService::class)->daytimeStatusForHours($hours),
+            'day_status' => app(FleetEfficiencyService::class)->efficiencyStatusForHours($hours, $totalHours),
             'has_overtime' => $overtimeHours === null ? null : $overtimeHours > 0,
             'data_available' => $dataAvailable,
             'daytime_data_available' => true,

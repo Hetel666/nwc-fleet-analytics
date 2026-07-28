@@ -7,6 +7,7 @@ use App\Models\Geofence;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
+use App\Support\ForeignGeofenceSettings;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
@@ -14,9 +15,7 @@ class GeofenceReportViolationCalculator
 {
     public const SOURCE = 'wialon_report_api';
 
-    public function __construct(private GeofenceNameNormalizer $normalizer)
-    {
-    }
+    public function __construct(private GeofenceNameNormalizer $normalizer) {}
 
     /**
      * @param  array<int, array<string, mixed>>  $records
@@ -37,6 +36,7 @@ class GeofenceReportViolationCalculator
         $allowedHomeGeofences = $homeProject instanceof Project
             ? $this->resolveAllowedHomeGeofences($homeProject)
             : collect();
+        $analyses = [];
 
         foreach ($records as $record) {
             if (! $this->recordMatchesUnitFilter($record, $unitFilter)) {
@@ -44,6 +44,13 @@ class GeofenceReportViolationCalculator
             }
 
             $analysis = $this->analyzeRecord($group, $homeProject, $allowedHomeGeofences, $record, $context);
+            $analyses[] = ['analysis' => $analysis, 'record' => $record];
+        }
+
+        $homeIntervalsByUnit = $this->homeIntervalsByUnit($analyses);
+
+        foreach ($analyses as $item) {
+            $analysis = $item['analysis'];
             $details[] = $analysis['detail'];
             $stats[$analysis['counter']] = ($stats[$analysis['counter']] ?? 0) + 1;
 
@@ -60,7 +67,13 @@ class GeofenceReportViolationCalculator
             }
         }
 
-        $merged = $this->mergeIntervals($violations);
+        $merged = collect($this->mergeIntervals($violations))
+            ->flatMap(fn (array $violation): array => $this->subtractHomeIntervals(
+                $violation,
+                $homeIntervalsByUnit[(int) ($violation['unit_id'] ?? 0)] ?? []
+            ))
+            ->values()
+            ->all();
         $saved = 0;
         $updated = 0;
 
@@ -111,8 +124,22 @@ class GeofenceReportViolationCalculator
             ->with('project:id,name')
             ->get();
 
-        $sharedNames = collect(config('wialon_projects.shared_home_geofences.'.$project->name, []))
-            ->map(fn (string $name): string => $this->normalizer->normalize($name))
+        $projectName = $this->normalizer->normalize($project->name);
+        $sharedNames = collect(config('wialon_projects.shared_home_geofences', []))
+            ->flatMap(function (array $projects, string $geofenceName) use ($projectName): array {
+                $normalizedProjects = collect($projects)
+                    ->map(fn (string $name): string => $this->normalizer->normalize($name));
+
+                if ($normalizedProjects->contains($projectName)) {
+                    return [$this->normalizer->normalize($geofenceName)];
+                }
+
+                if ($this->normalizer->normalize($geofenceName) === $projectName) {
+                    return $normalizedProjects->all();
+                }
+
+                return [];
+            })
             ->filter()
             ->values();
 
@@ -388,6 +415,7 @@ class GeofenceReportViolationCalculator
             foreach ($sorted as $row) {
                 if ($current === null) {
                     $current = $row;
+
                     continue;
                 }
 
@@ -406,6 +434,7 @@ class GeofenceReportViolationCalculator
                         ...($row['source_group_ids_json'] ?? []),
                     ])->filter()->unique()->values()->all();
                     $current['unique_key'] = $this->uniqueKey($current);
+
                     continue;
                 }
 
@@ -419,6 +448,108 @@ class GeofenceReportViolationCalculator
         }
 
         return $merged;
+    }
+
+    /**
+     * @param  array<int, array{analysis: array<string, mixed>, record: array<string, mixed>}>  $analyses
+     * @return array<int, array<int, array{start: CarbonInterface, end: CarbonInterface}>>
+     */
+    private function homeIntervalsByUnit(array $analyses): array
+    {
+        $intervals = [];
+
+        foreach ($analyses as $item) {
+            $analysis = $item['analysis'];
+            $record = $item['record'];
+
+            if (($analysis['counter'] ?? null) !== 'home_visits') {
+                continue;
+            }
+
+            $unitId = (int) ($analysis['detail']['unit_id'] ?? 0);
+            $start = $record['entry_at'] ?? null;
+            $end = $record['exit_at'] ?? null;
+
+            if ($unitId <= 0
+                || ! $start instanceof CarbonInterface
+                || ! $end instanceof CarbonInterface
+                || $end->timestamp <= $start->timestamp) {
+                continue;
+            }
+
+            $intervals[$unitId][] = ['start' => $start, 'end' => $end];
+        }
+
+        foreach ($intervals as $unitId => $unitIntervals) {
+            usort($unitIntervals, fn (array $left, array $right): int => $left['start']->timestamp <=> $right['start']->timestamp);
+            $intervals[$unitId] = $unitIntervals;
+        }
+
+        return $intervals;
+    }
+
+    /**
+     * @param  array<string, mixed>  $violation
+     * @param  array<int, array{start: CarbonInterface, end: CarbonInterface}>  $homeIntervals
+     * @return array<int, array<string, mixed>>
+     */
+    private function subtractHomeIntervals(array $violation, array $homeIntervals): array
+    {
+        $enteredAt = $violation['entered_at'] ?? null;
+        $leftAt = $violation['left_at'] ?? null;
+
+        if (! $enteredAt instanceof CarbonInterface
+            || ! $leftAt instanceof CarbonInterface
+            || $leftAt->timestamp <= $enteredAt->timestamp
+            || $homeIntervals === []) {
+            return [$violation];
+        }
+
+        $segments = [['start' => $enteredAt, 'end' => $leftAt]];
+
+        foreach ($homeIntervals as $homeInterval) {
+            $nextSegments = [];
+
+            foreach ($segments as $segment) {
+                if ($homeInterval['end']->timestamp <= $segment['start']->timestamp
+                    || $homeInterval['start']->timestamp >= $segment['end']->timestamp) {
+                    $nextSegments[] = $segment;
+
+                    continue;
+                }
+
+                if ($homeInterval['start']->timestamp > $segment['start']->timestamp) {
+                    $nextSegments[] = [
+                        'start' => $segment['start'],
+                        'end' => $homeInterval['start'],
+                    ];
+                }
+
+                if ($homeInterval['end']->timestamp < $segment['end']->timestamp) {
+                    $nextSegments[] = [
+                        'start' => $homeInterval['end'],
+                        'end' => $segment['end'],
+                    ];
+                }
+            }
+
+            $segments = $nextSegments;
+
+            if ($segments === []) {
+                break;
+            }
+        }
+
+        return array_values(array_map(function (array $segment) use ($violation): array {
+            $row = $violation;
+            $row['entered_at'] = $segment['start'];
+            $row['left_at'] = $segment['end'];
+            $row['last_position_at'] = $segment['end'];
+            $row['duration_seconds'] = $segment['end']->timestamp - $segment['start']->timestamp;
+            $row['unique_key'] = $this->uniqueKey($row);
+
+            return $row;
+        }, $segments));
     }
 
     private function resolveUnit(array $record, ProjectWialonGroup $group): ?Equipment
@@ -488,6 +619,7 @@ class GeofenceReportViolationCalculator
         return [
             'group_id' => (string) $group->wialon_group_id,
             'group_name' => $group->name,
+            'unit_id' => $unit?->id,
             'expected_home_project' => $homeProject?->name ?? '',
             'allowed_home_geofences' => $allowedHomeGeofences->pluck('name')->values()->all(),
             'parent_geofence' => (string) ($record['visited_geofence_name'] ?? ''),
@@ -564,7 +696,7 @@ class GeofenceReportViolationCalculator
 
     private function minimumDurationSeconds(): int
     {
-        return max(0, (int) config('fleet.foreign_geofence.min_minutes', 180)) * 60;
+        return ForeignGeofenceSettings::minimumMinutes() * 60;
     }
 
     /**

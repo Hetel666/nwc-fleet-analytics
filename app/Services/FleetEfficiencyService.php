@@ -51,7 +51,7 @@ class FleetEfficiencyService
                 $summary[$key] = (int) $row[$key];
             }
 
-            $summary['total'] = $this->daytimeTotal($summary);
+            $summary['total'] = (int) ($row['total_rows'] ?? $this->daytimeTotal($summary));
             $rows[$ownership][$projectId] = $summary;
         }
 
@@ -84,7 +84,7 @@ class FleetEfficiencyService
             }
         }
 
-        $summary['total'] = $this->daytimeTotal($summary);
+        $summary['total'] = (int) ($row['total_rows'] ?? $this->daytimeTotal($summary));
 
         return $summary;
     }
@@ -174,7 +174,12 @@ class FleetEfficiencyService
 
     public function daytimeStatusForHours(?float $hours): ?string
     {
-        return $hours === null ? null : $this->daytimeStatus($hours);
+        return $hours === null ? null : $this->statusForHours($hours);
+    }
+
+    public function efficiencyStatusForHours(?float $daytimeHours, ?float $totalHours): ?string
+    {
+        return $daytimeHours === null ? null : $this->statusForHours($daytimeHours);
     }
 
     public function statusLabelFor(string $status): string
@@ -197,11 +202,16 @@ class FleetEfficiencyService
         $unitName = mb_strtolower(trim((string) ($filters['unit_name'] ?? '')));
         $registrationNumber = mb_strtolower(trim((string) ($filters['registration_number'] ?? '')));
         $wialonId = mb_strtolower(trim((string) ($filters['wialon_id'] ?? '')));
-        $dayCategory = in_array($category, $this->dayStatusKeys(), true) ? $category : null;
+        $dayCategory = in_array($category, [
+            self::DAY_STATUS_LESS_THAN_1,
+            self::DAY_STATUS_LESS_THAN_7,
+            self::DAY_STATUS_BETWEEN_7_AND_10,
+        ], true) ? $category : null;
         $effectiveDayStatus = $dayStatus ?: $dayCategory;
 
         $filtered = $rows->filter(function (array $row) use (
             $category,
+            $dayStatus,
             $dataStatus,
             $hasOvertime,
             $effectiveDayStatus,
@@ -224,6 +234,13 @@ class FleetEfficiencyService
             }
 
             if ($category === self::STATUS_OVERTIME && $row['has_overtime'] !== true) {
+                return false;
+            }
+
+            if (
+                ($category === self::DAY_STATUS_OVER_10 || $dayStatus === self::DAY_STATUS_OVER_10)
+                && (! $row['data_available'] || $row['total_hours'] === null || (float) $row['total_hours'] <= 10)
+            ) {
                 return false;
             }
 
@@ -294,6 +311,7 @@ class FleetEfficiencyService
             ->where('active', true)
             ->visibleInDashboard()
             ->classifiedForDashboard()
+            ->operationalDashboardProject()
             ->whereIn('ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->when($filters['ownership_type'], fn ($query, string $ownership) => $query->where('ownership_type', $ownership))
             ->when($filters['project_id'], fn ($query, int $projectId) => $query->where('project_id', $projectId))
@@ -321,6 +339,7 @@ class FleetEfficiencyService
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->classifiedForDashboard()
+            ->operationalDashboardProject()
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->whereIn(DB::raw("LOWER(REPLACE(REPLACE(equipment_types.name, '-', '_'), ' ', '_'))"), $this->sqlTypeAliases($filters))
             ->when($filters['ownership_type'], fn ($query, string $ownership) => $query->where('equipments.ownership_type', $ownership))
@@ -474,7 +493,6 @@ class FleetEfficiencyService
     private function applyDayStatusFilter(Builder $query, string $status): void
     {
         $availableSql = $this->dataAvailableSql();
-
         match ($status) {
             self::DAY_STATUS_LESS_THAN_1 => $query->where(function (Builder $query) use ($availableSql): void {
                 $query->whereRaw('NOT '.$availableSql)
@@ -487,7 +505,7 @@ class FleetEfficiencyService
                 ->where('stats.daytime_hours', '>=', 7)
                 ->where('stats.daytime_hours', '<=', 10),
             self::DAY_STATUS_OVER_10 => $query->whereRaw($availableSql)
-                ->where('stats.daytime_hours', '>', 10),
+                ->whereRaw($this->totalHoursSql().' > 10'),
             default => null,
         };
     }
@@ -572,7 +590,8 @@ class FleetEfficiencyService
             DB::raw('SUM(CASE WHEN NOT '.$availableSql.' OR stats.daytime_hours < 1 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_1),
             DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours >= 1 AND stats.daytime_hours < 7 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_7),
             DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours >= 7 AND stats.daytime_hours <= 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
-            DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
+            DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$this->totalHoursSql().' > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
+            DB::raw('COUNT(*) as total_rows'),
             DB::raw('SUM(CASE WHEN NOT '.$availableSql.' THEN 1 ELSE 0 END) as missing_data'),
             DB::raw('SUM(CASE WHEN stats.overtime_hours IS NOT NULL THEN 1 ELSE 0 END) as overtime_denominator'),
             DB::raw('SUM(CASE WHEN stats.overtime_hours IS NULL THEN 1 ELSE 0 END) as overtime_unknown'),
@@ -600,6 +619,7 @@ class FleetEfficiencyService
                     self::DAY_STATUS_BETWEEN_7_AND_10 => (int) $row->{self::DAY_STATUS_BETWEEN_7_AND_10},
                     self::DAY_STATUS_OVER_10 => (int) $row->{self::DAY_STATUS_OVER_10},
                     self::STATUS_OVERTIME => (int) $row->{self::STATUS_OVERTIME},
+                    'total_rows' => (int) $row->total_rows,
                     'missing_data' => (int) $row->missing_data,
                     'overtime_denominator' => (int) $row->overtime_denominator,
                     'overtime_unknown' => (int) $row->overtime_unknown,
@@ -618,6 +638,7 @@ class FleetEfficiencyService
             self::DAY_STATUS_BETWEEN_7_AND_10,
             self::DAY_STATUS_OVER_10,
             self::STATUS_OVERTIME,
+            'total_rows',
             'missing_data',
             'overtime_denominator',
             'overtime_unknown',
@@ -642,7 +663,7 @@ class FleetEfficiencyService
             && $row->data_available !== false
             && $row->data_available !== 0
             && $row->data_available !== '0';
-        $daytimeStatus = $dataAvailable ? $this->daytimeStatus($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
+        $daytimeStatus = $dataAvailable ? $this->statusForHours($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
         $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
         $sourceIntervals = is_string($row->source_intervals_json ?? null)
             ? json_decode($row->source_intervals_json, true) ?: []
@@ -668,7 +689,7 @@ class FleetEfficiencyService
             'overtime_calculated' => $overtimeHours !== null,
             'overtime_label' => $hasOvertime === null ? __('app.no_data') : ($hasOvertime ? 'BЙ™li' : 'Xeyr'),
             'data_available' => $dataAvailable,
-            'data_status' => $dataAvailable ? 'MЙ™lumat var' : __('app.no_data'),
+            'data_status' => $dataAvailable ? 'Məlumat var' : __('app.no_data'),
             'source' => $row->calculation_source,
             'source_group_id' => $row->source_group_id,
             'source_intervals' => $sourceIntervals,
@@ -681,7 +702,7 @@ class FleetEfficiencyService
         $overtimeHours = $stat ? $this->overtimeHours($stat) : null;
         $totalHours = $stat ? $this->totalHours($stat, $daytimeHours, $overtimeHours) : null;
         $dataAvailable = $stat !== null && $daytimeHours !== null && $overtimeHours !== null && $stat->data_available !== false;
-        $daytimeStatus = $dataAvailable ? $this->daytimeStatus($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
+        $daytimeStatus = $dataAvailable ? $this->statusForHours($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
         $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
 
         return [
@@ -730,17 +751,17 @@ class FleetEfficiencyService
         return $stat->total_hours === null ? null : max(0.0, (float) $stat->total_hours);
     }
 
-    private function daytimeStatus(float $hours): string
+    private function statusForHours(float $daytimeHours): string
     {
-        if ($hours < 1) {
+        if ($daytimeHours < 1) {
             return self::DAY_STATUS_LESS_THAN_1;
         }
 
-        if ($hours < 7) {
+        if ($daytimeHours < 7) {
             return self::DAY_STATUS_LESS_THAN_7;
         }
 
-        if ($hours <= 10) {
+        if ($daytimeHours <= 10) {
             return self::DAY_STATUS_BETWEEN_7_AND_10;
         }
 

@@ -2,11 +2,19 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
+    public const DASHBOARD_UNASSIGNED_NAMES = [
+        'Layihəsiz',
+        'Layihesiz',
+        '-Layihəsiz-',
+        '-Layihesiz-',
+    ];
+
     protected $fillable = [
         'name',
         'code',
@@ -39,5 +47,10 @@ class Project extends Model
     public function wialonGroups(): HasMany
     {
         return $this->hasMany(ProjectWialonGroup::class);
+    }
+
+    public function scopeExcludeDashboardUnassigned(Builder $query): Builder
+    {
+        return $query->whereNotIn($query->getModel()->qualifyColumn('name'), self::DASHBOARD_UNASSIGNED_NAMES);
     }
 }

@@ -7,6 +7,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\View\View;
+use Throwable;
 
 class SettingsController extends Controller
 {
@@ -56,22 +57,28 @@ class SettingsController extends Controller
 
     public function syncUnits(): RedirectResponse
     {
-        $code = Artisan::call('fleet:sync-units');
-        $output = trim(Artisan::output());
-
-        $this->storeSyncResult('units', $code === 0, $output);
-
-        return back()->with('status', $output ?: __('app.sync_started'));
+        return $this->runSyncCommand('units', 'fleet:sync-units');
     }
 
     public function syncGeofences(): RedirectResponse
     {
-        $code = Artisan::call('fleet:sync-geofences');
-        $output = trim(Artisan::output());
+        return $this->runSyncCommand('geofences', 'fleet:sync-geofences');
+    }
 
-        $this->storeSyncResult('geofences', $code === 0, $output);
+    private function runSyncCommand(string $name, string $command): RedirectResponse
+    {
+        try {
+            $code = Artisan::call($command);
+            $message = trim(Artisan::output()) ?: __('app.sync_started');
+            $success = $code === 0;
+        } catch (Throwable $exception) {
+            $success = false;
+            $message = $exception->getMessage();
+        }
 
-        return back()->with('status', $output ?: __('app.sync_started'));
+        $this->storeSyncResult($name, $success, $message);
+
+        return back()->with($success ? 'status' : 'error', $message);
     }
 
     private function storeSyncResult(string $name, bool $success, string $message): void
@@ -107,6 +114,7 @@ class SettingsController extends Controller
             ['label' => 'Geofence', 'key' => 'geofences'],
             ['label' => 'Gundelik statistika', 'key' => 'daily'],
             ['label' => 'Top 20 motosaat', 'key' => 'top20'],
+            ['label' => 'Geozonadan cixma', 'key' => 'geozon'],
             ['label' => 'Effektivlik shift hesabatı', 'key' => 'shift'],
         ];
     }

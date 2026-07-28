@@ -136,7 +136,7 @@ class WialonShiftReportParser
         ];
     }
 
-    public function daytimeStatus(?float $hours): ?string
+    public function daytimeStatus(?float $hours, ?float $totalHours = null): ?string
     {
         if ($hours === null) {
             return null;
@@ -620,12 +620,14 @@ class WialonShiftReportParser
 
             if (! isset($deduplicated[$key])) {
                 $deduplicated[$key] = $record;
+
                 continue;
             }
 
             $existing = $deduplicated[$key];
             if ($this->isGroupedShiftRecord($existing) && $this->isGroupedShiftRecord($record)) {
                 $deduplicated[$key] = $this->mergeGroupedShiftRecords($existing, $record);
+
                 continue;
             }
 
@@ -716,11 +718,11 @@ class WialonShiftReportParser
             'c' => array_slice($row['c'] ?? $row['cells'] ?? [], 0, 20),
             'n' => $row['n'] ?? null,
             'count' => $row['count'] ?? null,
-                'level' => $row['level'] ?? null,
-                'has_children' => $this->rowChildren($row) !== [],
-                'shift_label' => $row['_shift_label'] ?? null,
-                'keys' => array_keys($row),
-            ];
+            'level' => $row['level'] ?? null,
+            'has_children' => $this->rowChildren($row) !== [],
+            'shift_label' => $row['_shift_label'] ?? null,
+            'keys' => array_keys($row),
+        ];
     }
 
     private function timezone(): string

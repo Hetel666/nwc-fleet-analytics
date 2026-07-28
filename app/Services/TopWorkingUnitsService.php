@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\EngineHoursReportUnitDay;
 use App\Models\Equipment;
+use App\Models\Project;
 use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
@@ -200,6 +201,9 @@ class TopWorkingUnitsService
             ->where('engine_hours_report_unit_days.parse_status', 'ok')
             ->whereNotNull('engine_hours_report_unit_days.engine_hours')
             ->where('engine_hours_report_unit_days.engine_hours', '>=', 0)
+            ->whereNotNull('engine_hours_report_unit_days.project_id')
+            ->where('projects.active', true)
+            ->whereNotIn('projects.name', Project::DASHBOARD_UNASSIGNED_NAMES)
             ->whereIn('engine_hours_report_unit_days.vehicle_type', FleetVehicleType::names(FleetVehicleType::TOP_WORKING_TYPES))
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('engine_hours_report_unit_days.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn (Builder $query, int $typeId) => $query->where('engine_hours_report_unit_days.equipment_type_id', $typeId))

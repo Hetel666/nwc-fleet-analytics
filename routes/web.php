@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Admin\DashboardAnalyticsController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardDrilldownController;
 use App\Http\Controllers\DashboardExportController;
@@ -33,6 +33,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard/tabs/{tab}', [DashboardController::class, 'tab'])->name('dashboard.tabs.show');
     Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->name('dashboard.drilldown.units');
     Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->name('dashboard.drilldown.units.export');
     Route::put('/dashboard/layout', [DashboardLayoutController::class, 'update'])->middleware('admin')->name('dashboard.layout.update');

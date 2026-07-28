@@ -1,6 +1,20 @@
 <?php
 
 return [
+    'default_tab' => 'overview',
+
+    'tabs' => [
+        'overview' => [
+            'label_key' => 'app.dashboard_tab_overview',
+        ],
+        'efficiency' => [
+            'label_key' => 'app.dashboard_tab_efficiency',
+        ],
+        'geozones' => [
+            'label_key' => 'app.dashboard_tab_geozones',
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Dashboard widgets

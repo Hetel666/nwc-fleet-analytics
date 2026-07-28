@@ -113,7 +113,6 @@ class FleetShiftDailyStatsSyncService
         $overtime = $record['overtime_hours'] ?? null;
         $total = $record['total_hours'] ?? null;
         $dataAvailable = $record !== null && $daytime !== null && $overtime !== null;
-        $dayStatus = $dataAvailable ? $this->efficiency->daytimeStatusForHours((float) $daytime) : null;
         $hasOvertime = $overtime === null ? null : (float) $overtime > 0;
         $existing = EquipmentDailyStat::query()
             ->whereDate('stat_date', $statDate)
@@ -127,6 +126,10 @@ class FleetShiftDailyStatsSyncService
         if ($daytime !== null && $overtime !== null) {
             $total = (float) $daytime + (float) $overtime;
         }
+
+        $dayStatus = $dataAvailable
+            ? $this->efficiency->efficiencyStatusForHours((float) $daytime, $total === null ? null : (float) $total)
+            : null;
 
         return EquipmentDailyStat::updateOrCreate(
             ['stat_date' => $statDate, 'equipment_id' => $equipment->id],
