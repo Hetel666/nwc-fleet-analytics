@@ -5,10 +5,14 @@ RUN apt-get update \
         nginx \
         git \
         unzip \
+        $PHPIZE_DEPS \
         libzip-dev \
         libicu-dev \
         default-mysql-client \
     && docker-php-ext-install pdo_mysql bcmath intl zip opcache \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
+    && apt-get purge -y --auto-remove $PHPIZE_DEPS \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
