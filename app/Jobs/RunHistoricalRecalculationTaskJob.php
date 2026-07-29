@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\GeofenceViolationSyncItem;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Services\HistoricalRecalculationService;
@@ -9,6 +10,7 @@ use App\Services\WialonReportStatsSyncService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use RuntimeException;
@@ -136,14 +138,21 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         }
 
         if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
+            $from = $run->date_from->toDateString().' 00:00:00';
+            $to = $run->date_to->toDateString().' 23:59:59';
             $this->runArtisanOrFail('fleet:sync-geofence-violations-report', array_filter([
-                '--from' => $date.' 00:00:00',
-                '--to' => $date.' 23:59:59',
+                '--from' => $from,
+                '--to' => $to,
                 '--project' => $task->project_id,
                 '--force' => (bool) $run->force,
             ], fn (mixed $value): bool => $value !== null && $value !== ''));
 
-            return 0;
+            return (int) GeofenceViolationSyncItem::query()
+                ->where('project_id', $task->project_id)
+                ->where('report_period_from', Carbon::parse($from, $run->timezone))
+                ->where('report_period_to', Carbon::parse($to, $run->timezone))
+                ->where('status', GeofenceViolationSyncItem::STATUS_COMPLETED)
+                ->sum('imported_rows');
         }
 
         $result = $sync->syncDailyEngineHoursReport([

@@ -49,9 +49,11 @@ class AutoSyncFleetDataTest extends TestCase
         }
 
         $calls = [];
+        $parametersByCommand = [];
         $kernel = app(Kernel::class);
-        Artisan::shouldReceive('call')->andReturnUsing(function (string $command) use (&$calls, $date): int {
+        Artisan::shouldReceive('call')->andReturnUsing(function (string $command, array $parameters = []) use (&$calls, &$parametersByCommand, $date): int {
             $calls[] = $command;
+            $parametersByCommand[$command][] = $parameters;
             $type = match ($command) {
                 'fleet:sync-engine-hours-report' => WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20,
                 'fleet:run-shift-sync' => WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY,
@@ -76,6 +78,14 @@ class AutoSyncFleetDataTest extends TestCase
         $this->assertSame(2, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:sync-engine-hours-report')->count());
         $this->assertSame(2, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:run-shift-sync')->count());
         $this->assertSame(1, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:sync-geofence-violations-report')->count());
+        $this->assertSame(
+            [
+                '--from' => '2026-07-28 00:00:00',
+                '--to' => '2026-07-28 23:59:59',
+                '--force' => true,
+            ],
+            $parametersByCommand['fleet:sync-geofence-violations-report'][0]
+        );
         $this->assertDatabaseMissing('wialon_report_sync_items', [
             'report_date' => $date,
             'status' => WialonReportSyncItem::STATUS_PENDING,

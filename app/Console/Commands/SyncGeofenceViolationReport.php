@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\GeofenceViolationReportRow;
+use App\Models\GeofenceViolationSyncItem;
 use App\Models\ProjectWialonGroup;
 use App\Services\GeofenceViolationReportImporter;
 use App\Services\GeofenceViolationReportParser;
@@ -34,12 +35,24 @@ class SyncGeofenceViolationReport extends Command
         GeofenceViolationReportImporter $importer
     ): int {
         [$from, $to] = $this->period();
+
+        if ($this->periodDays($from, $to) > max(1, (int) config('geofence_violations.max_report_period_days', 31))) {
+            $this->error(sprintf(
+                'The requested period exceeds the %d day limit for this Wialon report.',
+                (int) config('geofence_violations.max_report_period_days', 31)
+            ));
+
+            return self::INVALID;
+        }
+
         $groups = $this->groups();
 
         if ($groups->isEmpty()) {
             $this->warn('No active project Wialon groups found.');
 
-            return self::SUCCESS;
+            return $this->option('group') || $this->option('project')
+                ? self::FAILURE
+                : self::SUCCESS;
         }
 
         $settings = $this->settings($wialon);
@@ -49,6 +62,34 @@ class SyncGeofenceViolationReport extends Command
 
         try {
             foreach ($groups as $group) {
+                $checkpoint = $this->checkpoint($group, $from, $to);
+                $parsed = null;
+                $result = null;
+
+                if ($checkpoint->status === GeofenceViolationSyncItem::STATUS_COMPLETED
+                    && ! (bool) $this->option('force')) {
+                    $totals['source'] += $checkpoint->source_rows;
+                    $totals['imported'] += $checkpoint->imported_rows;
+                    $totals['skipped'] += $checkpoint->skipped_rows;
+                    $this->line($group->wialon_group_id.' | '.$group->name.' | checkpoint=completed, skipped');
+
+                    continue;
+                }
+
+                $checkpoint->forceFill([
+                    'status' => GeofenceViolationSyncItem::STATUS_RUNNING,
+                    'attempts' => $checkpoint->attempts + 1,
+                    'source_rows' => 0,
+                    'imported_rows' => 0,
+                    'rejected_rows' => 0,
+                    'skipped_rows' => 0,
+                    'malformed_rows' => 0,
+                    'last_error_code' => null,
+                    'last_error_message' => null,
+                    'started_at' => now(config('app.timezone')),
+                    'completed_at' => null,
+                ])->save();
+
                 try {
                     $report = $reportLock->run(fn (): array => $this->fetchReport(
                         $wialon,
@@ -59,25 +100,50 @@ class SyncGeofenceViolationReport extends Command
                         $to->timestamp
                     ));
                     $parsed = $parser->parse($report, $group, $from, $to);
-                    $result = $importer->import($parsed['records'], now(config('app.timezone')));
+                    $totals['source'] += $parsed['source_rows'];
+                    $totals['skipped'] += $parsed['skipped_types'];
+                    $totals['malformed'] += $parsed['malformed_rows'];
 
-                    if ($result['rejected'] > 0 || $parsed['malformed_rows'] > 0) {
+                    if ($parsed['matched_tables'] === 0) {
+                        throw new RuntimeException(
+                            'REPORT_SCHEMA_MISMATCH: The expected unit_group_zones_visit report table is missing.'
+                        );
+                    }
+
+                    if ($parsed['malformed_rows'] > 0) {
                         throw new RuntimeException(sprintf(
-                            'Report rows rejected: %d; malformed: %d. Aggregated or invalid intervals were not imported.',
-                            $result['rejected'],
+                            'MALFORMED_REPORT_ROWS: Report contains %d malformed rows; the group snapshot was not changed.',
                             $parsed['malformed_rows']
                         ));
                     }
 
-                    if ((bool) $this->option('force')) {
-                        $this->removeStaleRows($group, $from, $to, $parsed['records']);
-                    }
-
-                    $totals['source'] += $parsed['source_rows'];
+                    $result = $importer->replaceGroupSnapshot(
+                        $group,
+                        $from,
+                        $to,
+                        $parsed['records'],
+                        now(config('app.timezone')),
+                        (bool) $this->option('force')
+                    );
                     $totals['imported'] += $result['imported'];
                     $totals['rejected'] += $result['rejected'];
-                    $totals['skipped'] += $parsed['skipped_types'];
-                    $totals['malformed'] += $parsed['malformed_rows'];
+
+                    if ($result['rejected'] > 0) {
+                        throw new RuntimeException(sprintf(
+                            'NON_CONTINUOUS_INTERVALS: %d report rows do not describe one continuous period; the group snapshot was not changed.',
+                            $result['rejected']
+                        ));
+                    }
+
+                    $checkpoint->forceFill([
+                        'status' => GeofenceViolationSyncItem::STATUS_COMPLETED,
+                        'source_rows' => $parsed['source_rows'],
+                        'imported_rows' => $result['imported'],
+                        'rejected_rows' => 0,
+                        'skipped_rows' => $parsed['skipped_types'],
+                        'malformed_rows' => 0,
+                        'completed_at' => now(config('app.timezone')),
+                    ])->save();
 
                     $this->line(sprintf(
                         '%s | %s | source=%d imported=%d skipped_types=%d',
@@ -89,6 +155,17 @@ class SyncGeofenceViolationReport extends Command
                     ));
                 } catch (Throwable $exception) {
                     $failures++;
+                    $checkpoint->forceFill([
+                        'status' => GeofenceViolationSyncItem::STATUS_FAILED,
+                        'source_rows' => (int) ($parsed['source_rows'] ?? 0),
+                        'imported_rows' => 0,
+                        'rejected_rows' => (int) ($result['rejected'] ?? 0),
+                        'skipped_rows' => (int) ($parsed['skipped_types'] ?? 0),
+                        'malformed_rows' => (int) ($parsed['malformed_rows'] ?? 0),
+                        'last_error_code' => $this->errorCode($exception),
+                        'last_error_message' => mb_substr($exception->getMessage(), 0, 4000),
+                        'completed_at' => now(config('app.timezone')),
+                    ])->save();
                     $this->error($group->wialon_group_id.' | '.$group->name.' | '.$exception->getMessage());
                     Log::warning('Geofence violations report synchronization failed', [
                         'group_id' => $group->wialon_group_id,
@@ -107,6 +184,8 @@ class SyncGeofenceViolationReport extends Command
                 // The report result is already persisted locally; session cleanup is best-effort.
             }
         }
+
+        $this->pruneOperationalData();
 
         $this->table(['Metric', 'Value'], [
             ['groups processed', $groups->count() - $failures],
@@ -301,23 +380,70 @@ class SyncGeofenceViolationReport extends Command
             ->get();
     }
 
-    /**
-     * @param  array<int, array<string, mixed>>  $records
-     */
-    private function removeStaleRows(
+    private function periodDays(
+        CarbonImmutable $from,
+        CarbonImmutable $to
+    ): int {
+        return (int) $from->startOfDay()->diffInDays($to->startOfDay()) + 1;
+    }
+
+    private function checkpoint(
         ProjectWialonGroup $group,
         CarbonImmutable $from,
-        CarbonImmutable $to,
-        array $records
-    ): void {
-        $periodKeys = collect($records)->pluck('period_key')->filter()->values();
+        CarbonImmutable $to
+    ): GeofenceViolationSyncItem {
+        $checkpointKey = sha1(implode('|', [
+            GeofenceViolationReportRow::REPORT_NAME,
+            $group->id,
+            $group->wialon_group_id,
+            $from->timestamp,
+            $to->timestamp,
+        ]));
+
+        return GeofenceViolationSyncItem::query()->firstOrCreate(
+            ['checkpoint_key' => $checkpointKey],
+            [
+                'project_id' => $group->project_id,
+                'project_wialon_group_id' => $group->id,
+                'wialon_group_id' => (string) $group->wialon_group_id,
+                'wialon_group_name' => $group->name,
+                'ownership_type' => $group->ownership_type,
+                'report_period_from' => $from,
+                'report_period_to' => $to,
+                'status' => GeofenceViolationSyncItem::STATUS_FAILED,
+            ]
+        );
+    }
+
+    private function errorCode(Throwable $exception): string
+    {
+        foreach (['REPORT_SCHEMA_MISMATCH', 'MALFORMED_REPORT_ROWS', 'NON_CONTINUOUS_INTERVALS'] as $code) {
+            if (str_starts_with($exception->getMessage(), $code.':')) {
+                return $code;
+            }
+        }
+
+        return str_contains(mb_strtolower($exception->getMessage()), 'wialon')
+            ? 'WIALON_REPORT_FAILED'
+            : 'IMPORT_FAILED';
+    }
+
+    private function pruneOperationalData(): void
+    {
+        $checkpointCutoff = now(config('app.timezone'))->subDays(
+            max(1, (int) config('geofence_violations.checkpoint_retention_days', 90))
+        );
+        $payloadCutoff = now(config('app.timezone'))->subDays(
+            max(1, (int) config('geofence_violations.source_payload_retention_days', 90))
+        );
+
+        GeofenceViolationSyncItem::query()
+            ->where('completed_at', '<', $checkpointCutoff)
+            ->delete();
 
         GeofenceViolationReportRow::query()
-            ->where('project_id', $group->project_id)
-            ->where('ownership_type', $group->ownership_type)
-            ->where('exited_at', '<=', $to)
-            ->where('last_confirmed_at', '>=', $from)
-            ->when($periodKeys->isNotEmpty(), fn (Builder $query) => $query->whereNotIn('period_key', $periodKeys))
-            ->delete();
+            ->whereNotNull('source_payload')
+            ->where('report_generated_at', '<', $payloadCutoff)
+            ->update(['source_payload' => null]);
     }
 }

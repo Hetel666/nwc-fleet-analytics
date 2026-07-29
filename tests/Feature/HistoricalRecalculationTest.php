@@ -195,9 +195,9 @@ class HistoricalRecalculationTest extends TestCase
             ->assertJson([
                 'days' => 2,
                 'project_groups' => 1,
-                'fetch_tasks' => 2,
+                'fetch_tasks' => 1,
                 'aggregate_tasks' => 0,
-                'total_tasks' => 2,
+                'total_tasks' => 1,
             ]);
     }
 
@@ -215,6 +215,24 @@ class HistoricalRecalculationTest extends TestCase
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('project_ids');
+    }
+
+    public function test_geofence_violation_manual_range_respects_report_limit(): void
+    {
+        config()->set('geofence_violations.max_report_period_days', 2);
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-26',
+                'date_to' => '2026-07-28',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('date_to');
     }
 
     public function test_preview_skips_project_ownership_groups_without_active_dashboard_equipment(): void
@@ -357,7 +375,7 @@ class HistoricalRecalculationTest extends TestCase
         ]);
         $service = app(HistoricalRecalculationService::class);
         $run = $service->createRun([
-            'date_from' => '2026-07-28',
+            'date_from' => '2026-07-27',
             'date_to' => '2026-07-28',
             'timezone' => 'Asia/Baku',
             'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
@@ -372,7 +390,7 @@ class HistoricalRecalculationTest extends TestCase
             ->once()
             ->with('fleet:sync-geofence-violations-report', \Mockery::on(
                 fn (array $parameters): bool => $parameters['--project'] === $project->id
-                    && $parameters['--from'] === '2026-07-28 00:00:00'
+                    && $parameters['--from'] === '2026-07-27 00:00:00'
                     && $parameters['--to'] === '2026-07-28 23:59:59'
                     && $parameters['--force'] === true
             ))

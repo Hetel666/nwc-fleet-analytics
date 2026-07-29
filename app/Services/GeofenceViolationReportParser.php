@@ -11,7 +11,7 @@ use Carbon\CarbonInterface;
 class GeofenceViolationReportParser
 {
     /**
-     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int}
+     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int, matched_tables: int}
      */
     public function parse(
         array $report,
@@ -23,9 +23,16 @@ class GeofenceViolationReportParser
         $sourceRows = 0;
         $skippedTypes = 0;
         $malformedRows = 0;
+        $matchedTables = 0;
 
         foreach ($report['tables'] ?? [] as $tablePayload) {
             $table = $tablePayload['table'] ?? [];
+
+            if (! $this->isExpectedTable($table)) {
+                continue;
+            }
+
+            $matchedTables++;
             $indexes = $this->columnIndexes($table);
 
             foreach ($tablePayload['rows'] ?? [] as $row) {
@@ -60,7 +67,23 @@ class GeofenceViolationReportParser
             'source_rows' => $sourceRows,
             'skipped_types' => $skippedTypes,
             'malformed_rows' => $malformedRows,
+            'matched_tables' => $matchedTables,
         ];
+    }
+
+    private function isExpectedTable(array $table): bool
+    {
+        if (($table['name'] ?? null) === 'unit_group_zones_visit') {
+            return true;
+        }
+
+        $types = array_map(
+            fn (mixed $value): string => mb_strtolower(trim((string) $value)),
+            $table['header_type'] ?? []
+        );
+
+        return collect(['user_column', 'time_begin', 'time_end', 'duration_in'])
+            ->every(fn (string $type): bool => in_array($type, $types, true));
     }
 
     /**
@@ -94,12 +117,15 @@ class GeofenceViolationReportParser
 
         $wialonUnitId = filled($row['uid'] ?? null) ? (string) $row['uid'] : null;
         $activeTolerance = max(1, (int) config('geofence_violations.active_end_tolerance_seconds', 300));
-        $isCurrentReport = $to->timestamp >= now(config('app.timezone'))->subSeconds($activeTolerance)->timestamp;
-        $isActive = $isCurrentReport && abs($to->timestamp - $lastConfirmedAt->timestamp) <= $activeTolerance;
+        $isActiveAtReportEnd = abs($to->timestamp - $lastConfirmedAt->timestamp) <= $activeTolerance;
+        $lastProjectGeofence = $this->nullableReportValue(
+            $this->cellText($cells[$indexes['geofence']] ?? null)
+        );
 
         return [
             'period_key' => sha1(implode('|', [
                 GeofenceViolationReportRow::REPORT_NAME,
+                $group->wialon_group_id,
                 $wialonUnitId ?: mb_strtolower($equipmentName),
                 $exitedAt->timestamp,
             ])),
@@ -108,14 +134,17 @@ class GeofenceViolationReportParser
             'equipment_type' => $equipmentType,
             'ownership_type' => $group->ownership_type,
             'project_id' => $group->project_id,
+            'project_wialon_group_id' => $group->id,
             'project_name' => $group->project?->name,
-            'last_project_geofence' => null,
+            'last_project_geofence' => $lastProjectGeofence,
             'exited_at' => $exitedAt->toDateTimeString(),
             'last_confirmed_at' => $lastConfirmedAt->toDateTimeString(),
-            'ended_at' => $isActive ? null : $lastConfirmedAt->toDateTimeString(),
+            'ended_at' => $isActiveAtReportEnd ? null : $lastConfirmedAt->toDateTimeString(),
             'outside_duration_seconds' => $durationSeconds,
             'last_location' => $this->location($cells[$indexes['exit_time']] ?? null),
-            'is_active' => $isActive,
+            'is_active' => $isActiveAtReportEnd,
+            'report_period_from' => $from->toDateTimeString(),
+            'report_period_to' => $to->toDateTimeString(),
             'allowed_type' => in_array($equipmentType, config('geofence_violations.allowed_equipment_types', []), true),
             'source_payload' => [
                 'resource_id' => config('geofence_violations.resource_id'),
@@ -131,7 +160,7 @@ class GeofenceViolationReportParser
     }
 
     /**
-     * @return array{grouping: int, equipment_type: int, entry_time: int, exit_time: int, duration: int}
+     * @return array{grouping: int, equipment_type: int, geofence: int, entry_time: int, exit_time: int, duration: int}
      */
     private function columnIndexes(array $table): array
     {
@@ -141,6 +170,7 @@ class GeofenceViolationReportParser
         return [
             'grouping' => $this->index($types, ['grouping'], $this->index($headers, ['grouping'], 0)),
             'equipment_type' => $this->index($types, ['user_column'], 1),
+            'geofence' => $this->index($types, ['zone_name', 'geofence'], 2),
             'entry_time' => $this->index($types, ['time_begin'], 3),
             'exit_time' => $this->index($types, ['time_end'], 4),
             'duration' => $this->index($types, ['duration_in'], 5),
@@ -205,6 +235,17 @@ class GeofenceViolationReportParser
         }
 
         return trim((string) $value);
+    }
+
+    private function nullableReportValue(string $value): ?string
+    {
+        $normalized = mb_strtolower(trim($value));
+
+        if ($normalized === '' || preg_match('/^[-—_]+$/u', $normalized) === 1) {
+            return null;
+        }
+
+        return trim($value);
     }
 
     private function timestamp(mixed $cell, mixed $fallback): ?CarbonImmutable

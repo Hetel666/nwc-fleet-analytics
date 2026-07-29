@@ -26,13 +26,16 @@ class HistoricalRecalculationService
         $aggregateTasks = $this->needsAggregation($payload)
             ? max(1, $this->selectedProjectIds($payload)->count() ?: 1)
             : 0;
+        $fetchTasks = $this->needsFetch($payload['operation'])
+            ? $this->fetchTaskCount($payload, $dates, $targets)
+            : 0;
 
         return [
             'days' => $dates->count(),
             'project_groups' => $targets->count(),
-            'fetch_tasks' => $this->needsFetch($payload['operation']) ? $dates->count() * $targets->count() : 0,
+            'fetch_tasks' => $fetchTasks,
             'aggregate_tasks' => $aggregateTasks,
-            'total_tasks' => ($this->needsFetch($payload['operation']) ? $dates->count() * $targets->count() : 0) + $aggregateTasks,
+            'total_tasks' => $fetchTasks + $aggregateTasks,
         ];
     }
 
@@ -264,7 +267,11 @@ class HistoricalRecalculationService
     private function createTasks(HistoricalRecalculation $run, array $payload): void
     {
         if ($this->needsFetch($payload['operation'])) {
-            foreach ($this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']) as $date) {
+            $dates = ($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS
+                ? collect([$payload['date_from']])
+                : $this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']);
+
+            foreach ($dates as $date) {
                 foreach ($this->targets($payload) as $target) {
                     HistoricalRecalculationTask::query()->updateOrCreate(
                         [
@@ -429,6 +436,15 @@ class HistoricalRecalculationService
             HistoricalRecalculation::OPERATION_FETCH,
             HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
         ], true);
+    }
+
+    private function fetchTaskCount(array $payload, Collection $dates, Collection $targets): int
+    {
+        if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
+            return $targets->count();
+        }
+
+        return $dates->count() * $targets->count();
     }
 
     private function needsAggregation(array $payload): bool

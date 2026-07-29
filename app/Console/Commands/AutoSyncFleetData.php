@@ -112,6 +112,8 @@ class AutoSyncFleetData extends Command
         $geofenceViolationsMessages = [];
         $top20Limit = max(1, min(50, (int) $this->setting('auto_sync_top20_batch_limit', 10)));
         $shiftLimit = max(1, min(50, (int) $this->setting('auto_sync_shift_batch_limit', 10)));
+        $rangeFrom = now(config('app.timezone'))->subDays($days)->startOfDay();
+        $rangeTo = now(config('app.timezone'))->subDay()->endOfDay();
 
         for ($offset = $days - 1; $offset >= 0; $offset--) {
             $date = now(config('app.timezone'))->subDays($offset + 1)->toDateString();
@@ -124,11 +126,6 @@ class AutoSyncFleetData extends Command
                 $date
             );
             $geozonOk = $this->runArtisanCommand('fleet:sync-geozon-api', [
-                '--from' => $date.' 00:00:00',
-                '--to' => $date.' 23:59:59',
-                '--force' => true,
-            ]);
-            $geofenceViolationsOk = $this->runArtisanCommand('fleet:sync-geofence-violations-report', [
                 '--from' => $date.' 00:00:00',
                 '--to' => $date.' 23:59:59',
                 '--force' => true,
@@ -146,15 +143,22 @@ class AutoSyncFleetData extends Command
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
             $top20Success = $top20Success && $top20Ok['ok'];
             $geozonSuccess = $geozonSuccess && $geozonOk['ok'];
-            $geofenceViolationsSuccess = $geofenceViolationsSuccess && $geofenceViolationsOk['ok'];
             $shiftSuccess = $shiftSuccess && $shiftPlanOk['ok'] && $shiftRunOk['ok'];
 
             $dailyMessages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
             $top20Messages[] = $date.': '.trim($top20Ok['output']);
             $geozonMessages[] = $date.': '.trim($geozonOk['output']);
-            $geofenceViolationsMessages[] = $date.': '.trim($geofenceViolationsOk['output']);
             $shiftMessages[] = $date.': '.trim($shiftPlanOk['output'].' '.$shiftRunOk['output']);
         }
+
+        $geofenceViolationsOk = $this->runArtisanCommand('fleet:sync-geofence-violations-report', [
+            '--from' => $rangeFrom->toDateTimeString(),
+            '--to' => $rangeTo->toDateTimeString(),
+            '--force' => true,
+        ]);
+        $geofenceViolationsSuccess = $geofenceViolationsOk['ok'];
+        $geofenceViolationsMessages[] = $rangeFrom->toDateString().' - '.$rangeTo->toDateString()
+            .': '.trim($geofenceViolationsOk['output']);
 
         $this->storeTaskResult('daily', $dailySuccess, implode(' | ', array_filter($dailyMessages)));
         $this->storeTaskResult('top20', $top20Success, implode(' | ', array_filter($top20Messages)));

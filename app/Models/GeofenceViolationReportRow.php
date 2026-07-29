@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 
 class GeofenceViolationReportRow extends Model
 {
@@ -16,6 +17,7 @@ class GeofenceViolationReportRow extends Model
         'period_key',
         'equipment_id',
         'project_id',
+        'project_wialon_group_id',
         'wialon_unit_id',
         'equipment_name',
         'equipment_type',
@@ -28,6 +30,8 @@ class GeofenceViolationReportRow extends Model
         'outside_duration_seconds',
         'last_location',
         'is_active',
+        'report_period_from',
+        'report_period_to',
         'report_generated_at',
         'source_payload',
     ];
@@ -40,9 +44,22 @@ class GeofenceViolationReportRow extends Model
             'ended_at' => 'datetime',
             'outside_duration_seconds' => 'integer',
             'is_active' => 'boolean',
+            'report_period_from' => 'datetime',
+            'report_period_to' => 'datetime',
             'report_generated_at' => 'datetime',
             'source_payload' => 'array',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        $invalidate = static fn (): bool => Cache::forever(
+            'geofence_violations:data_version',
+            sprintf('%.6F', microtime(true))
+        );
+
+        static::saved($invalidate);
+        static::deleted($invalidate);
     }
 
     public function equipment(): BelongsTo
@@ -55,9 +72,14 @@ class GeofenceViolationReportRow extends Model
         return $this->belongsTo(Project::class);
     }
 
+    public function projectWialonGroup(): BelongsTo
+    {
+        return $this->belongsTo(ProjectWialonGroup::class);
+    }
+
     public function getStatusLabelAttribute(): string
     {
-        return $this->is_active ? 'Aktiv pozuntu' : 'Tamamlanmış pozuntu';
+        return $this->is_active ? 'Hesabat sonuna aktiv pozuntu' : 'Tamamlanmış pozuntu';
     }
 
     public function getDurationLabelAttribute(): string

@@ -457,6 +457,7 @@
             <span>
                 Mənbə: <strong>Geofence Pozuntuları api</strong>
                 · Son təsdiqlənmiş hesabat: {{ $formatDateTime($latest_report_at) }}
+                · Məlumatın son vaxtı: {{ $formatDateTime($latest_report_period_to) }}
             </span>
         </div>
     </form>
@@ -473,9 +474,9 @@
         <article class="gv-kpi" style="--gv-accent: #dc2626;">
             <div class="gv-kpi-icon"><i data-lucide="radio-tower"></i></div>
             <div>
-                <div class="gv-kpi-label">Aktiv pozuntular</div>
+                <div class="gv-kpi-label">Hesabat sonuna aktiv</div>
                 <div class="gv-kpi-value">{{ number_format($kpis['active_violations']) }}</div>
-                <div class="gv-kpi-note">Hazırda kənarda olan texnika</div>
+                <div class="gv-kpi-note">Son təsdiqlənmiş vaxtda davam edən</div>
             </div>
         </article>
         <article class="gv-kpi" style="--gv-accent: #16a34a;">
@@ -499,7 +500,7 @@
     <section class="gv-panel overflow-hidden mb-3">
         <div class="gv-distribution-head p-3 p-lg-4">
             <div>
-                <h2>Geozonadan çıxma halları</h2>
+                <h2>Geofence Pozuntuları</h2>
                 <div class="text-secondary small mt-1">Seçilmiş filtrlər üzrə pozuntu dövrlərinin layihə paylanması</div>
             </div>
             <span class="gv-count">{{ number_format($kpis['total_violations']) }} pozuntu</span>
@@ -514,7 +515,7 @@
                 </div>
             </div>
             <div class="gv-distribution-list">
-                <h3>Geozonadan çıxma halları</h3>
+                <h3>Layihələr üzrə pozuntular</h3>
                 @if ($distribution->isEmpty())
                     <div class="text-secondary">Seçilmiş dövr üçün paylanma məlumatı yoxdur.</div>
                 @else
@@ -577,7 +578,7 @@
                             <td>{{ $row->equipment_type }}</td>
                             <td>{{ $row->ownership_type === 'ICARE' ? 'İCARƏ' : ($row->ownership_type ?: '—') }}</td>
                             <td>
-                                {{ $row->last_project_geofence ?: '—' }}
+                                {{ $row->last_project_geofence ?: 'Hesabat təqdim etmir' }}
                                 <div class="gv-secondary">Cari layihə geozonası: Yoxdur</div>
                             </td>
                             <td>{{ $formatDateTime($row->exited_at) }}</td>

@@ -3,7 +3,9 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class GeofenceViolationsDashboardRequest extends FormRequest
 {
@@ -48,5 +50,23 @@ class GeofenceViolationsDashboardRequest extends FormRequest
             'status' => $validated['status'] ?? null,
             'search' => trim((string) ($validated['search'] ?? '')),
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if (! $this->filled(['date_from', 'date_to'])
+                || $validator->errors()->hasAny(['date_from', 'date_to'])) {
+                return;
+            }
+
+            $from = Carbon::createFromFormat('Y-m-d', (string) $this->input('date_from'));
+            $to = Carbon::createFromFormat('Y-m-d', (string) $this->input('date_to'));
+            $maxDays = max(1, (int) config('geofence_violations.max_dashboard_period_days', 366));
+
+            if (((int) $from->diffInDays($to)) + 1 > $maxDays) {
+                $validator->errors()->add('date_to', "The selected period cannot exceed {$maxDays} days.");
+            }
+        });
     }
 }

@@ -74,7 +74,8 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertSee('Completed 4h')
             ->assertSee('Aktiv pozuntu')
             ->assertSee('Tamamlanmış pozuntu')
-            ->assertSee('Geozonadan çıxma halları')
+            ->assertSee('Geofence Pozuntuları')
+            ->assertSee('Hesabat sonuna aktiv')
             ->assertSee('Cari layihə geozonası: Yoxdur')
             ->assertDontSee('Boundary 2h59m')
             ->assertDontSee('Boundary exactly 3h')
@@ -148,6 +149,17 @@ class GeofenceViolationsDashboardTest extends TestCase
         $this->actingAs($user)->get(route('geofence-violations.index', [
             'date_from' => '2026-07-28',
             'date_to' => '2026-07-27',
+        ]))->assertSessionHasErrors('date_to');
+    }
+
+    public function test_excessive_dashboard_period_is_rejected(): void
+    {
+        config()->set('geofence_violations.max_dashboard_period_days', 31);
+        $user = User::factory()->create(['active' => true]);
+
+        $this->actingAs($user)->get(route('geofence-violations.index', [
+            'date_from' => '2026-06-01',
+            'date_to' => '2026-07-28',
         ]))->assertSessionHasErrors('date_to');
     }
 

@@ -69,6 +69,13 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             $maxDays = (int) config('historical_recalculation.max_range_days', 365);
             $days = $from->diffInDays($to) + 1;
 
+            if ($this->input('dashboard_section') === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
+                $maxDays = min(
+                    $maxDays,
+                    max(1, (int) config('geofence_violations.max_report_period_days', 31))
+                );
+            }
+
             if ($to->gt($today)) {
                 $validator->errors()->add('date_to', 'Bitmə tarixi gələcək tarix ola bilməz.');
             }

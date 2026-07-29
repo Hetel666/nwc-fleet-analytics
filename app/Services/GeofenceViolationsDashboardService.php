@@ -7,6 +7,8 @@ use App\Models\GeofenceViolationReportRow;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class GeofenceViolationsDashboardService
 {
@@ -26,7 +28,7 @@ class GeofenceViolationsDashboardService
 
         return [
             'rows' => $rows,
-            ...$this->summary(clone $query),
+            ...$this->summaryCached($filters),
             'projects' => $this->facetQuery()
                 ->whereNotNull('project_id')
                 ->whereNotNull('project_name')
@@ -68,7 +70,7 @@ class GeofenceViolationsDashboardService
             return $this->emptySummary();
         }
 
-        return $this->summary($this->filteredQuery($filters));
+        return $this->summaryCached($filters);
     }
 
     /**
@@ -136,46 +138,78 @@ class GeofenceViolationsDashboardService
             ->whereColumn('last_confirmed_at', '>=', 'exited_at');
     }
 
-    private function uniqueEquipmentCount(Collection $rows): int
-    {
-        return $rows->unique(fn (GeofenceViolationReportRow $row): string => $row->equipment_id
-            ? 'equipment:'.$row->equipment_id
-            : 'report:'.($row->wialon_unit_id ?: mb_strtolower($row->equipment_name))
-        )->count();
-    }
-
-    private function uniqueProjectCount(Collection $rows): int
-    {
-        return $rows->unique(fn (GeofenceViolationReportRow $row): string => $row->project_id
-            ? 'project:'.$row->project_id
-            : 'report:'.mb_strtolower((string) $row->project_name)
-        )->count();
-    }
-
     /**
      * @return array<string, mixed>
      */
     private function summary(Builder $query): array
     {
-        $activeRows = (clone $query)
-            ->where('is_active', true)
-            ->get(['equipment_id', 'wialon_unit_id', 'equipment_name']);
-        $projectRows = (clone $query)
-            ->where(function (Builder $query): void {
-                $query->whereNotNull('project_id')->orWhereNotNull('project_name');
-            })
-            ->get(['project_id', 'project_name']);
-
         return [
             'distribution' => $this->projectDistribution(clone $query),
             'kpis' => [
                 'total_violations' => (clone $query)->count(),
-                'active_violations' => $this->uniqueEquipmentCount($activeRows),
-                'active_projects' => $this->uniqueProjectCount($projectRows),
+                'active_violations' => $this->uniqueEquipmentCount(
+                    (clone $query)->where('is_active', true)
+                ),
+                'active_projects' => $this->uniqueProjectCount(clone $query),
                 'longest_duration_seconds' => (int) ((clone $query)->max('outside_duration_seconds') ?? 0),
             ],
             'latest_report_at' => (clone $query)->max('report_generated_at'),
+            'latest_report_period_to' => (clone $query)->max('report_period_to'),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function summaryCached(array $filters): array
+    {
+        $version = (string) Cache::get('geofence_violations:data_version', 'empty');
+        $key = 'geofence_violations:summary:'.sha1(json_encode([
+            'version' => $version,
+            'filters' => $filters,
+        ], JSON_THROW_ON_ERROR));
+
+        return Cache::remember(
+            $key,
+            max(1, (int) config('geofence_violations.summary_cache_seconds', 300)),
+            fn (): array => $this->summary($this->filteredQuery($filters))
+        );
+    }
+
+    private function uniqueEquipmentCount(Builder $query): int
+    {
+        $knownEquipment = (clone $query)
+            ->whereNotNull('equipment_id')
+            ->distinct()
+            ->count('equipment_id');
+        $fallback = (clone $query)
+            ->whereNull('equipment_id')
+            ->selectRaw("LOWER(COALESCE(NULLIF(wialon_unit_id, ''), equipment_name)) AS identity")
+            ->distinct();
+
+        return $knownEquipment + DB::query()
+            ->fromSub($fallback, 'geofence_violation_equipment')
+            ->whereNotNull('identity')
+            ->count();
+    }
+
+    private function uniqueProjectCount(Builder $query): int
+    {
+        $knownProjects = (clone $query)
+            ->whereNotNull('project_id')
+            ->distinct()
+            ->count('project_id');
+        $fallback = (clone $query)
+            ->whereNull('project_id')
+            ->whereNotNull('project_name')
+            ->selectRaw("LOWER(NULLIF(project_name, '')) AS identity")
+            ->distinct();
+
+        return $knownProjects + DB::query()
+            ->fromSub($fallback, 'geofence_violation_projects')
+            ->whereNotNull('identity')
+            ->count();
     }
 
     /**
@@ -192,6 +226,7 @@ class GeofenceViolationsDashboardService
                 'longest_duration_seconds' => 0,
             ],
             'latest_report_at' => null,
+            'latest_report_period_to' => null,
         ];
     }
 

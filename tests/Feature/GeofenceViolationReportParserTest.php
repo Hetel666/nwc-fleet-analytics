@@ -62,17 +62,81 @@ class GeofenceViolationReportParserTest extends TestCase
         $this->assertSame(0, $parsed['malformed_rows']);
         $this->assertCount(2, $parsed['records']);
         $this->assertSame(
-            ['imported' => 1, 'rejected' => 1],
+            ['imported' => 0, 'rejected' => 1],
             app(GeofenceViolationReportImporter::class)->import($parsed['records'])
+        );
+        $this->assertDatabaseCount('geofence_violation_report_rows', 0);
+
+        $this->assertSame(
+            ['imported' => 1, 'rejected' => 0],
+            app(GeofenceViolationReportImporter::class)->replaceGroupSnapshot(
+                $group,
+                $from,
+                $to,
+                [$parsed['records'][0]],
+                replace: true
+            )
         );
         $this->assertDatabaseHas('geofence_violation_report_rows', [
             'equipment_name' => '10-AF-100',
             'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
             'outside_duration_seconds' => 14_400,
         ]);
         $this->assertDatabaseMissing('geofence_violation_report_rows', [
             'equipment_name' => '10-AF-101',
         ]);
+        $this->assertFalse($parsed['records'][0]['is_active']);
+        $this->assertSame($from->toDateTimeString(), $parsed['records'][0]['report_period_from']);
+        $this->assertSame($to->toDateTimeString(), $parsed['records'][0]['report_period_to']);
+    }
+
+    public function test_cross_midnight_period_remains_one_continuous_violation(): void
+    {
+        $project = Project::create(['name' => 'Cross midnight project', 'active' => true]);
+        $group = ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701999',
+            'name' => 'Cross midnight project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $type = EquipmentType::create(['name' => 'Excavator']);
+        Equipment::create([
+            'name' => '10-AF-999',
+            'wialon_unit_id' => '601700999',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+        $from = CarbonImmutable::parse('2026-07-27 00:00:00', 'Asia/Baku');
+        $to = CarbonImmutable::parse('2026-07-28 23:59:59', 'Asia/Baku');
+        $entry = CarbonImmutable::parse('2026-07-27 20:00:00', 'Asia/Baku')->timestamp;
+        $exit = CarbonImmutable::parse('2026-07-28 04:00:01', 'Asia/Baku')->timestamp;
+        $parsed = app(GeofenceViolationReportParser::class)->parse(
+            $this->report([
+                $this->unitRow('10-AF-999', 'Excavator', '601700999', $entry, $exit, '8:00:01'),
+            ]),
+            $group,
+            $from,
+            $to
+        );
+
+        $this->assertCount(1, $parsed['records']);
+        $this->assertSame(28_801, $parsed['records'][0]['outside_duration_seconds']);
+        $this->assertSame(
+            ['imported' => 1, 'rejected' => 0],
+            app(GeofenceViolationReportImporter::class)->replaceGroupSnapshot(
+                $group,
+                $from,
+                $to,
+                $parsed['records'],
+                replace: true
+            )
+        );
+        $this->assertDatabaseCount('geofence_violation_report_rows', 1);
     }
 
     protected function tearDown(): void

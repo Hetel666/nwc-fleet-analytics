@@ -11,6 +11,11 @@ return [
     'duration_tolerance_seconds' => 5,
     'active_end_tolerance_seconds' => 300,
     'default_period_days' => 7,
+    'max_dashboard_period_days' => (int) env('GEOFENCE_VIOLATIONS_MAX_DASHBOARD_PERIOD_DAYS', 366),
+    'max_report_period_days' => (int) env('GEOFENCE_VIOLATIONS_MAX_REPORT_PERIOD_DAYS', 31),
+    'summary_cache_seconds' => (int) env('GEOFENCE_VIOLATIONS_SUMMARY_CACHE_SECONDS', 300),
+    'checkpoint_retention_days' => (int) env('GEOFENCE_VIOLATIONS_CHECKPOINT_RETENTION_DAYS', 90),
+    'source_payload_retention_days' => (int) env('GEOFENCE_VIOLATIONS_SOURCE_PAYLOAD_RETENTION_DAYS', 90),
     'per_page' => 25,
     'allowed_equipment_types' => [
         'Bulldozer',

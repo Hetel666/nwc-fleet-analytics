@@ -4,8 +4,10 @@ namespace App\Services;
 
 use App\Models\Equipment;
 use App\Models\GeofenceViolationReportRow;
+use App\Models\ProjectWialonGroup;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class GeofenceViolationReportImporter
@@ -18,37 +20,123 @@ class GeofenceViolationReportImporter
      */
     public function import(array $rows, ?CarbonInterface $reportGeneratedAt = null): array
     {
-        $imported = 0;
-        $rejected = 0;
         $reportGeneratedAt ??= now(config('app.timezone'));
+        [$normalizedRows, $rejected] = $this->normalizeRows($rows, $reportGeneratedAt);
 
-        DB::transaction(function () use ($rows, $reportGeneratedAt, &$imported, &$rejected): void {
-            foreach ($rows as $row) {
-                $normalized = $this->normalize($row, $reportGeneratedAt);
+        if ($rejected > 0) {
+            return ['imported' => 0, 'rejected' => $rejected];
+        }
 
-                if ($normalized === null) {
-                    $rejected++;
+        DB::transaction(fn () => $this->persistRows($normalizedRows));
+        $this->invalidateDashboardCache();
 
-                    continue;
-                }
+        return ['imported' => count($normalizedRows), 'rejected' => 0];
+    }
 
-                GeofenceViolationReportRow::query()->updateOrCreate(
-                    ['period_key' => $normalized['period_key']],
-                    $normalized
-                );
-                $imported++;
+    /**
+     * Atomically replaces one project-group snapshot only after every accepted
+     * source row has passed the continuous-period validation.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{imported: int, rejected: int}
+     */
+    public function replaceGroupSnapshot(
+        ProjectWialonGroup $group,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        array $rows,
+        ?CarbonInterface $reportGeneratedAt = null,
+        bool $replace = false
+    ): array {
+        $reportGeneratedAt ??= now(config('app.timezone'));
+        [$normalizedRows, $rejected] = $this->normalizeRows($rows, $reportGeneratedAt, $group);
+
+        if ($rejected > 0) {
+            return ['imported' => 0, 'rejected' => $rejected];
+        }
+
+        DB::transaction(function () use ($group, $from, $to, $normalizedRows, $replace): void {
+            $this->persistRows($normalizedRows);
+
+            if (! $replace) {
+                return;
             }
+
+            $periodKeys = collect($normalizedRows)->pluck('period_key')->filter()->values();
+            $query = GeofenceViolationReportRow::query()
+                ->where('report_name', GeofenceViolationReportRow::REPORT_NAME)
+                ->where(function ($query) use ($group): void {
+                    $query->where('project_wialon_group_id', $group->id)
+                        ->orWhere(function ($query) use ($group): void {
+                            $query->whereNull('project_wialon_group_id')
+                                ->where('project_id', $group->project_id)
+                                ->where('ownership_type', $group->ownership_type);
+                        });
+                })
+                ->where('exited_at', '<=', $to)
+                ->where('last_confirmed_at', '>=', $from);
+
+            if ($periodKeys->isNotEmpty()) {
+                $query->whereNotIn('period_key', $periodKeys);
+            }
+
+            $query->delete();
         });
 
-        return compact('imported', 'rejected');
+        $this->invalidateDashboardCache();
+
+        return ['imported' => count($normalizedRows), 'rejected' => 0];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{0: array<int, array<string, mixed>>, 1: int}
+     */
+    private function normalizeRows(
+        array $rows,
+        CarbonInterface $reportGeneratedAt,
+        ?ProjectWialonGroup $expectedGroup = null
+    ): array {
+        $normalizedRows = [];
+        $rejected = 0;
+
+        foreach ($rows as $row) {
+            $normalized = $this->normalize($row, $reportGeneratedAt, $expectedGroup);
+
+            if ($normalized === null) {
+                $rejected++;
+
+                continue;
+            }
+
+            $normalizedRows[$normalized['period_key']] = $normalized;
+        }
+
+        return [array_values($normalizedRows), $rejected];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    private function persistRows(array $rows): void
+    {
+        foreach ($rows as $row) {
+            GeofenceViolationReportRow::query()->updateOrCreate(
+                ['period_key' => $row['period_key']],
+                $row
+            );
+        }
     }
 
     /**
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>|null
      */
-    private function normalize(array $row, CarbonInterface $reportGeneratedAt): ?array
-    {
+    private function normalize(
+        array $row,
+        CarbonInterface $reportGeneratedAt,
+        ?ProjectWialonGroup $expectedGroup = null
+    ): ?array {
         $equipment = $this->resolveEquipment($row);
         $equipmentName = trim((string) ($row['equipment_name'] ?? $equipment?->name ?? ''));
         $equipmentType = trim((string) ($row['equipment_type'] ?? $equipment?->type?->name ?? ''));
@@ -71,6 +159,23 @@ class GeofenceViolationReportImporter
             return null;
         }
 
+        if ($expectedGroup !== null && $equipment !== null) {
+            if ($equipment->project_id !== null && (int) $equipment->project_id !== (int) $expectedGroup->project_id) {
+                return null;
+            }
+
+            if ($equipment->project_wialon_group_id !== null
+                && (int) $equipment->project_wialon_group_id !== (int) $expectedGroup->id) {
+                return null;
+            }
+
+            if (filled($equipment->ownership_type)
+                && filled($expectedGroup->ownership_type)
+                && $equipment->ownership_type !== $expectedGroup->ownership_type) {
+                return null;
+            }
+        }
+
         $continuousSpanSeconds = $lastConfirmedAt->timestamp - $exitedAt->timestamp;
         $durationToleranceSeconds = max(0, (int) config(
             'geofence_violations.duration_tolerance_seconds',
@@ -87,6 +192,7 @@ class GeofenceViolationReportImporter
         if ($periodKey === '') {
             $periodKey = sha1(implode('|', [
                 GeofenceViolationReportRow::REPORT_NAME,
+                $row['project_wialon_group_id'] ?? $expectedGroup?->id ?? '',
                 $wialonUnitId !== '' ? $wialonUnitId : mb_strtolower($equipmentName),
                 $exitedAt->timestamp,
             ]));
@@ -99,6 +205,9 @@ class GeofenceViolationReportImporter
             'project_id' => filled($row['project_id'] ?? null)
                 ? (int) $row['project_id']
                 : $equipment?->project_id,
+            'project_wialon_group_id' => filled($row['project_wialon_group_id'] ?? null)
+                ? (int) $row['project_wialon_group_id']
+                : $expectedGroup?->id ?? $equipment?->project_wialon_group_id,
             'wialon_unit_id' => $wialonUnitId !== '' ? $wialonUnitId : null,
             'equipment_name' => $equipmentName,
             'equipment_type' => $equipmentType,
@@ -111,6 +220,8 @@ class GeofenceViolationReportImporter
             'outside_duration_seconds' => (int) $durationSeconds,
             'last_location' => $this->nullableString($row['last_location'] ?? null),
             'is_active' => (bool) ($row['is_active'] ?? $endedAt === null),
+            'report_period_from' => $this->timestamp($row['report_period_from'] ?? null),
+            'report_period_to' => $this->timestamp($row['report_period_to'] ?? null),
             'report_generated_at' => $reportGeneratedAt,
             'source_payload' => $row['source_payload'] ?? $row,
         ];
@@ -171,5 +282,10 @@ class GeofenceViolationReportImporter
         $value = trim((string) $value);
 
         return $value !== '' ? $value : null;
+    }
+
+    private function invalidateDashboardCache(): void
+    {
+        Cache::forever('geofence_violations:data_version', sprintf('%.6F', microtime(true)));
     }
 }
