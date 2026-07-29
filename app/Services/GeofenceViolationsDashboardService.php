@@ -124,6 +124,9 @@ class GeofenceViolationsDashboardService
     private function facetQuery(): Builder
     {
         return GeofenceViolationReportRow::query()
+            ->whereHas('project', fn (Builder $query) => $query
+                ->where('active', true)
+                ->excludeFromOperationalDashboard())
             ->where('report_name', (string) config(
                 'geofence_violations.report_name',
                 GeofenceViolationReportRow::REPORT_NAME

@@ -9,6 +9,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - default
       - coolify
@@ -35,11 +37,16 @@ services:
     env_file:
       - ../.env.production
     depends_on:
-      mysql:
+      app:
         condition: service_healthy
     entrypoint: ["php", "artisan", "schedule:work"]
     healthcheck:
       disable: true
+    user: www-data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       - default
     volumes:
@@ -53,15 +60,104 @@ services:
     env_file:
       - ../.env.production
     depends_on:
-      mysql:
+      app:
         condition: service_healthy
-    entrypoint: ["php", "artisan", "queue:work", "--queue=historical-recalculations,default", "--sleep=3", "--tries=3", "--timeout=900", "--max-time=3600"]
+    entrypoint: ["php", "artisan", "queue:work", "--queue=analytics,maintenance,default", "--sleep=3", "--tries=3", "--timeout=900", "--max-time=3600"]
     healthcheck:
       disable: true
+    user: www-data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       - default
     volumes:
       - app-exports:/var/www/html/storage/app/private/dashboard-exports
+
+  wialon-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    depends_on:
+      app:
+        condition: service_healthy
+    entrypoint: ["php", "artisan", "queue:work", "--queue=wialon-reports", "--sleep=2", "--tries=6", "--timeout=3600", "--max-time=7200"]
+    healthcheck:
+      disable: true
+    user: www-data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - default
+
+  live-wialon-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    depends_on:
+      app:
+        condition: service_healthy
+    entrypoint: ["php", "artisan", "queue:work", "--queue=wialon-live", "--sleep=2", "--tries=3", "--timeout=3600", "--max-time=7200"]
+    healthcheck:
+      disable: true
+    user: www-data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - default
+
+  historical-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    depends_on:
+      app:
+        condition: service_healthy
+    entrypoint: ["php", "artisan", "queue:work", "--queue=historical-recalculations", "--sleep=3", "--tries=6", "--timeout=900", "--max-time=3600"]
+    healthcheck:
+      disable: true
+    user: www-data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - default
+
+  backfill-worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    depends_on:
+      app:
+        condition: service_healthy
+    entrypoint: ["php", "artisan", "queue:work", "--queue=wialon-backfill", "--sleep=3", "--tries=6", "--timeout=3600", "--max-time=7200"]
+    healthcheck:
+      disable: true
+    user: www-data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - default
 
   mysql:
     image: mysql:8.0
@@ -81,8 +177,25 @@ services:
     networks:
       - default
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      default:
+        aliases:
+          - fleet-analytics-redis
+
 volumes:
   mysql-data:
+  redis-data:
   app-exports:
 
 networks:

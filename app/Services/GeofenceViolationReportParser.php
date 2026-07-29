@@ -11,7 +11,7 @@ use Carbon\CarbonInterface;
 class GeofenceViolationReportParser
 {
     /**
-     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int, matched_tables: int}
+     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int, matched_tables: int, table_count: int}
      */
     public function parse(
         array $report,
@@ -68,6 +68,7 @@ class GeofenceViolationReportParser
             'skipped_types' => $skippedTypes,
             'malformed_rows' => $malformedRows,
             'matched_tables' => $matchedTables,
+            'table_count' => count($report['tables'] ?? []),
         ];
     }
 

@@ -104,7 +104,7 @@ class SyncGeofenceViolationReport extends Command
                     $totals['skipped'] += $parsed['skipped_types'];
                     $totals['malformed'] += $parsed['malformed_rows'];
 
-                    if ($parsed['matched_tables'] === 0) {
+                    if ($parsed['table_count'] > 0 && $parsed['matched_tables'] === 0) {
                         throw new RuntimeException(
                             'REPORT_SCHEMA_MISMATCH: The expected unit_group_zones_visit report table is missing.'
                         );
@@ -365,7 +365,9 @@ class SyncGeofenceViolationReport extends Command
     {
         return ProjectWialonGroup::query()
             ->with('project:id,name,active')
-            ->whereHas('project', fn (Builder $query) => $query->where('active', true))
+            ->whereHas('project', fn (Builder $query) => $query
+                ->where('active', true)
+                ->excludeFromOperationalDashboard())
             ->when(Schema::hasColumn('project_wialon_groups', 'is_active'), fn (Builder $query) => $query->where('is_active', true))
             ->when($this->option('group'), fn (Builder $query, string $groupId) => $query->where('wialon_group_id', trim($groupId)))
             ->when($this->option('project'), function (Builder $query, string $project): void {

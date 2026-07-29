@@ -194,6 +194,24 @@ class GeofenceViolationsDashboardTest extends TestCase
             });
     }
 
+    public function test_share_only_repair_project_is_not_shown_in_operational_violation_dashboard(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$project, $type] = $this->fleet();
+        $repair = Project::create(['name' => 'Təmir', 'active' => true]);
+        $this->reportRow($project, $type, 'Operational violation', 14_400);
+        $this->reportRow($repair, $type, 'Repair violation', 14_400);
+
+        $this->actingAs($user)->get(route('geofence-violations.index', [
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+        ]))
+            ->assertOk()
+            ->assertSee('Operational violation')
+            ->assertDontSee('Repair violation')
+            ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 1);
+    }
+
     /**
      * @return array{Project, EquipmentType}
      */

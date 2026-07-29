@@ -398,10 +398,16 @@ class HistoricalRecalculationService
             ],
             true
         )) {
-            return Project::query()
+            $query = Project::query()
                 ->where('active', true)
                 ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('id', $projectIds))
-                ->whereHas('wialonGroups')
+                ->whereHas('wialonGroups');
+
+            if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
+                $query->excludeFromOperationalDashboard();
+            }
+
+            return $query
                 ->get(['id'])
                 ->map(fn (Project $project): object => (object) [
                     'project_id' => $project->id,

@@ -143,6 +143,39 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         ]);
     }
 
+    public function test_wialon_response_without_tables_is_a_valid_empty_snapshot(): void
+    {
+        $project = Project::create(['name' => 'Empty project', 'active' => true]);
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601702999',
+            'name' => 'Empty project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('loginByToken')->once()->with(false)->andReturn('empty-session');
+        $wialon->shouldReceive('cleanupReportResult')->twice()->with('empty-session');
+        $wialon->shouldReceive('executeReport')->once()->andReturn([
+            'reportResult' => ['tables' => []],
+        ]);
+        $wialon->shouldReceive('logoutSession')->once()->with('empty-session');
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('fleet:sync-geofence-violations-report', [
+            '--from' => '2026-07-28 00:00:00',
+            '--to' => '2026-07-28 23:59:59',
+            '--group' => '601702999',
+            '--force' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseHas('geofence_violation_sync_items', [
+            'wialon_group_id' => '601702999',
+            'status' => GeofenceViolationSyncItem::STATUS_COMPLETED,
+            'source_rows' => 0,
+        ]);
+    }
+
     /**
      * @return array<string, mixed>
      */
