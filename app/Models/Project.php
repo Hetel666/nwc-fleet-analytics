@@ -15,6 +15,10 @@ class Project extends Model
         '-Layihesiz-',
     ];
 
+    public const DASHBOARD_SHARE_ONLY_NAMES = [
+        'Təmir',
+    ];
+
     protected $fillable = [
         'name',
         'code',
@@ -52,5 +56,23 @@ class Project extends Model
     public function scopeExcludeDashboardUnassigned(Builder $query): Builder
     {
         return $query->whereNotIn($query->getModel()->qualifyColumn('name'), self::DASHBOARD_UNASSIGNED_NAMES);
+    }
+
+    public function scopeExcludeFromOperationalDashboard(Builder $query): Builder
+    {
+        return $query->whereNotIn($query->getModel()->qualifyColumn('name'), self::dashboardOperationalExcludedNames());
+    }
+
+    public static function isExcludedFromOperationalDashboard(?string $name): bool
+    {
+        return in_array(trim((string) $name), self::dashboardOperationalExcludedNames(), true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function dashboardOperationalExcludedNames(): array
+    {
+        return [...self::DASHBOARD_UNASSIGNED_NAMES, ...self::DASHBOARD_SHARE_ONLY_NAMES];
     }
 }

@@ -48,6 +48,7 @@ class DashboardDrilldownRequest extends FormRequest
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'ownership' => ['nullable', Rule::in(['all', 'nwc', 'icare'])],
+            'ownership_scope' => ['nullable', Rule::in(['operational', 'project_groups'])],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'project_ids' => ['nullable', 'array'],
             'project_ids.*' => ['integer', 'exists:projects,id'],

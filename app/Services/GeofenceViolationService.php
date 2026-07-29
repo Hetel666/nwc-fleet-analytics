@@ -348,7 +348,7 @@ class GeofenceViolationService
             ->whereNotNull('intervals.home_project_id')
             ->whereNotIn('intervals.home_project_id', Project::query()
                 ->select('id')
-                ->whereIn('name', Project::DASHBOARD_UNASSIGNED_NAMES))
+                ->whereIn('name', Project::dashboardOperationalExcludedNames()))
             ->where('units.active', true)
             ->where(function (QueryBuilder $query): void {
                 $query->where('units.excluded_from_dashboard', false)
@@ -516,7 +516,7 @@ class GeofenceViolationService
             ->where('status', UnitForeignGeofenceInterval::STATUS_CLOSED)
             ->whereNotIn('home_project_id', Project::query()
                 ->select('id')
-                ->whereIn('name', Project::DASHBOARD_UNASSIGNED_NAMES))
+                ->whereIn('name', Project::dashboardOperationalExcludedNames()))
             ->where('entered_at', '<=', $to)
             ->where(function (Builder $query) use ($from): void {
                 $query->where('left_at', '>', $from)
@@ -645,7 +645,7 @@ class GeofenceViolationService
         }
 
         if ($interval->homeProject instanceof Project
-            && in_array($interval->homeProject->name, Project::DASHBOARD_UNASSIGNED_NAMES, true)) {
+            && Project::isExcludedFromOperationalDashboard($interval->homeProject->name)) {
             return false;
         }
 

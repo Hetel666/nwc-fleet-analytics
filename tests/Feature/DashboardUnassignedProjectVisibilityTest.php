@@ -59,6 +59,68 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
         $this->assertSame(['Project unit'], array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name'));
     }
 
+    public function test_repair_project_is_visible_only_in_share_widgets_and_their_exports(): void
+    {
+        config(['fleet.dashboard.cache_minutes' => 0]);
+
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $repairProject = Project::query()->create(['name' => 'Təmir', 'active' => true]);
+        $projectGroup = $this->group($project, '601701101');
+        $repairNwcGroup = $this->group($repairProject, '601701102');
+        $repairIcareGroup = ProjectWialonGroup::query()->create([
+            'project_id' => $repairProject->id,
+            'wialon_group_id' => '601701103',
+            'name' => 'Təmir - İcarə',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => true,
+        ]);
+
+        $projectUnit = $this->equipment($project, $projectGroup, $type, 'Project unit', '1101');
+        $repairNwcUnit = $this->equipment($repairProject, $repairNwcGroup, $type, 'Repair NWC unit', '1102');
+        $repairIcareUnit = $this->equipment($repairProject, $repairIcareGroup, $type, 'Repair ICARE unit', '1103');
+
+        foreach ([$projectUnit, $repairNwcUnit, $repairIcareUnit] as $index => $unit) {
+            $hours = 5.0 + $index;
+            $this->dailyStat($unit, '2026-07-25', $hours);
+            $this->engineReportRow($unit, '2026-07-25', $hours);
+        }
+
+        $filters = ['date_from' => '2026-07-25', 'date_to' => '2026-07-25'];
+        $dashboardService = app(DashboardService::class);
+        $dashboard = $dashboardService->getDashboard($filters);
+        $ownershipShare = collect($dashboard['overview']['ownership_share'])->keyBy('label');
+
+        $this->assertSame(5.0, $dashboard['overview']['total_hours']);
+        $this->assertSame(1, $dashboard['overview']['equipment_count']);
+        $this->assertSame(2, $ownershipShare[Equipment::OWNERSHIP_NWC]['count']);
+        $this->assertSame(1, $ownershipShare[Equipment::OWNERSHIP_ICARE]['count']);
+        $this->assertSame(2, collect($dashboard['equipmentTypesByOwnership'][Equipment::OWNERSHIP_NWC])->firstWhere('name', 'Excavator')['total']);
+        $this->assertSame(1, collect($dashboard['equipmentTypesByOwnership'][Equipment::OWNERSHIP_ICARE])->firstWhere('name', 'Excavator')['total']);
+
+        $repairComparison = collect($dashboard['projectOwnershipComparison'])->firstWhere('name', 'Təmir');
+        $this->assertSame(1.0, $repairComparison[Equipment::OWNERSHIP_NWC]);
+        $this->assertSame(1.0, $repairComparison[Equipment::OWNERSHIP_ICARE]);
+
+        $this->assertSame(1, app(DashboardDailyAverageService::class)->typeSummary($filters, 'engine_hours')->sum('units_count'));
+        $this->assertSame(1, app(FleetEfficiencyService::class)->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC)[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
+        $this->assertSame(['Project unit'], array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name'));
+
+        $overviewRows = $dashboardService->getDashboardExport($filters, 'overview')['sections'][1]['rows'];
+        $ownershipRows = $dashboardService->getDashboardExport($filters, 'ownership-share')['sections'][1]['rows'];
+        $typeRows = $dashboardService->getDashboardExport($filters, 'equipment-types')['sections'][1]['rows'];
+        $nwcTypeRows = $dashboardService->getDashboardExport($filters, 'equipment-types-nwc')['sections'][1]['rows'];
+        $icareTypeRows = $dashboardService->getDashboardExport($filters, 'equipment-types-icare')['sections'][1]['rows'];
+        $projectComparisonRows = $dashboardService->getDashboardExport($filters, 'project-comparison')['sections'][1]['rows'];
+
+        $this->assertNotContains('Təmir', array_column($overviewRows, 1));
+        $this->assertNotContains('Təmir', array_column($typeRows, 4));
+        $this->assertContains('Təmir', array_column($ownershipRows, 1));
+        $this->assertContains('Təmir', array_column($nwcTypeRows, 4));
+        $this->assertContains('Təmir', array_column($icareTypeRows, 4));
+        $this->assertContains('Təmir', array_column($projectComparisonRows, 1));
+    }
+
     private function group(Project $project, string $wialonGroupId): ProjectWialonGroup
     {
         return ProjectWialonGroup::query()->create([
@@ -80,7 +142,7 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
             'project_id' => $project->id,
             'project_wialon_group_id' => $group->id,
             'matched_wialon_group_id' => $group->wialon_group_id,
-            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'ownership_type' => $group->ownership_type,
             'active' => true,
         ]);
     }

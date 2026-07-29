@@ -99,7 +99,7 @@ class Equipment extends Model
     {
         return $query->whereHas('project', fn (Builder $query): Builder => $query
             ->where('active', true)
-            ->excludeDashboardUnassigned());
+            ->excludeFromOperationalDashboard());
     }
 
     public static function isGeneratorGroup(?string $groupName): bool

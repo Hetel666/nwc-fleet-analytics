@@ -572,6 +572,60 @@ class DashboardDrilldownTest extends TestCase
             ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     }
 
+    public function test_repair_project_is_available_only_in_share_widget_drilldowns(): void
+    {
+        $user = $this->user();
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $repair = Project::query()->create(['name' => 'Təmir', 'active' => true]);
+        $this->projectGroup($project, '601701201', Equipment::OWNERSHIP_NWC);
+        $this->projectGroup($repair, '601701202', Equipment::OWNERSHIP_NWC);
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+
+        foreach ([[$project, 'Project unit', '1201', '601701201'], [$repair, 'Repair unit', '1202', '601701202']] as [$unitProject, $name, $wialonId, $groupId]) {
+            Equipment::query()->create([
+                'name' => $name,
+                'wialon_unit_id' => $wialonId,
+                'equipment_type_id' => $type->id,
+                'project_id' => $unitProject->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'matched_wialon_group_id' => $groupId,
+                'active' => true,
+            ]);
+        }
+
+        $baseQuery = [
+            'date_from' => '2026-07-25',
+            'date_to' => '2026-07-25',
+            'ownership' => 'nwc',
+        ];
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', $baseQuery))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('data.0.name', 'Project unit')
+            ->assertJsonMissing(['name' => 'Repair unit']);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                ...$baseQuery,
+                'ownership_scope' => 'project_groups',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 2)
+            ->assertJsonFragment(['name' => 'Repair unit']);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                ...$baseQuery,
+                'project_id' => $repair->id,
+                'ownership_scope' => 'project_groups',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('data.0.name', 'Repair unit');
+    }
+
     private function user(): User
     {
         return User::query()->create([

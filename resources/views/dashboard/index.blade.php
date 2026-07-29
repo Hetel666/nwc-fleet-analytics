@@ -2588,6 +2588,7 @@
                                                     data-drilldown-title="{{ $row['name'] }} - Bütün texnika"
                                                     data-drilldown-project-id="{{ $row['id'] }}"
                                                     data-drilldown-ownership="all"
+                                                    data-drilldown-ownership-scope="project_groups"
                                                 >
                                                     <td class="fw-semibold">{{ $row['name'] }}</td>
                                                     <td
@@ -2597,6 +2598,7 @@
                                                         data-drilldown-title="{{ $row['name'] }} - NWC"
                                                         data-drilldown-project-id="{{ $row['id'] }}"
                                                         data-drilldown-ownership="nwc"
+                                                        data-drilldown-ownership-scope="project_groups"
                                                     >{{ number_format($row[$nwc], 0) }}</td>
                                                     <td
                                                         class="text-end dashboard-drilldown-trigger"
@@ -2605,6 +2607,7 @@
                                                         data-drilldown-title="{{ $row['name'] }} - {{ __('app.ownership_icare') }}"
                                                         data-drilldown-project-id="{{ $row['id'] }}"
                                                         data-drilldown-ownership="icare"
+                                                        data-drilldown-ownership-scope="project_groups"
                                                     >{{ number_format($row[$icare], 0) }}</td>
                                                 </tr>
                                             @endforeach
@@ -3142,6 +3145,7 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
                         title: `${chartLabels[selected.index]} - ${ownership === 'nwc' ? labels.nwc : labels.icare}`,
                         project_id: projectId,
                         ownership,
+                        ownership_scope: 'project_groups',
                     });
                 }
             },
@@ -5062,11 +5066,13 @@ const typeNwcDrilldownItems = () => typeNwcIds.map((id, index) => ({
     title: `${labels.nwc} - ${typeNwcLabels[index]}`,
     ownership: 'nwc',
     equipment_type_id: id,
+    ownership_scope: 'project_groups',
 }));
 const typeIcareDrilldownItems = () => typeIcareIds.map((id, index) => ({
     title: `${labels.icare} - ${typeIcareLabels[index]}`,
     ownership: 'icare',
     equipment_type_id: id,
+    ownership_scope: 'project_groups',
 }));
 const geofenceViolationDrilldownItems = () => geofenceViolationProjectIds.map((id, index) => ({
     title: `${geofenceViolationLabels[index]} - Geozonadan çıxma halları`,

@@ -272,7 +272,7 @@ class DashboardService
         return Project::query()
             ->leftJoinSub($stats, 'stats', fn ($join) => $join->on('stats.project_id', '=', 'projects.id'))
             ->where('projects.active', true)
-            ->excludeDashboardUnassigned()
+            ->excludeFromOperationalDashboard()
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('projects.id', $projectId))
             ->select(
                 'projects.id',
@@ -1049,7 +1049,7 @@ class DashboardService
     private function dashboardExportDetailRows(array $filters, string $block): array
     {
         if (in_array($block, ['equipment-types', 'equipment-types-nwc', 'equipment-types-icare'], true)) {
-            return $this->dashboardEquipmentTypeExportRows($filters);
+            return $this->dashboardEquipmentTypeExportRows($filters, $block);
         }
 
         if (in_array($block, ['actual-work-hours-nwc', 'actual-work-hours-icare'], true)) {
@@ -1126,7 +1126,10 @@ class DashboardService
         $filters = $this->normalizeFilters($filters);
         $localStats = $this->equipmentExportStats($filters);
         $source = 'Local stats';
-        $equipment = $this->equipmentQuery($filters)
+        $equipmentQuery = in_array($block, ['ownership-share', 'project-comparison'], true)
+            ? $this->shareEquipmentQuery($filters)
+            : $this->equipmentQuery($filters);
+        $equipment = $equipmentQuery
             ->with(['type:id,name', 'project:id,name,code', 'projectWialonGroup:id,name,wialon_group_id'])
             ->get();
         $hoursByEquipmentId = $localStats['hours'];
@@ -1195,10 +1198,13 @@ class DashboardService
             ->all();
     }
 
-    private function dashboardEquipmentTypeExportRows(array $filters): array
+    private function dashboardEquipmentTypeExportRows(array $filters, string $block): array
     {
         $filters = $this->normalizeFilters($filters);
-        $equipment = $this->equipmentQuery($filters)
+        $query = in_array($block, ['equipment-types-nwc', 'equipment-types-icare'], true)
+            ? $this->shareEquipmentQuery($filters)
+            : $this->equipmentQuery($filters);
+        $equipment = $query
             ->with(['type:id,name', 'project:id,name'])
             ->get()
             ->sortBy([

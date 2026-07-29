@@ -21,6 +21,7 @@
                                     tabindex="0"
                                     data-drilldown-title="{{ $ownershipLabel ?? '' }} — {{ $type['name'] }}"
                                     data-drilldown-ownership="{{ $ownership ?? 'all' }}"
+                                    data-drilldown-ownership-scope="project_groups"
                                     data-drilldown-equipment-type-id="{{ $type['id'] ?? '' }}"
                                 >
                                     <td>{{ $type['name'] }}</td>
@@ -36,6 +37,7 @@
                         class="btn btn-link dashboard-expand-toggle mt-2 dashboard-drilldown-trigger"
                         data-drilldown-title="{{ $ownershipLabel ?? '' }}"
                         data-drilldown-ownership="{{ $ownership ?? 'all' }}"
+                        data-drilldown-ownership-scope="project_groups"
                     >Hamısını göstər</button>
                 @endif
             </div>

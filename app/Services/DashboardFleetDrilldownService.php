@@ -53,6 +53,7 @@ class DashboardFleetDrilldownService
             'date_from' => $range['from'],
             'date_to' => $range['to'],
             'ownership' => $this->normalizeOwnership($input['ownership'] ?? null),
+            'ownership_scope' => ($input['ownership_scope'] ?? null) === 'project_groups' ? 'project_groups' : 'operational',
             'project_id' => filled($projectId) ? (int) $projectId : null,
             'project_ids' => $this->integerArray($input['project_ids'] ?? []),
             'equipment_type_id' => $this->equipmentTypeId($input),
@@ -459,6 +460,7 @@ class DashboardFleetDrilldownService
             ->where('equipments.active', true)
             ->visibleInDashboard()
             ->boundToProjectWialonGroup()
+            ->when($filters['ownership_scope'] !== 'project_groups', fn (Builder $query) => $query->operationalDashboardProject())
             ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->when($filters['ownership'] !== 'all', fn (Builder $query) => $query->where('equipments.ownership_type', $this->ownershipType($filters['ownership'])))
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('equipments.project_id', $projectId))
