@@ -32,6 +32,9 @@ class DashboardController extends Controller
         ?string $selectedTab = null,
         bool $fragment = false
     ): View {
+        $selectedTab ??= array_key_exists((string) $request->query('tab'), config('dashboard.tabs', []))
+            ? (string) $request->query('tab')
+            : (string) config('dashboard.default_tab', 'overview');
         $filters = $dashboard->normalizeFilters($request->only([
             'date_from',
             'date_to',
@@ -43,7 +46,7 @@ class DashboardController extends Controller
         ]));
 
         $startedAt = microtime(true);
-        $data = $dashboard->getDashboard($filters);
+        $data = $dashboard->getDashboardTab($filters, $selectedTab);
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         Log::info('Dashboard generated', [
@@ -64,10 +67,7 @@ class DashboardController extends Controller
             'dashboardLayout' => $layout->getResolvedLayout(),
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
             'dashboardTabs' => config('dashboard.tabs', []),
-            'selectedDashboardTab' => $selectedTab
-                ?? (array_key_exists((string) $request->query('tab'), config('dashboard.tabs', []))
-                    ? (string) $request->query('tab')
-                    : (string) config('dashboard.default_tab', 'overview')),
+            'selectedDashboardTab' => $selectedTab,
             'dashboardTabFragment' => $fragment,
         ]);
     }

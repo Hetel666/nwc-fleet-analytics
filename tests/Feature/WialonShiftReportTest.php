@@ -309,7 +309,7 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame(1, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_1]);
         $this->assertSame(2, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
         $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10]);
-        $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_OVER_10]);
+        $this->assertSame(1, $summary[FleetEfficiencyService::DAY_STATUS_OVER_10]);
         $this->assertSame(4, $summary[FleetEfficiencyService::STATUS_OVERTIME]);
         $this->assertSame(7, $summary['total']);
 
@@ -348,9 +348,9 @@ class WialonShiftReportTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(3, $overTenRows->total());
-        $this->assertEqualsCanonicalizing(
-            ['Unit daytime 9 overtime 4', 'Unit daytime 10.5 overtime 0', 'Unit daytime 10 overtime 2'],
+        $this->assertSame(1, $overTenRows->total());
+        $this->assertSame(
+            ['Unit daytime 10.5 overtime 0'],
             collect($overTenRows->items())->pluck('name')->all()
         );
 
@@ -362,9 +362,9 @@ class WialonShiftReportTest extends TestCase
             'work_category' => FleetEfficiencyService::DAY_STATUS_OVER_10,
         ]);
 
-        $this->assertCount(3, $overTenExcelRows);
-        $this->assertEqualsCanonicalizing(
-            ['Unit daytime 9 overtime 4', 'Unit daytime 10.5 overtime 0', 'Unit daytime 10 overtime 2'],
+        $this->assertCount(1, $overTenExcelRows);
+        $this->assertSame(
+            ['Unit daytime 10.5 overtime 0'],
             collect($overTenExcelRows)->pluck(2)->all()
         );
 

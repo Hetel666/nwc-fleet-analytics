@@ -66,7 +66,7 @@ class EngineHoursTop20SyncService
             foreach ($groups as $group) {
                 $item = WialonReportSyncItem::query()
                     ->where('sync_type', WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20)
-                    ->whereDate('report_date', $date->toDateString())
+                    ->where('report_date', $date->toDateString())
                     ->where('wialon_group_id', $group->wialon_group_id)
                     ->first();
 
@@ -317,7 +317,7 @@ class EngineHoursTop20SyncService
     {
         $existing = EngineHoursReportUnitDay::query()
             ->where('equipment_id', $equipment->id)
-            ->whereDate('stat_date', $date->toDateString())
+            ->where('stat_date', $date->toDateString())
             ->first();
         $sourceGroups = collect($existing?->source_group_ids_json ?? [])
             ->push((string) $group->wialon_group_id)
@@ -423,8 +423,7 @@ class EngineHoursTop20SyncService
             ->join('equipments', 'equipments.id', '=', 'engine_hours_report_unit_days.equipment_id')
             ->leftJoin('equipment_types', 'equipment_types.id', '=', 'engine_hours_report_unit_days.equipment_type_id')
             ->leftJoin('projects', 'projects.id', '=', 'engine_hours_report_unit_days.project_id')
-            ->whereDate('engine_hours_report_unit_days.stat_date', '>=', $from->toDateString())
-            ->whereDate('engine_hours_report_unit_days.stat_date', '<=', $to->toDateString())
+            ->whereBetween('engine_hours_report_unit_days.stat_date', [$from->toDateString(), $to->toDateString()])
             ->where('equipments.active', true)
             ->whereIn('engine_hours_report_unit_days.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
             ->whereIn('engine_hours_report_unit_days.vehicle_type', FleetVehicleType::names(FleetVehicleType::TOP_WORKING_TYPES))
@@ -497,7 +496,7 @@ class EngineHoursTop20SyncService
         }
 
         $includedRows = EngineHoursReportUnitDay::query()
-            ->whereDate('stat_date', $item->report_date?->toDateString())
+            ->where('stat_date', $item->report_date?->toDateString())
             ->where('project_id', $group->project_id)
             ->where('ownership_type', $group->ownership_type)
             ->where('engine_hours_source', EngineHoursReportUnitDay::SOURCE)
@@ -534,7 +533,7 @@ class EngineHoursTop20SyncService
             ->where(function (Builder $query): void {
                 $query->whereNull('next_retry_at')->orWhere('next_retry_at', '<=', now($this->timezone()));
             })
-            ->when(! empty($filters['date']), fn (Builder $query) => $query->whereDate('report_date', $filters['date']))
+            ->when(! empty($filters['date']), fn (Builder $query) => $query->where('report_date', $filters['date']))
             ->when(! empty($filters['group']), fn (Builder $query) => $query->where('wialon_group_id', trim((string) $filters['group'])))
             ->orderBy('report_date')
             ->orderBy('wialon_group_id')

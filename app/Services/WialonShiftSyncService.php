@@ -58,7 +58,7 @@ class WialonShiftSyncService
 
                 $item = WialonReportSyncItem::query()
                     ->where('sync_type', WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY)
-                    ->whereDate('report_date', $date->toDateString())
+                    ->where('report_date', $date->toDateString())
                     ->where('wialon_group_id', $group->wialon_group_id)
                     ->first();
 
@@ -202,8 +202,7 @@ class WialonShiftSyncService
         [$from, $to] = $this->period($filters);
         $rows = WialonReportSyncItem::query()
             ->where('sync_type', WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY)
-            ->whereDate('report_date', '>=', $from->toDateString())
-            ->whereDate('report_date', '<=', $to->toDateString())
+            ->whereBetween('report_date', [$from->toDateString(), $to->toDateString()])
             ->get();
 
         return [
@@ -233,7 +232,7 @@ class WialonShiftSyncService
             ->where('status', WialonReportSyncItem::STATUS_FAILED)
             ->when(! ($filters['all_failed'] ?? false), function (Builder $query) use ($filters): void {
                 if (! empty($filters['date'])) {
-                    $query->whereDate('report_date', $filters['date']);
+                    $query->where('report_date', $filters['date']);
                 }
 
                 if (! empty($filters['group'])) {
@@ -263,7 +262,7 @@ class WialonShiftSyncService
         }
 
         $knownRows = EquipmentDailyStat::query()
-            ->whereDate('stat_date', $item->report_date?->toDateString())
+            ->where('stat_date', $item->report_date?->toDateString())
             ->where('project_id', $group->project_id)
             ->where('ownership_type', $group->ownership_type)
             ->where('calculation_source', FleetShiftDailyStatsSyncService::SOURCE)
@@ -473,7 +472,7 @@ class WialonShiftSyncService
             ->where(function (Builder $query): void {
                 $query->whereNull('next_retry_at')->orWhere('next_retry_at', '<=', now($this->timezone()));
             })
-            ->when(! empty($filters['date']), fn (Builder $query) => $query->whereDate('report_date', $filters['date']))
+            ->when(! empty($filters['date']), fn (Builder $query) => $query->where('report_date', $filters['date']))
             ->when(! empty($filters['group']), fn (Builder $query) => $query->where('wialon_group_id', trim((string) $filters['group'])))
             ->orderBy('report_date')
             ->orderBy('wialon_group_id')

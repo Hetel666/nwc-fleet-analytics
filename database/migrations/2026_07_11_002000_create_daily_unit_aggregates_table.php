@@ -41,16 +41,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('equipments', function (Blueprint $table): void {
-            $table->dropIndex('equip_project_type_owner_active_idx');
-            $table->dropIndex('equip_type_owner_idx');
-        });
-
-        Schema::table('equipment_daily_stats', function (Blueprint $table): void {
-            $table->dropIndex('eds_date_project_owner_idx');
-            $table->dropIndex('eds_date_unit_project_idx');
-        });
-
         Schema::dropIfExists('daily_unit_aggregates');
     }
 };

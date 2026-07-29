@@ -3,9 +3,12 @@
 namespace Tests\Feature;
 
 use App\Models\Equipment;
+use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Models\Setting;
+use App\Models\WialonSyncCheckpoint;
 use App\Services\DashboardService;
 use App\Services\WialonService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,14 +46,23 @@ class WialonReportStatsSyncTest extends TestCase
             'name' => 'LOT3 NWC',
             'ownership_type' => Equipment::OWNERSHIP_NWC,
         ]);
+        EquipmentDailyStat::query()->create([
+            'stat_date' => '2026-06-01',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 8,
+            'daytime_hours' => 7,
+            'overtime_hours' => 1,
+            'total_hours' => 8,
+            'calculation_source' => 'wialon_shift_report',
+        ]);
 
         $wialon = new class extends WialonService
         {
             public int $calls = 0;
 
-            public function __construct()
-            {
-            }
+            public function __construct() {}
 
             public function getReportTablesRows(
                 int|string $resourceId,
@@ -93,6 +105,7 @@ class WialonReportStatsSyncTest extends TestCase
             'equipment_id' => $equipment->id,
             'worked_hours' => 8.00,
             'distance_km' => 42.50,
+            'overtime_hours' => 1.00,
             'calculation_source' => 'wialon_engine_hours_report',
         ]);
         $this->assertDatabaseHas('daily_unit_aggregates', [
@@ -110,5 +123,11 @@ class WialonReportStatsSyncTest extends TestCase
 
         $this->assertSame(1, $wialon->calls);
         $this->assertSame([], $result[Equipment::OWNERSHIP_NWC]);
+        $checkpoint = WialonSyncCheckpoint::query()->firstOrFail();
+        $this->assertSame(WialonSyncCheckpoint::TYPE_DAILY_ENGINE_STATS, $checkpoint->sync_type);
+        $this->assertSame('2026-06-01', $checkpoint->report_date->toDateString());
+        $this->assertSame($project->id, $checkpoint->project_id);
+        $this->assertSame('success', $checkpoint->status);
+        $this->assertSame(0, Setting::query()->where('key', 'like', 'wialon_daily_engine_sync:%')->count());
     }
 }

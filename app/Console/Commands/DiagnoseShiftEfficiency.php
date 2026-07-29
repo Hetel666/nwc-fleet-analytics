@@ -117,8 +117,7 @@ class DiagnoseShiftEfficiency extends Command
 
         return EquipmentDailyStat::query()
             ->with(['equipment.type:id,name', 'equipment.project:id,name', 'project:id,name'])
-            ->whereDate('stat_date', '>=', $from->toDateString())
-            ->whereDate('stat_date', '<=', $to->toDateString())
+            ->whereBetween('stat_date', [$from->toDateString(), $to->toDateString()])
             ->when($this->option('group'), fn ($query, string $group) => $query->where('source_group_id', trim($group)))
             ->when($this->option('project'), fn ($query, string $project) => $query->where('project_id', (int) $project))
             ->when(in_array($ownership, ['NWC', 'ICARE'], true), fn ($query) => $query->where('ownership_type', $ownership))

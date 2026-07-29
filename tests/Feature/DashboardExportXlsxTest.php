@@ -2,14 +2,19 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\GenerateDashboardExportJob;
+use App\Models\DashboardExport;
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
+use App\Services\DashboardService;
 use App\Services\XlsxExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -105,5 +110,83 @@ class DashboardExportXlsxTest extends TestCase
         $this->assertStringContainsString("'+SUM(1,1)", $sheet);
         $this->assertStringContainsString("'-SUM(1,1)", $sheet);
         $this->assertStringContainsString("'@SUM(1,1)", $sheet);
+    }
+
+    public function test_large_dashboard_export_is_queued_and_owned_by_requesting_user(): void
+    {
+        Queue::fake();
+        config(['fleet.dashboard.export_sync_max_days' => 1]);
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+
+        $response = $this->actingAs($user)->get(route('dashboard.export', [
+            'block' => 'overview',
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+        ]));
+
+        $response->assertOk()->assertSee('Excel faylı hazırlanır');
+
+        $export = DashboardExport::query()->firstOrFail();
+        $this->assertSame($user->id, $export->user_id);
+        $this->assertSame(DashboardExport::STATUS_PENDING, $export->status);
+        Queue::assertPushed(
+            GenerateDashboardExportJob::class,
+            fn (GenerateDashboardExportJob $job): bool => $job->exportId === $export->id
+        );
+
+        $this->get(route('dashboard.exports.status', $export))
+            ->assertOk()
+            ->assertJson(['status' => DashboardExport::STATUS_PENDING]);
+    }
+
+    public function test_background_dashboard_export_generates_downloadable_file(): void
+    {
+        $exportRoot = storage_path('framework/testing/dashboard-exports');
+        File::deleteDirectory($exportRoot);
+        config(['fleet.dashboard.export_root' => $exportRoot]);
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = DashboardExport::query()->create([
+            'user_id' => $user->id,
+            'block' => 'overview',
+            'filters' => [
+                'from' => '2026-07-01',
+                'to' => '2026-07-01',
+                'project_id' => null,
+                'equipment_type_id' => null,
+                'ownership_type' => null,
+            ],
+            'status' => DashboardExport::STATUS_PENDING,
+        ]);
+
+        (new GenerateDashboardExportJob($record->id))->handle(
+            app(DashboardService::class),
+            app(XlsxExportService::class)
+        );
+
+        $record->refresh();
+        $this->assertSame(DashboardExport::STATUS_READY, $record->status);
+        $this->assertFileExists($exportRoot.DIRECTORY_SEPARATOR.$record->path);
+
+        $this->actingAs($user)
+            ->get(route('dashboard.exports.download', $record))
+            ->assertOk()
+            ->assertDownload($record->file_name);
+
+        File::deleteDirectory($exportRoot);
+    }
+
+    public function test_background_export_can_exceed_modal_period_limit(): void
+    {
+        config([
+            'fleet.dashboard.modal_max_period_days' => 7,
+            'fleet.dashboard.export_max_period_days' => 366,
+        ]);
+
+        $export = app(DashboardService::class)->getDashboardExport([
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-04-30',
+        ], 'least-working');
+
+        $this->assertSame([], $export['sections'][0]['rows']);
     }
 }

@@ -129,11 +129,11 @@ class DiagnoseFleetOvertime extends Command
             ->whereIn('equipment_daily_stats.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE]);
 
         if ($this->option('from')) {
-            $query->whereDate('equipment_daily_stats.stat_date', '>=', $this->option('from'));
+            $query->where('equipment_daily_stats.stat_date', '>=', $this->option('from'));
         }
 
         if ($this->option('to')) {
-            $query->whereDate('equipment_daily_stats.stat_date', '<=', $this->option('to'));
+            $query->where('equipment_daily_stats.stat_date', '<=', $this->option('to'));
         }
 
         if ($this->option('project')) {

@@ -100,7 +100,7 @@ class FleetEfficiencyServiceTest extends TestCase
         ], Equipment::OWNERSHIP_NWC);
 
         $this->assertSame(2, $summary['between_7_and_10_hours']);
-        $this->assertSame(2, $summary['over_10_hours']);
+        $this->assertSame(1, $summary['over_10_hours']);
         $this->assertSame(1, $summary['overtime']);
         $this->assertSame(3, $summary['total']);
 
@@ -111,9 +111,9 @@ class FleetEfficiencyServiceTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(2, $tenPlusRows->total());
-        $this->assertEqualsCanonicalizing(
-            ['Loader 10 with overtime', 'Loader daytime over ten'],
+        $this->assertSame(1, $tenPlusRows->total());
+        $this->assertSame(
+            ['Loader daytime over ten'],
             collect($tenPlusRows->items())->pluck('name')->all()
         );
     }

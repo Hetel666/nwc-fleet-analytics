@@ -7,7 +7,21 @@
 @php
     $nwc = \App\Models\Equipment::OWNERSHIP_NWC;
     $icare = \App\Models\Equipment::OWNERSHIP_ICARE;
-    $overview = $data['overview'];
+    $overview = $data['overview'] ?? [
+        'ownership_share' => [],
+        'total_hours' => 0,
+        'total_distance' => 0,
+        'avg_hours_per_equipment' => 0,
+        'avg_distance_per_equipment' => 0,
+        'utilization' => 0,
+        'changes' => [
+            'total_hours' => 0,
+            'total_distance' => 0,
+            'avg_hours_per_equipment' => 0,
+            'avg_distance_per_equipment' => 0,
+            'utilization' => 0,
+        ],
+    ];
     $ownershipLabelFor = fn (?string $value): string => $value === $icare ? __('app.ownership_icare') : __('app.ownership_nwc');
     $typeGroups = $data['equipmentTypesByOwnership'] ?? [$nwc => [], $icare => []];
     $typeNwc = collect($typeGroups[$nwc] ?? [])->sortByDesc('total')->values();
@@ -2842,7 +2856,7 @@ const workCategoryColors = {
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
-const workCategoryDonutKeys = workCategoryKeys.filter(key => !['over_10_hours', 'overtime'].includes(key));
+const workCategoryDonutKeys = workCategoryKeys.filter(key => key !== 'overtime');
 const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
 const workCategoryDonutLabels = workCategoryDonutIndexes.map(index => workCategoryLabels[index]);
 const workCategoryDonutColorValues = workCategoryDonutKeys.map(key => workCategoryColors[key]);

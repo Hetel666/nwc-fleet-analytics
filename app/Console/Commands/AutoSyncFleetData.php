@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Setting;
+use App\Models\WialonReportSyncItem;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -114,14 +115,26 @@ class AutoSyncFleetData extends Command
             $date = now(config('app.timezone'))->subDays($offset + 1)->toDateString();
             $reportOk = $this->runArtisanCommand('fleet:sync-report-stats', ['--date' => $date, '--force' => true]);
             $aggregateOk = $this->runArtisanCommand('fleet:aggregate-daily', ['--date' => $date]);
-            $top20Ok = $this->runArtisanCommand('fleet:sync-engine-hours-report', ['--date' => $date, '--limit' => $top20Limit]);
+            $top20Ok = $this->runBatchedReportCommand(
+                'fleet:sync-engine-hours-report',
+                ['--date' => $date, '--limit' => $top20Limit],
+                WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20,
+                $date
+            );
             $geozonOk = $this->runArtisanCommand('fleet:sync-geozon-api', [
                 '--from' => $date.' 00:00:00',
                 '--to' => $date.' 23:59:59',
                 '--force' => true,
             ]);
             $shiftPlanOk = $this->runArtisanCommand('fleet:plan-shift-sync', ['--from' => $date, '--to' => $date]);
-            $shiftRunOk = $this->runArtisanCommand('fleet:run-shift-sync', ['--date' => $date, '--limit' => $shiftLimit]);
+            $shiftRunOk = $shiftPlanOk['ok']
+                ? $this->runBatchedReportCommand(
+                    'fleet:run-shift-sync',
+                    ['--date' => $date, '--limit' => $shiftLimit],
+                    WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY,
+                    $date
+                )
+                : ['ok' => false, 'output' => 'Shift planning failed.'];
 
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
             $top20Success = $top20Success && $top20Ok['ok'];
@@ -145,6 +158,66 @@ class AutoSyncFleetData extends Command
         );
 
         return $dailySuccess && $top20Success && $geozonSuccess && $shiftSuccess;
+    }
+
+    /**
+     * Run all ready batches and only report success when no incomplete items remain.
+     *
+     * @return array{ok: bool, output: string}
+     */
+    private function runBatchedReportCommand(string $command, array $parameters, string $syncType, string $date): array
+    {
+        $outputs = [];
+        $maxBatches = max(1, (int) config('fleet.wialon.auto_sync_max_batches', 100));
+
+        for ($batch = 1; $batch <= $maxBatches; $batch++) {
+            $result = $this->runArtisanCommand($command, $parameters);
+            $outputs[] = $result['output'];
+
+            if (! $result['ok']) {
+                return ['ok' => false, 'output' => implode(' ', array_filter($outputs))];
+            }
+
+            if (! $this->hasReadyReportItems($syncType, $date)) {
+                break;
+            }
+        }
+
+        $incomplete = WialonReportSyncItem::query()
+            ->where('sync_type', $syncType)
+            ->where('report_date', $date)
+            ->whereIn('status', [
+                WialonReportSyncItem::STATUS_PENDING,
+                WialonReportSyncItem::STATUS_RUNNING,
+                WialonReportSyncItem::STATUS_RETRY,
+                WialonReportSyncItem::STATUS_FAILED,
+            ])
+            ->count();
+
+        if ($incomplete > 0) {
+            $outputs[] = "Incomplete checkpoint items: {$incomplete}.";
+        }
+
+        return [
+            'ok' => $incomplete === 0,
+            'output' => implode(' ', array_filter($outputs)),
+        ];
+    }
+
+    private function hasReadyReportItems(string $syncType, string $date): bool
+    {
+        return WialonReportSyncItem::query()
+            ->where('sync_type', $syncType)
+            ->where('report_date', $date)
+            ->whereIn('status', [
+                WialonReportSyncItem::STATUS_PENDING,
+                WialonReportSyncItem::STATUS_RETRY,
+            ])
+            ->where(function ($query): void {
+                $query->whereNull('next_retry_at')
+                    ->orWhere('next_retry_at', '<=', now(config('app.timezone')));
+            })
+            ->exists();
     }
 
     private function runTask(string $name, string $command): bool

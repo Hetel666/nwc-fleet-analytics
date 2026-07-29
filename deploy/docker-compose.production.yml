@@ -12,6 +12,8 @@ services:
     networks:
       - default
       - coolify
+    volumes:
+      - app-exports:/var/www/html/storage/app/private/dashboard-exports
     labels:
       traefik.enable: "true"
       traefik.docker.network: coolify
@@ -40,6 +42,8 @@ services:
       disable: true
     networks:
       - default
+    volumes:
+      - app-exports:/var/www/html/storage/app/private/dashboard-exports
 
   worker:
     build:
@@ -56,6 +60,8 @@ services:
       disable: true
     networks:
       - default
+    volumes:
+      - app-exports:/var/www/html/storage/app/private/dashboard-exports
 
   mysql:
     image: mysql:8.0
@@ -77,6 +83,7 @@ services:
 
 volumes:
   mysql-data:
+  app-exports:
 
 networks:
   coolify:

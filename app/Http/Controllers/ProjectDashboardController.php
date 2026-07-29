@@ -14,6 +14,9 @@ class ProjectDashboardController extends Controller
 {
     public function show(Request $request, Project $project, DashboardService $dashboard, DashboardLayoutService $layout): View
     {
+        $selectedTab = array_key_exists((string) $request->query('tab'), config('dashboard.tabs', []))
+            ? (string) $request->query('tab')
+            : (string) config('dashboard.default_tab', 'overview');
         $filters = $dashboard->normalizeFilters([
             ...$request->only([
                 'date_from',
@@ -27,7 +30,7 @@ class ProjectDashboardController extends Controller
         ]);
 
         $startedAt = microtime(true);
-        $data = $dashboard->getDashboard($filters);
+        $data = $dashboard->getDashboardTab($filters, $selectedTab);
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         Log::info('Project dashboard generated', [
@@ -46,6 +49,9 @@ class ProjectDashboardController extends Controller
             'selectedProject' => $project,
             'dashboardLayout' => $layout->getResolvedLayout(),
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
+            'dashboardTabs' => config('dashboard.tabs', []),
+            'selectedDashboardTab' => $selectedTab,
+            'dashboardTabFragment' => false,
         ]);
     }
 }

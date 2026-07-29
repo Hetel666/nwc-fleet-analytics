@@ -52,7 +52,10 @@
                         @foreach ($categoryKeys as $key)
                             @php
                                 $count = (int) ($summary[$key] ?? 0);
-                                $percent = $total > 0 ? round(($count / $total) * 100, 1) : 0;
+                                $percentDenominator = $key === 'overtime'
+                                    ? (int) ($summary['overtime_denominator'] ?? 0)
+                                    : $total;
+                                $percent = $percentDenominator > 0 ? round(($count / $percentDenominator) * 100, 1) : 0;
                                 $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
                             @endphp
                             <tr

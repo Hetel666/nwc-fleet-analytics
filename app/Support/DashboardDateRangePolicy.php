@@ -45,7 +45,7 @@ class DashboardDateRangePolicy
     {
         $key = match ($context) {
             'modal', 'drilldown' => 'modal_max_period_days',
-            'export', 'excel' => 'export_sync_max_days',
+            'export', 'excel' => 'export_max_period_days',
             default => 'max_period_days',
         };
 

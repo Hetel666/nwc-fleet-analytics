@@ -115,7 +115,7 @@ class FleetShiftDailyStatsSyncService
         $dataAvailable = $record !== null && $daytime !== null && $overtime !== null;
         $hasOvertime = $overtime === null ? null : (float) $overtime > 0;
         $existing = EquipmentDailyStat::query()
-            ->whereDate('stat_date', $statDate)
+            ->where('stat_date', $statDate)
             ->where('equipment_id', $equipment->id)
             ->first();
 

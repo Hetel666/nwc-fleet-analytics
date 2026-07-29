@@ -14,7 +14,7 @@ class TopWorkingUnitsServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_returns_top_twenty_unit_day_rows_and_excludes_disallowed_types(): void
+    public function test_it_returns_top_twenty_period_rows_and_excludes_disallowed_types(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
@@ -35,9 +35,8 @@ class TopWorkingUnitsServiceTest extends TestCase
             'to' => '2026-07-02',
         ], 20);
 
-        $this->assertCount(2, $rows);
-        $this->assertSame([0.0, 8.0], array_column($rows, 'hours'));
-        $this->assertSame(['2026-07-01', '2026-07-02'], array_column($rows, 'date'));
+        $this->assertCount(1, $rows);
+        $this->assertSame([8.0], array_column($rows, 'hours'));
     }
 
     public function test_it_limits_top_working_rows_in_sql_order(): void
@@ -65,7 +64,7 @@ class TopWorkingUnitsServiceTest extends TestCase
         $this->assertSame(range(25.0, 6.0), array_column($most, 'hours'));
     }
 
-    public function test_it_does_not_sum_days_between_each_other(): void
+    public function test_it_sums_each_equipment_across_the_selected_period(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $loader = EquipmentType::query()->create(['name' => 'Loader']);
@@ -80,8 +79,8 @@ class TopWorkingUnitsServiceTest extends TestCase
             'to' => '2026-07-03',
         ], 20);
 
-        $this->assertCount(3, $rows);
-        $this->assertSame([9.1, 8.4, 6.7], array_column($rows, 'hours'));
+        $this->assertCount(1, $rows);
+        $this->assertSame([24.2], array_column($rows, 'hours'));
     }
 
     public function test_it_sorts_by_hours_date_name_and_wialon_id(): void

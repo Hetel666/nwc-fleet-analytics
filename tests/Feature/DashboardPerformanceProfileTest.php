@@ -95,4 +95,24 @@ class DashboardPerformanceProfileTest extends TestCase
         $this->assertNotContains('buildDashboard', $secondSegments->all());
         $this->assertContains('cache.get', $secondSegments->all());
     }
+
+    public function test_dashboard_tab_builds_only_shared_kpis_and_selected_tab_widgets(): void
+    {
+        config(['fleet.dashboard.cache_minutes' => 0]);
+
+        $data = app(DashboardService::class)->getDashboardTab([
+            'date_from' => '2026-07-23',
+            'date_to' => '2026-07-23',
+        ], 'efficiency');
+
+        $this->assertEqualsCanonicalizing([
+            'overview',
+            'projectActualWorkHourCategoriesByOwnership',
+            'dailyAverageDashboards',
+            'leastWorking',
+            'mostWorking',
+        ], array_keys($data));
+        $this->assertArrayNotHasKey('geofenceViolations', $data);
+        $this->assertArrayNotHasKey('projectOwnershipComparison', $data);
+    }
 }

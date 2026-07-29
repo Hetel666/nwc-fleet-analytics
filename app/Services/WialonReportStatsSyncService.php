@@ -7,6 +7,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\ProjectWialonGroup;
 use App\Models\Setting;
+use App\Models\WialonSyncCheckpoint;
 use App\Support\DashboardDateRangePolicy;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
@@ -44,7 +45,10 @@ class WialonReportStatsSyncService
 
         $settings = $this->wialonReportSettings();
         $syncKey = $this->wialonDailyEngineHoursSyncKey($filters, $settings, $group);
-        $previousSync = json_decode((string) Setting::query()->where('key', $syncKey)->value('value'), true);
+        $previousSync = WialonSyncCheckpoint::query()
+            ->where('checkpoint_key', $syncKey)
+            ->first()
+            ?->payload ?? [];
 
         if (! $force && ($previousSync['status'] ?? null) === 'success') {
             return [
@@ -76,7 +80,10 @@ class WialonReportStatsSyncService
 
         $settings = $this->wialonReportSettings();
         $syncKey = $this->wialonDailyRootEngineHoursSyncKey($filters, $settings, $group);
-        $previousSync = json_decode((string) Setting::query()->where('key', $syncKey)->value('value'), true);
+        $previousSync = WialonSyncCheckpoint::query()
+            ->where('checkpoint_key', $syncKey)
+            ->first()
+            ?->payload ?? [];
 
         if (! $force && ($previousSync['status'] ?? null) === 'success') {
             return [
@@ -159,7 +166,6 @@ class WialonReportStatsSyncService
                         'project_id' => $item->project_id,
                         'ownership_type' => $item->ownership_type,
                         'worked_hours' => $workedHours,
-                        'overtime_hours' => null,
                         'distance_km' => $distanceKm,
                         'utilization_percent' => round($utilization, 2),
                         'calculation_source' => 'wialon_engine_hours_report',
@@ -182,17 +188,25 @@ class WialonReportStatsSyncService
             }
         });
 
-        Setting::updateOrCreate(
-            ['key' => $syncKey],
+        WialonSyncCheckpoint::query()->updateOrCreate(
+            ['checkpoint_key' => $syncKey],
             [
-                'value' => json_encode([
+                'sync_type' => WialonSyncCheckpoint::TYPE_DAILY_ENGINE_STATS,
+                'report_date' => $filters['from'],
+                'project_id' => $filters['project_id'],
+                'ownership_type' => $ownershipType,
+                'wialon_group_id' => (string) $group->wialon_group_id,
+                'status' => 'success',
+                'equipment_count' => count($reportedEquipmentIds),
+                'payload' => [
                     'status' => 'success',
                     'equipment_count' => count($reportedEquipmentIds),
                     'synced_at' => now(config('app.timezone'))->toIso8601String(),
-                ], JSON_UNESCAPED_SLASHES),
-                'is_secret' => false,
+                ],
+                'completed_at' => now(config('app.timezone')),
             ]
         );
+        $this->pruneOldCheckpoints();
 
         Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
 
@@ -377,6 +391,16 @@ class WialonReportStatsSyncService
             'group_id' => $group->wialon_group_id,
             'date' => $filters['from'],
         ]));
+    }
+
+    private function pruneOldCheckpoints(): void
+    {
+        $retentionDays = max(7, (int) config('fleet.wialon.checkpoint_retention_days', 90));
+
+        WialonSyncCheckpoint::query()
+            ->where('sync_type', WialonSyncCheckpoint::TYPE_DAILY_ENGINE_STATS)
+            ->where('completed_at', '<', now(config('app.timezone'))->subDays($retentionDays))
+            ->delete();
     }
 
     private function wialonDailyRootEngineHoursSyncKey(array $filters, array $settings, object $group): string

@@ -141,8 +141,7 @@ class DashboardService
             ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
             ->leftJoin('equipment_daily_stats', function ($join) use ($filters): void {
                 $join->on('equipment_daily_stats.equipment_id', '=', 'equipments.id')
-                    ->whereDate('equipment_daily_stats.stat_date', '>=', $filters['from'])
-                    ->whereDate('equipment_daily_stats.stat_date', '<=', $filters['to']);
+                    ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']]);
 
                 if ($filters['project_id']) {
                     $join->where('equipment_daily_stats.project_id', $filters['project_id']);
@@ -520,7 +519,55 @@ class DashboardService
         $dashboard = [];
 
         foreach ($this->dashboardWidgetBuilders($filters) as $key => $builder) {
-            $dashboard[$key] = $this->performance->measure('widget.'.$key, $builder);
+            $dashboard[$key] = $key === 'averages' && isset($dashboard['overview'])
+                ? $this->averageMetricsFromOverview($dashboard['overview'])
+                : $this->performance->measure('widget.'.$key, $builder);
+        }
+
+        return $dashboard;
+    }
+
+    public function getDashboardTab(array $filters, string $tab): array
+    {
+        $filters = $this->normalizeFilters($filters);
+        $tab = array_key_exists($tab, config('dashboard.tabs', []))
+            ? $tab
+            : (string) config('dashboard.default_tab', 'overview');
+        $cacheMinutes = max(0, (int) config('fleet.dashboard.cache_minutes', 10));
+
+        if ($cacheMinutes === 0) {
+            return $this->buildDashboardTab($filters, $tab);
+        }
+
+        return $this->rememberDashboardTabWithLock($filters, $tab, $cacheMinutes);
+    }
+
+    private function buildDashboardTab(array $filters, string $tab): array
+    {
+        $keys = match ($tab) {
+            'efficiency' => [
+                'overview',
+                'projectActualWorkHourCategoriesByOwnership',
+                'dailyAverageDashboards',
+                'leastWorking',
+                'mostWorking',
+            ],
+            'geozones' => [
+                'overview',
+                'geofenceViolations',
+            ],
+            default => [
+                'overview',
+                'equipmentTypesByOwnership',
+                'projectOwnershipComparison',
+                'utilizationTrendByOwnership',
+            ],
+        };
+        $builders = $this->dashboardWidgetBuilders($filters);
+        $dashboard = [];
+
+        foreach ($keys as $key) {
+            $dashboard[$key] = $this->performance->measure('widget.'.$key, $builders[$key]);
         }
 
         return $dashboard;
@@ -624,13 +671,57 @@ class DashboardService
         ];
     }
 
-    private function dashboardCacheKey(array $filters): string
+    private function dashboardCacheKey(array $filters, string $scope = 'all'): string
     {
         return 'dashboard:aggregate:'.md5(json_encode([
-            'version' => 19,
+            'version' => 20,
             'data_version' => (int) Cache::get('dashboard:data-version', 1),
+            'scope' => $scope,
             'filters' => $filters,
         ]));
+    }
+
+    private function rememberDashboardTabWithLock(array $filters, string $tab, int $cacheMinutes): array
+    {
+        $cacheKey = $this->dashboardCacheKey($filters, 'tab:'.$tab);
+        $cached = Cache::get($cacheKey);
+
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $lockSeconds = max(1, (int) config('fleet.dashboard.cache_lock_seconds', 30));
+        $waitSeconds = max(0, (int) config('fleet.dashboard.cache_lock_wait_seconds', 5));
+
+        try {
+            return Cache::lock('lock:'.$cacheKey, $lockSeconds)->block(
+                $waitSeconds,
+                function () use ($cacheKey, $cacheMinutes, $filters, $tab): array {
+                    $cached = Cache::get($cacheKey);
+
+                    if (is_array($cached)) {
+                        return $cached;
+                    }
+
+                    $value = $this->buildDashboardTab($filters, $tab);
+                    Cache::put($cacheKey, $value, now()->addMinutes($cacheMinutes));
+
+                    return $value;
+                }
+            );
+        } catch (LockTimeoutException) {
+            return Cache::get($cacheKey) ?: $this->buildDashboardTab($filters, $tab);
+        }
+    }
+
+    private function averageMetricsFromOverview(array $overview): array
+    {
+        return [
+            'avg_hours_per_equipment' => $overview['avg_hours_per_equipment'],
+            'avg_distance_per_equipment' => $overview['avg_distance_per_equipment'],
+            'utilization' => $overview['utilization'],
+            'changes' => $overview['changes'],
+        ];
     }
 
     private function rememberDashboardWithLock(array $filters, int $cacheMinutes): array
@@ -749,13 +840,13 @@ class DashboardService
         ];
     }
 
-    public function normalizeFilters(array $filters): array
+    public function normalizeFilters(array $filters, string $context = 'dashboard'): array
     {
         $range = $this->dateRangePolicy->normalize([
             ...$filters,
             '_default_from' => now(config('app.timezone'))->startOfMonth(),
             '_default_to' => now(config('app.timezone')),
-        ], 'dashboard');
+        ], $context);
         $ownershipType = $filters['ownership_type'] ?? null;
 
         if (! in_array($ownershipType, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
@@ -794,7 +885,10 @@ class DashboardService
             $filters['ownership_type'] = Equipment::OWNERSHIP_ICARE;
         }
 
-        return [$this->normalizeFilters($filters), $block];
+        $normalized = $this->normalizeFilters($filters, 'export');
+        $normalized['_date_context'] = 'export';
+
+        return [$normalized, $block];
     }
 
     private function dashboardExportTitle(string $block, array $filters = []): string
@@ -1452,8 +1546,7 @@ class DashboardService
     {
         return $this->applyDailyStatFilters(
             EquipmentDailyStat::query()
-                ->whereDate('stat_date', '>=', $filters['from'])
-                ->whereDate('stat_date', '<=', $filters['to']),
+                ->whereBetween('stat_date', [$filters['from'], $filters['to']]),
             $filters
         );
     }
@@ -1466,8 +1559,10 @@ class DashboardService
 
         return $this->applyDailyStatFilters(
             EquipmentDailyStat::query()
-                ->whereDate('stat_date', '>=', $from->copy()->subDays($days)->toDateString())
-                ->whereDate('stat_date', '<=', $to->copy()->subDays($days)->toDateString()),
+                ->whereBetween('stat_date', [
+                    $from->copy()->subDays($days)->toDateString(),
+                    $to->copy()->subDays($days)->toDateString(),
+                ]),
             $filters
         );
     }
@@ -1504,8 +1599,7 @@ class DashboardService
             ->join('equipment_daily_stats', 'equipment_daily_stats.equipment_id', '=', 'equipments.id')
             ->where('equipments.active', true)
             ->visibleInDashboard()
-            ->whereDate('equipment_daily_stats.stat_date', '>=', $filters['from'])
-            ->whereDate('equipment_daily_stats.stat_date', '<=', $filters['to'])
+            ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
             ->when($filters['project_id'], fn ($query, $projectId) => $query->where('equipment_daily_stats.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn ($query, $typeId) => $query->where('equipments.equipment_type_id', $typeId))
             ->when($filters['ownership_type'], fn ($query, $ownershipType) => $query->where('equipment_daily_stats.ownership_type', $ownershipType))

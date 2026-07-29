@@ -480,8 +480,7 @@ class DashboardDailyAverageService
         [$dateSql, $dateBindings] = $this->dateSeriesTable($dates);
         $latestStats = EquipmentDailyStat::query()
             ->selectRaw('MAX(id) as id, equipment_id, stat_date')
-            ->whereDate('stat_date', '>=', $filters['from'])
-            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
             ->whereIn('equipment_id', $equipmentIds)
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
             ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('project_id', $projectIds))
@@ -604,8 +603,7 @@ class DashboardDailyAverageService
 
         $latestStats = EquipmentDailyStat::query()
             ->selectRaw('MAX(id) as id, equipment_id, stat_date')
-            ->whereDate('stat_date', '>=', $filters['from'])
-            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
             ->whereIn('equipment_id', $equipmentIds)
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
             ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('project_id', $projectIds))
@@ -869,8 +867,7 @@ class DashboardDailyAverageService
         }
 
         return EquipmentDailyStat::query()
-            ->whereDate('stat_date', '>=', $filters['from'])
-            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
             ->whereIn('equipment_id', $equipmentIds)
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('project_id', $projectId))
             ->when($filters['project_ids'], fn (Builder $query, array $projectIds) => $query->whereIn('project_id', $projectIds))
@@ -914,11 +911,12 @@ class DashboardDailyAverageService
      */
     private function normalizedFilters(array $filters): array
     {
+        $dateContext = ($filters['_date_context'] ?? null) === 'export' ? 'export' : 'modal';
         $range = $this->dateRangePolicy->normalize([
             ...$filters,
             '_default_from' => now(config('app.timezone'))->toDateString(),
             '_default_to' => $filters['from'] ?? $filters['date_from'] ?? now(config('app.timezone'))->toDateString(),
-        ], 'modal');
+        ], $dateContext);
 
         $ownership = $filters['ownership_type'] ?? null;
         if (! in_array($ownership, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
@@ -926,6 +924,7 @@ class DashboardDailyAverageService
         }
 
         return [
+            '_date_context' => $dateContext,
             'from' => $range['from'],
             'to' => $range['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,

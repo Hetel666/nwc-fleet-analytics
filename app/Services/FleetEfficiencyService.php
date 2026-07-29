@@ -150,8 +150,7 @@ class FleetEfficiencyService
 
         $stats = EquipmentDailyStat::query()
             ->whereIn('equipment_id', $equipment->pluck('id')->all())
-            ->whereDate('stat_date', '>=', $filters['from'])
-            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
             ->orderBy('id')
             ->get()
             ->keyBy(fn (EquipmentDailyStat $stat): string => $stat->equipment_id.'|'.$stat->stat_date->toDateString());
@@ -239,7 +238,7 @@ class FleetEfficiencyService
 
             if (
                 ($category === self::DAY_STATUS_OVER_10 || $dayStatus === self::DAY_STATUS_OVER_10)
-                && (! $row['data_available'] || $row['total_hours'] === null || (float) $row['total_hours'] <= 10)
+                && (! $row['data_available'] || $row['daytime_hours'] === null || (float) $row['daytime_hours'] <= 10)
             ) {
                 return false;
             }
@@ -359,8 +358,7 @@ class FleetEfficiencyService
 
         $latestStats = EquipmentDailyStat::query()
             ->selectRaw('MAX(id) as id, equipment_id, stat_date')
-            ->whereDate('stat_date', '>=', $filters['from'])
-            ->whereDate('stat_date', '<=', $filters['to'])
+            ->whereBetween('stat_date', [$filters['from'], $filters['to']])
             ->groupBy('equipment_id', 'stat_date');
 
         return DB::query()
@@ -503,7 +501,7 @@ class FleetEfficiencyService
                 ->where('stats.daytime_hours', '>=', 7)
                 ->where('stats.daytime_hours', '<=', 10),
             self::DAY_STATUS_OVER_10 => $query->whereRaw($availableSql)
-                ->whereRaw($this->totalHoursSql().' > 10'),
+                ->where('stats.daytime_hours', '>', 10),
             default => null,
         };
     }
@@ -588,7 +586,7 @@ class FleetEfficiencyService
             DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours < 1 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_1),
             DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours >= 1 AND stats.daytime_hours < 7 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_7),
             DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours >= 7 AND stats.daytime_hours <= 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
-            DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$this->totalHoursSql().' > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
+            DB::raw('SUM(CASE WHEN '.$availableSql.' AND stats.daytime_hours > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
             DB::raw('COUNT(*) as total_rows'),
             DB::raw('SUM(CASE WHEN NOT '.$availableSql.' THEN 1 ELSE 0 END) as '.self::STATUS_NO_DATA),
             DB::raw('SUM(CASE WHEN NOT '.$availableSql.' THEN 1 ELSE 0 END) as missing_data'),
@@ -862,13 +860,15 @@ class FleetEfficiencyService
      */
     private function normalizeFilters(array $filters): array
     {
+        $dateContext = ($filters['_date_context'] ?? null) === 'export' ? 'export' : 'modal';
         $range = $this->dateRangePolicy->normalize([
             ...$filters,
             '_default_from' => now(config('app.timezone'))->toDateString(),
             '_default_to' => $filters['from'] ?? $filters['date_from'] ?? now(config('app.timezone'))->toDateString(),
-        ], 'modal');
+        ], $dateContext);
 
         return [
+            '_date_context' => $dateContext,
             'from' => $range['from'],
             'to' => $range['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,

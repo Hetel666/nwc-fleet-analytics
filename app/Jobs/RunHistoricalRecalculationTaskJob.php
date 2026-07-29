@@ -11,6 +11,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use RuntimeException;
 use Throwable;
 
 class RunHistoricalRecalculationTaskJob implements ShouldQueue
@@ -24,7 +25,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
     public function __construct(public int $taskId)
     {
         $this->timeout = (int) config('historical_recalculation.timeout', 900);
-        $this->tries = 1;
+        $this->tries = max(1, (int) config('historical_recalculation.tries', 3));
     }
 
     public function handle(WialonReportStatsSyncService $sync, HistoricalRecalculationService $service): void
@@ -112,7 +113,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         $date = $task->stat_date->toDateString();
 
         if ($run->dashboard_section === HistoricalRecalculation::SECTION_TOP_WORKING_UNITS) {
-            Artisan::call('fleet:sync-engine-hours-report', array_filter([
+            $this->runArtisanOrFail('fleet:sync-engine-hours-report', array_filter([
                 '--date' => $date,
                 '--project' => $task->project_id,
                 '--ownership' => $task->ownership_type,
@@ -124,7 +125,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         }
 
         if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {
-            Artisan::call('fleet:sync-geozon-api', array_filter([
+            $this->runArtisanOrFail('fleet:sync-geozon-api', array_filter([
                 '--from' => $date.' 00:00:00',
                 '--to' => $date.' 23:59:59',
                 '--project' => $task->project_id,
@@ -142,5 +143,21 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         ], (bool) $run->force);
 
         return (int) ($result['equipment_count'] ?? 0);
+    }
+
+    private function runArtisanOrFail(string $command, array $parameters): void
+    {
+        $exitCode = Artisan::call($command, $parameters);
+
+        if ($exitCode !== 0) {
+            $output = trim(Artisan::output());
+            $message = "Command {$command} failed with exit code {$exitCode}.";
+
+            if ($output !== '') {
+                $message .= ' '.$output;
+            }
+
+            throw new RuntimeException($message);
+        }
     }
 }

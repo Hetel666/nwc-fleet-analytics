@@ -12,7 +12,9 @@ use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Services\HistoricalRecalculationService;
+use App\Services\WialonReportStatsSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -264,6 +266,43 @@ class HistoricalRecalculationTest extends TestCase
         app(HistoricalRecalculationService::class)->dispatchNextPendingFetchTask($run->refresh());
 
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
+    }
+
+    public function test_historical_fetch_task_is_failed_when_section_command_returns_error(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Failed command project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '500',
+            'name' => 'Failed command project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '5000');
+        $service = app(HistoricalRecalculationService::class);
+        $run = $service->createRun([
+            'date_from' => '2026-07-28',
+            'date_to' => '2026-07-28',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => true,
+        ], $admin);
+        $task = $run->tasks()->where('operation', HistoricalRecalculation::OPERATION_FETCH)->firstOrFail();
+
+        Artisan::shouldReceive('call')->once()->andReturn(1);
+        Artisan::shouldReceive('output')->once()->andReturn('Wialon report failed.');
+
+        (new RunHistoricalRecalculationTaskJob($task->id))->handle(
+            app(WialonReportStatsSyncService::class),
+            $service
+        );
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_FAILED, $task->refresh()->status);
+        $this->assertStringContainsString('exit code 1', (string) $task->error_message);
     }
 
     private function equipment(

@@ -97,7 +97,7 @@ class TopWorkingUnitsService
 
         $row = $this->baseQuery([...$filters, 'from' => $date, 'to' => $date])
             ->where('engine_hours_report_unit_days.equipment_id', $equipmentId)
-            ->whereDate('engine_hours_report_unit_days.stat_date', $date)
+            ->where('engine_hours_report_unit_days.stat_date', $date)
             ->first();
 
         return $row ? $this->mapRow($row) : null;
@@ -156,9 +156,9 @@ class TopWorkingUnitsService
     private function journalRows(array $filters, string $ranking, ?int $limit = null): Collection
     {
         $filters = $this->normalizeFilters($filters);
-        $showDate = $filters['from'] !== $filters['to'];
+        $showDate = false;
         $query = $this->baseQuery($filters);
-        $this->applyRankingOrder($query, $ranking);
+        $this->applyRankingOrder($query, $ranking, $filters['from'] !== $filters['to']);
 
         if ($limit !== null) {
             $query->limit(max(0, $limit));
@@ -182,11 +182,10 @@ class TopWorkingUnitsService
     {
         $filters = $this->normalizeFilters($filters);
 
-        return EngineHoursReportUnitDay::query()
+        $query = EngineHoursReportUnitDay::query()
             ->join('equipments', 'equipments.id', '=', 'engine_hours_report_unit_days.equipment_id')
             ->leftJoin('projects', 'projects.id', '=', 'engine_hours_report_unit_days.project_id')
-            ->whereDate('engine_hours_report_unit_days.stat_date', '>=', $filters['from'])
-            ->whereDate('engine_hours_report_unit_days.stat_date', '<=', $filters['to'])
+            ->whereBetween('engine_hours_report_unit_days.stat_date', [$filters['from'], $filters['to']])
             ->where('equipments.active', true)
             ->where(function (Builder $query): void {
                 $query->where('equipments.excluded_from_dashboard', false)
@@ -207,30 +206,62 @@ class TopWorkingUnitsService
             ->whereIn('engine_hours_report_unit_days.vehicle_type', FleetVehicleType::names(FleetVehicleType::TOP_WORKING_TYPES))
             ->when($filters['project_id'], fn (Builder $query, int $projectId) => $query->where('engine_hours_report_unit_days.project_id', $projectId))
             ->when($filters['equipment_type_id'], fn (Builder $query, int $typeId) => $query->where('engine_hours_report_unit_days.equipment_type_id', $typeId))
-            ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('engine_hours_report_unit_days.ownership_type', $ownership))
-            ->select([
-                'engine_hours_report_unit_days.id as stat_id',
-                'engine_hours_report_unit_days.stat_date',
-                'engine_hours_report_unit_days.equipment_id',
-                'engine_hours_report_unit_days.ownership_type',
-                'engine_hours_report_unit_days.engine_hours',
-                'engine_hours_report_unit_days.engine_hours_source',
-                'engine_hours_report_unit_days.vehicle_type as type_name',
-                'engine_hours_report_unit_days.project_id',
-                'equipments.name',
-                'equipments.registration_number',
-                'equipments.wialon_unit_id',
-                'projects.name as project_name',
-            ]);
+            ->when($filters['ownership_type'], fn (Builder $query, string $ownership) => $query->where('engine_hours_report_unit_days.ownership_type', $ownership));
+
+        if ($filters['from'] !== $filters['to']) {
+            return $query
+                ->selectRaw('MIN(engine_hours_report_unit_days.id) as stat_id')
+                ->selectRaw('MIN(engine_hours_report_unit_days.stat_date) as stat_date')
+                ->selectRaw('SUM(engine_hours_report_unit_days.engine_hours) as engine_hours')
+                ->addSelect([
+                    'engine_hours_report_unit_days.equipment_id',
+                    'engine_hours_report_unit_days.ownership_type',
+                    'engine_hours_report_unit_days.vehicle_type as type_name',
+                    'engine_hours_report_unit_days.project_id',
+                    'equipments.name',
+                    'equipments.registration_number',
+                    'equipments.wialon_unit_id',
+                    'projects.name as project_name',
+                ])
+                ->groupBy([
+                    'engine_hours_report_unit_days.equipment_id',
+                    'engine_hours_report_unit_days.ownership_type',
+                    'engine_hours_report_unit_days.vehicle_type',
+                    'engine_hours_report_unit_days.project_id',
+                    'equipments.name',
+                    'equipments.registration_number',
+                    'equipments.wialon_unit_id',
+                    'projects.name',
+                ]);
+        }
+
+        return $query->select([
+            'engine_hours_report_unit_days.id as stat_id',
+            'engine_hours_report_unit_days.stat_date',
+            'engine_hours_report_unit_days.equipment_id',
+            'engine_hours_report_unit_days.ownership_type',
+            'engine_hours_report_unit_days.engine_hours',
+            'engine_hours_report_unit_days.engine_hours_source',
+            'engine_hours_report_unit_days.vehicle_type as type_name',
+            'engine_hours_report_unit_days.project_id',
+            'equipments.name',
+            'equipments.registration_number',
+            'equipments.wialon_unit_id',
+            'projects.name as project_name',
+        ]);
     }
 
-    private function applyRankingOrder(Builder $query, string $ranking): void
+    private function applyRankingOrder(Builder $query, string $ranking, bool $aggregated = false): void
     {
         $direction = $ranking === 'least' ? 'asc' : 'desc';
 
+        $query->orderBy($aggregated ? 'engine_hours' : 'engine_hours_report_unit_days.engine_hours', $direction);
+
+        if (! $aggregated) {
+            $query->orderBy('engine_hours_report_unit_days.stat_date');
+        }
+
         $query
-            ->orderBy('engine_hours_report_unit_days.engine_hours', $direction)
-            ->orderBy('engine_hours_report_unit_days.stat_date')
             ->orderByRaw('LOWER(equipments.name) ASC')
             ->orderBy('equipments.wialon_unit_id');
     }
@@ -349,17 +380,19 @@ class TopWorkingUnitsService
      */
     private function normalizeFilters(array $filters): array
     {
+        $dateContext = ($filters['_date_context'] ?? null) === 'export' ? 'export' : 'modal';
         $range = $this->dateRangePolicy->normalize([
             ...$filters,
             '_default_from' => now(config('app.timezone'))->toDateString(),
             '_default_to' => $filters['from'] ?? $filters['date_from'] ?? now(config('app.timezone'))->toDateString(),
-        ], 'modal');
+        ], $dateContext);
 
         $ownership = $this->ownershipType($filters['ownership_type'] ?? $filters['ownership'] ?? null);
 
         $ranking = $filters['top_working_ranking'] ?? null;
 
         return [
+            '_date_context' => $dateContext,
             'from' => $range['from'],
             'to' => $range['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,

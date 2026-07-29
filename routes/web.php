@@ -40,7 +40,9 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::delete('/dashboard/layout', [DashboardLayoutController::class, 'destroy'])->middleware('admin')->name('dashboard.layout.destroy');
     Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->name('dashboard.ownership.export');
     Route::get('/dashboard/top-working-units/export', DashboardTopWorkingUnitsExportController::class)->name('dashboard.top-working-units.export');
-    Route::get('/dashboard/export', DashboardExportController::class)->name('dashboard.export');
+    Route::get('/dashboard/export', [DashboardExportController::class, 'create'])->name('dashboard.export');
+    Route::get('/dashboard/exports/{export}/status', [DashboardExportController::class, 'status'])->name('dashboard.exports.status');
+    Route::get('/dashboard/exports/{export}/download', [DashboardExportController::class, 'download'])->name('dashboard.exports.download');
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
     Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');
