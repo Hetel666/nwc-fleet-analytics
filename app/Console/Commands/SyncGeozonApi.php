@@ -142,8 +142,8 @@ class SyncGeozonApi extends Command
         UnitForeignGeofenceInterval::query()
             ->where('source', GeofenceReportViolationCalculator::SOURCE)
             ->where('source_group_id', (string) $group->wialon_group_id)
-            ->where('report_from', $from)
-            ->where('report_to', $to)
+            ->where('report_from', '<=', $to)
+            ->where('report_to', '>', $from)
             ->delete();
     }
 

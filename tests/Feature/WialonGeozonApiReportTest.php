@@ -12,8 +12,10 @@ use App\Models\UnitForeignGeofenceInterval;
 use App\Services\GeofenceReportViolationCalculator;
 use App\Services\GeofenceViolationService;
 use App\Services\WialonGeozonReportParser;
+use App\Services\WialonGeozonReportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Mockery\MockInterface;
 use Tests\TestCase;
 
 class WialonGeozonApiReportTest extends TestCase
@@ -355,6 +357,48 @@ class WialonGeozonApiReportTest extends TestCase
         $this->assertSame(GeofenceReportViolationCalculator::SOURCE, UnitForeignGeofenceInterval::first()->source);
     }
 
+    public function test_force_sync_removes_overlapping_rolling_report_periods_for_the_selected_group(): void
+    {
+        [, $group] = $this->fixture();
+        $otherGroup = ProjectWialonGroup::create([
+            'project_id' => $group->project_id,
+            'wialon_group_id' => '601701999',
+            'name' => 'Other group',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+
+        $overlapping = $this->reportInterval($group, '2026-07-16 06:30:00', '2026-07-17 06:30:00');
+        $previous = $this->reportInterval($group, '2026-07-15 00:00:00', '2026-07-16 23:59:59');
+        $otherGroupInterval = $this->reportInterval($otherGroup, '2026-07-16 06:30:00', '2026-07-17 06:30:00');
+
+        $this->mock(WialonGeozonReportService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('executeForGroup')->once()->andReturn([
+                'resource_id' => '601701680',
+                'template_id' => '30',
+                'table_name' => 'geozones',
+            ]);
+        });
+        $this->mock(WialonGeozonReportParser::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('parse')->once()->andReturn([
+                'records' => [],
+                'parent_rows' => 0,
+                'nested_rows' => 0,
+            ]);
+        });
+
+        $this->artisan('fleet:sync-geozon-api', [
+            '--from' => '2026-07-17 00:00:00',
+            '--to' => '2026-07-17 23:59:59',
+            '--group' => $group->wialon_group_id,
+            '--force' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseMissing('unit_foreign_geofence_intervals', ['id' => $overlapping->id]);
+        $this->assertDatabaseHas('unit_foreign_geofence_intervals', ['id' => $previous->id]);
+        $this->assertDatabaseHas('unit_foreign_geofence_intervals', ['id' => $otherGroupInterval->id]);
+    }
+
     public function test_carbon_duration_rejects_reversed_interval(): void
     {
         $record = $this->record('Kəlbəcər yol', '19', 10800, '7001');
@@ -455,6 +499,22 @@ class WialonGeozonApiReportTest extends TestCase
             'duration_seconds' => $durationSeconds,
             'invalid_reason' => null,
         ];
+    }
+
+    private function reportInterval(ProjectWialonGroup $group, string $reportFrom, string $reportTo): UnitForeignGeofenceInterval
+    {
+        return UnitForeignGeofenceInterval::create([
+            'source_group_id' => $group->wialon_group_id,
+            'home_project_id' => $group->project_id,
+            'entered_at' => $reportFrom,
+            'left_at' => $reportTo,
+            'duration_seconds' => CarbonImmutable::parse($reportFrom)->diffInSeconds(CarbonImmutable::parse($reportTo)),
+            'status' => UnitForeignGeofenceInterval::STATUS_CLOSED,
+            'report_from' => $reportFrom,
+            'report_to' => $reportTo,
+            'source' => GeofenceReportViolationCalculator::SOURCE,
+            'unique_key' => sha1($group->wialon_group_id.'|'.$reportFrom.'|'.$reportTo),
+        ]);
     }
 
     private function context(): array
