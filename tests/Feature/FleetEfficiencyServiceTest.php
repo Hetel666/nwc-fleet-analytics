@@ -150,6 +150,46 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame('Positive overtime', $rows[0][2]);
     }
 
+    public function test_daytime_category_does_not_require_overtime_data(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+        $equipment = $this->equipment('Daytime only excavator', $type, $project);
+
+        $this->stat($equipment, '2026-07-01', 3.5, null);
+
+        $service = app(FleetEfficiencyService::class);
+        $summary = $service->summaryForOwnership([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(0, $summary['less_than_1_hour']);
+        $this->assertSame(1, $summary['less_than_7_hours']);
+        $this->assertSame(0, $summary['missing_data']);
+        $this->assertSame(1, $summary['overtime_unknown']);
+
+        $lessThanOne = $service->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_1,
+            'per_page' => 20,
+        ]);
+        $lessThanSeven = $service->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_7,
+            'per_page' => 20,
+        ]);
+
+        $this->assertSame(0, $lessThanOne->total());
+        $this->assertSame(1, $lessThanSeven->total());
+        $this->assertSame('Daytime only excavator', $lessThanSeven->items()[0]['name']);
+        $this->assertSame(3.5, $lessThanSeven->items()[0]['daytime_hours']);
+        $this->assertTrue($lessThanSeven->items()[0]['data_available']);
+        $this->assertNull($lessThanSeven->items()[0]['has_overtime']);
+    }
+
     public function test_missing_data_is_included_in_less_than_one_hour_and_can_be_filtered(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);

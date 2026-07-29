@@ -573,7 +573,7 @@ class FleetEfficiencyService
 
     private function dataAvailableSql(): string
     {
-        return '(stats.id IS NOT NULL AND stats.daytime_hours IS NOT NULL AND stats.overtime_hours IS NOT NULL AND (stats.data_available IS NULL OR stats.data_available != 0))';
+        return '(stats.id IS NOT NULL AND stats.daytime_hours IS NOT NULL)';
     }
 
     /**
@@ -658,11 +658,7 @@ class FleetEfficiencyService
             ? $daytimeHours + $overtimeHours
             : ($row->total_hours === null ? null : max(0.0, (float) $row->total_hours));
         $dataAvailable = $row->stat_id !== null
-            && $daytimeHours !== null
-            && $overtimeHours !== null
-            && $row->data_available !== false
-            && $row->data_available !== 0
-            && $row->data_available !== '0';
+            && $daytimeHours !== null;
         $daytimeStatus = $dataAvailable ? $this->statusForHours($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
         $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
         $sourceIntervals = is_string($row->source_intervals_json ?? null)
@@ -701,7 +697,7 @@ class FleetEfficiencyService
         $daytimeHours = $stat ? $this->daytimeHours($stat) : null;
         $overtimeHours = $stat ? $this->overtimeHours($stat) : null;
         $totalHours = $stat ? $this->totalHours($stat, $daytimeHours, $overtimeHours) : null;
-        $dataAvailable = $stat !== null && $daytimeHours !== null && $overtimeHours !== null && $stat->data_available !== false;
+        $dataAvailable = $stat !== null && $daytimeHours !== null;
         $daytimeStatus = $dataAvailable ? $this->statusForHours($daytimeHours) : self::DAY_STATUS_LESS_THAN_1;
         $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
 
