@@ -440,6 +440,53 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ])));
     }
 
+    public function test_efficiency_export_uses_unique_equipment_total_for_overlapping_indicators(): void
+    {
+        Cache::flush();
+
+        $project = Project::create(['name' => 'Efficiency Project', 'active' => true]);
+        $type = EquipmentType::create(['name' => 'Excavator']);
+        $working = $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'Working unit');
+        $this->equipment($project, $type, Equipment::OWNERSHIP_NWC, 'Missing unit');
+
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701930',
+            'name' => 'Efficiency Project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+
+        EquipmentDailyStat::create([
+            'stat_date' => '2026-07-28',
+            'equipment_id' => $working->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 11,
+            'daytime_hours' => 8,
+            'overtime_hours' => 3,
+            'total_hours' => 11,
+            'day_status' => FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10,
+            'has_overtime' => true,
+            'data_available' => true,
+            'daytime_data_available' => true,
+            'overtime_data_available' => true,
+            'distance_km' => 0,
+            'calculation_source' => 'wialon_shift_report',
+            'calculation_status' => 'ok',
+        ]);
+
+        $export = app(DashboardService::class)->getDashboardExport([
+            'project_id' => $project->id,
+            'date_from' => '2026-07-28',
+            'date_to' => '2026-07-28',
+        ], 'actual-work-hours-nwc');
+        $summaryRows = $export['sections'][0]['rows'];
+
+        $this->assertSame([1, 0, 1, 1, 1, 2], array_column($summaryRows, 1));
+        $this->assertSame(['50.0%', '0.0%', '50.0%', '50.0%', '50.0%', '100.0%'], array_column($summaryRows, 2));
+        $this->assertCount(2, $export['sections'][1]['rows']);
+    }
+
     public function test_average_metrics_by_ownership_use_prepared_engine_hours_and_mileage_stats(): void
     {
         $project = Project::create(['name' => 'Yuxari Sirvan LOT1', 'active' => true]);

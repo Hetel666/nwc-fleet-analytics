@@ -63,7 +63,7 @@
             $summary[$key] = (int) $rows->sum($key);
         }
 
-        $summary['total'] = (int) array_sum(array_intersect_key($summary, array_flip(['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'over_10_hours'])));
+        $summary['total'] = (int) $rows->sum('total');
         $summary['missing_data'] = (int) $rows->sum('missing_data');
         $summary['overtime_denominator'] = (int) $rows->sum('overtime_denominator');
         $summary['overtime_unknown'] = (int) $rows->sum('overtime_unknown');
@@ -2838,7 +2838,7 @@ const workCategoryColors = {
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
-const workCategoryDonutKeys = workCategoryKeys.filter(key => key !== 'overtime');
+const workCategoryDonutKeys = workCategoryKeys.filter(key => !['over_10_hours', 'overtime'].includes(key));
 const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
 const workCategoryDonutLabels = workCategoryDonutIndexes.map(index => workCategoryLabels[index]);
 const workCategoryDonutColorValues = workCategoryDonutKeys.map(key => workCategoryColors[key]);

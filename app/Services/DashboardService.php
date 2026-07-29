@@ -1097,14 +1097,15 @@ class DashboardService
         $labels = $this->actualWorkHourDashboardBucketLabels();
         $keys = array_keys($labels);
         $summary = array_fill_keys($keys, 0);
+        $total = 0;
 
         foreach ($this->getProjectActualWorkHourCategoriesByOwnership($filters)[$ownership] ?? [] as $row) {
             foreach ($keys as $key) {
                 $summary[$key] += (int) ($row[$key] ?? 0);
             }
-        }
 
-        $total = array_sum($summary);
+            $total += (int) ($row['total'] ?? 0);
+        }
 
         return collect($keys)
             ->map(fn (string $key): array => [

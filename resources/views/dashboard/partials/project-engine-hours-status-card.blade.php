@@ -1,9 +1,6 @@
 @php
     $categoryKeys = $categoryLabels->keys();
     $total = (int) ($summary['total'] ?? 0);
-    $missingData = (int) ($summary['missing_data'] ?? 0);
-    $overtimeDenominator = (int) ($summary['overtime_denominator'] ?? 0);
-    $overtimeUnknown = (int) ($summary['overtime_unknown'] ?? 0);
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
     $title = $title ?? null;
     $drilldownProjectId = $drilldownProjectId ?? ($filters['project_id'] ?? null);
@@ -55,8 +52,7 @@
                         @foreach ($categoryKeys as $key)
                             @php
                                 $count = (int) ($summary[$key] ?? 0);
-                                $percentDenominator = $key === 'overtime' ? $overtimeDenominator : $total;
-                                $percent = $percentDenominator > 0 ? round(($count / $percentDenominator) * 100, 1) : 0;
+                                $percent = $total > 0 ? round(($count / $total) * 100, 1) : 0;
                                 $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
                             @endphp
                             <tr
