@@ -57,7 +57,8 @@ class FleetEfficiencyServiceTest extends TestCase
 
         $this->assertSame(2, $summary['less_than_7_hours']);
         $this->assertSame(0, $summary['between_7_and_10_hours']);
-        $this->assertSame(1, $summary['less_than_1_hour']);
+        $this->assertSame(0, $summary['less_than_1_hour']);
+        $this->assertSame(1, $summary['no_data']);
         $this->assertSame(1, $summary['missing_data']);
         $this->assertSame(3, $summary['total']);
     }
@@ -190,7 +191,7 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertNull($lessThanSeven->items()[0]['has_overtime']);
     }
 
-    public function test_missing_data_is_included_in_less_than_one_hour_and_can_be_filtered(): void
+    public function test_missing_data_is_separate_from_less_than_one_hour_and_can_be_filtered(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Excavator']);
@@ -206,7 +207,8 @@ class FleetEfficiencyServiceTest extends TestCase
             'to' => '2026-07-01',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(2, $summary['less_than_1_hour']);
+        $this->assertSame(1, $summary['less_than_1_hour']);
+        $this->assertSame(1, $summary['no_data']);
         $this->assertSame(1, $summary['missing_data']);
         $this->assertSame(2, $summary['total']);
 
@@ -216,7 +218,7 @@ class FleetEfficiencyServiceTest extends TestCase
             'work_category' => 'less_than_1_hour',
         ]);
 
-        $this->assertCount(2, $allRows);
+        $this->assertCount(1, $allRows);
 
         $missingRows = $service->exportRows([
             'from' => '2026-07-01',

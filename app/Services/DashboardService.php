@@ -1343,6 +1343,7 @@ class DashboardService
             'between_7_and_10_hours' => 0,
             'over_10_hours' => 0,
             'overtime' => 0,
+            'no_data' => 0,
             'total' => 0,
             'missing_data' => 0,
             'overtime_denominator' => 0,
@@ -1553,6 +1554,7 @@ class DashboardService
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 0,
             ],
             Equipment::OWNERSHIP_ICARE => [
                 'less_than_1_hour' => 0,
@@ -1560,6 +1562,7 @@ class DashboardService
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 0,
             ],
         ];
     }
@@ -1583,6 +1586,7 @@ class DashboardService
             'from_7_to_10', 'between_7_and_10_hours' => '7-10 saat işləyən',
             'over_10_hours' => __('app.worked_over_10_hours'),
             'overtime' => __('app.worked_overtime_hours'),
+            'no_data' => __('app.no_data'),
             default => $bucket,
         };
     }
@@ -1595,6 +1599,7 @@ class DashboardService
             'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
             'over_10_hours' => __('app.worked_over_10_hours'),
             'overtime' => __('app.worked_overtime_hours'),
+            'no_data' => __('app.no_data'),
         ];
     }
 

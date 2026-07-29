@@ -36,6 +36,7 @@
         'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
         'over_10_hours' => __('app.worked_over_10_hours'),
         'overtime' => __('app.worked_overtime_hours'),
+        'no_data' => __('app.no_data'),
     ]);
     $actualWorkCategoryRanges = collect([
         'less_than_1_hour' => '< 1 saat',
@@ -43,6 +44,7 @@
         'between_7_and_10_hours' => '7 - 10 saat',
         'over_10_hours' => '> 10 saat',
         'overtime' => '18:00 - 07:59 (Overtime)',
+        'no_data' => '-',
     ]);
     $actualWorkCategoryColors = collect([
         'less_than_1_hour' => '#1f6feb',
@@ -50,6 +52,7 @@
         'between_7_and_10_hours' => '#24b35b',
         'over_10_hours' => '#8b5cf6',
         'overtime' => '#ef4444',
+        'no_data' => '#94a3b8',
     ]);
     $efficiencyVehicleTypes = collect(config('fleet_efficiency.efficiency_vehicle_types', config('fleet_efficiency.allowed_vehicle_types', [])))
         ->unique()
@@ -2834,6 +2837,7 @@ const workCategoryColors = {
     between_7_and_10_hours: '#24b35b',
     over_10_hours: '#8b5cf6',
     overtime: '#ef4444',
+    no_data: '#94a3b8',
 };
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());

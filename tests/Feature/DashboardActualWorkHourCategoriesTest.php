@@ -48,11 +48,12 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1_hour' => 4,
+                'less_than_1_hour' => 2,
                 'less_than_7_hours' => 2,
                 'between_7_and_10_hours' => 2,
                 'over_10_hours' => 2,
                 'overtime' => 0,
+                'no_data' => 2,
             ],
             Equipment::OWNERSHIP_ICARE => [
                 'less_than_1_hour' => 2,
@@ -60,6 +61,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'between_7_and_10_hours' => 2,
                 'over_10_hours' => 2,
                 'overtime' => 0,
+                'no_data' => 0,
             ],
         ], $result);
     }
@@ -93,6 +95,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 0,
             ],
             Equipment::OWNERSHIP_ICARE => [
                 'less_than_1_hour' => 0,
@@ -100,6 +103,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 0,
             ],
         ], $result);
     }
@@ -176,18 +180,20 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1_hour' => 4,
+                'less_than_1_hour' => 0,
                 'less_than_7_hours' => 0,
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 4,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1_hour' => 1,
+                'less_than_1_hour' => 0,
                 'less_than_7_hours' => 0,
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 1,
             ],
         ], $result);
     }
@@ -272,18 +278,20 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1_hour' => 8,
+                'less_than_1_hour' => 0,
                 'less_than_7_hours' => 0,
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 8,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1_hour' => 4,
+                'less_than_1_hour' => 0,
                 'less_than_7_hours' => 0,
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
+                'no_data' => 4,
             ],
         ], $result);
 
@@ -404,11 +412,12 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ]);
 
         $this->assertSame([
-            'less_than_1_hour' => 3,
+            'less_than_1_hour' => 2,
             'less_than_7_hours' => 1,
             'between_7_and_10_hours' => 2,
             'over_10_hours' => 1,
             'overtime' => 1,
+            'no_data' => 1,
             'total' => 7,
             'missing_data' => 1,
         ], array_intersect_key($result[Equipment::OWNERSHIP_NWC][0], array_flip([
@@ -417,16 +426,18 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'between_7_and_10_hours',
             'over_10_hours',
             'overtime',
+            'no_data',
             'total',
             'missing_data',
         ])));
 
         $this->assertSame([
-            'less_than_1_hour' => 1,
+            'less_than_1_hour' => 0,
             'less_than_7_hours' => 0,
             'between_7_and_10_hours' => 0,
             'over_10_hours' => 1,
             'overtime' => 1,
+            'no_data' => 1,
             'total' => 2,
             'missing_data' => 1,
         ], array_intersect_key($result[Equipment::OWNERSHIP_ICARE][0], array_flip([
@@ -435,6 +446,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
             'between_7_and_10_hours',
             'over_10_hours',
             'overtime',
+            'no_data',
             'total',
             'missing_data',
         ])));
@@ -482,8 +494,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ], 'actual-work-hours-nwc');
         $summaryRows = $export['sections'][0]['rows'];
 
-        $this->assertSame([1, 0, 1, 1, 1, 2], array_column($summaryRows, 1));
-        $this->assertSame(['50.0%', '0.0%', '50.0%', '50.0%', '50.0%', '100.0%'], array_column($summaryRows, 2));
+        $this->assertSame([0, 0, 1, 1, 1, 1, 2], array_column($summaryRows, 1));
+        $this->assertSame(['0.0%', '0.0%', '50.0%', '50.0%', '50.0%', '50.0%', '100.0%'], array_column($summaryRows, 2));
         $this->assertCount(2, $export['sections'][1]['rows']);
     }
 
