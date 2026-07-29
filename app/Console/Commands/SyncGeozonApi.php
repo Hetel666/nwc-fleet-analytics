@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
 use App\Services\GeofenceReportViolationCalculator;
@@ -128,6 +127,7 @@ class SyncGeozonApi extends Command
                 ['unresolved geofences', $totals['unresolved_geofences']],
                 ['ambiguous geofences', $totals['ambiguous_geofences']],
                 ['project mismatches', $totals['project_mismatches']],
+                ['rows outside report period', $totals['outside_report_period']],
                 ['saved records', $totals['saved_records']],
                 ['updated records', $totals['updated_records']],
                 ['API errors', $totals['api_errors']],
@@ -142,8 +142,17 @@ class SyncGeozonApi extends Command
         UnitForeignGeofenceInterval::query()
             ->where('source', GeofenceReportViolationCalculator::SOURCE)
             ->where('source_group_id', (string) $group->wialon_group_id)
-            ->where('report_from', '<=', $to)
-            ->where('report_to', '>', $from)
+            ->where(function (Builder $query) use ($from, $to): void {
+                $query
+                    ->where(function (Builder $query) use ($from, $to): void {
+                        $query->where('report_from', '<=', $to)
+                            ->where('report_to', '>', $from);
+                    })
+                    ->orWhere(function (Builder $query) use ($from, $to): void {
+                        $query->where('entered_at', '<=', $to)
+                            ->where('left_at', '>', $from);
+                    });
+            })
             ->delete();
     }
 
@@ -278,6 +287,7 @@ class SyncGeozonApi extends Command
             'unresolved_geofences' => 0,
             'ambiguous_geofences' => 0,
             'project_mismatches' => 0,
+            'outside_report_period' => 0,
             'saved_records' => 0,
             'updated_records' => 0,
             'api_errors' => 0,

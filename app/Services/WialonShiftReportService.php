@@ -17,8 +17,8 @@ class WialonShiftReportService
     public function __construct(
         private WialonService $wialon,
         private WialonShiftReportParser $parser,
-    ) {
-    }
+        private ?WialonReportSessionLock $reportSessionLock = null,
+    ) {}
 
     public function findReportTemplate(?string $name = null): ?array
     {
@@ -51,10 +51,21 @@ class WialonShiftReportService
     }
 
     /**
-     * @param array<string, mixed> $settings
+     * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
      */
     private function executePreparedReport(string $groupId, CarbonInterface $from, CarbonInterface $to, array $settings, string $sid): array
+    {
+        return ($this->reportSessionLock ?? app(WialonReportSessionLock::class))->run(
+            fn (): array => $this->executePreparedReportUnlocked($groupId, $from, $to, $settings, $sid)
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return array<string, mixed>
+     */
+    private function executePreparedReportUnlocked(string $groupId, CarbonInterface $from, CarbonInterface $to, array $settings, string $sid): array
     {
         $cleanupError = null;
         $response = null;
@@ -221,6 +232,7 @@ class WialonShiftReportService
         foreach ($rows as $index => $row) {
             if ($this->rowChildren($row) !== []) {
                 $rows[$index]['r'] = $this->withNestedRows($sid, $tableIndex, $this->rowChildren($row), $depth + 1);
+
                 continue;
             }
 

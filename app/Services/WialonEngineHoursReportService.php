@@ -11,9 +11,10 @@ class WialonEngineHoursReportService
 {
     private ?array $resolvedSettings = null;
 
-    public function __construct(private WialonService $wialon)
-    {
-    }
+    public function __construct(
+        private WialonService $wialon,
+        private ?WialonReportSessionLock $reportSessionLock = null,
+    ) {}
 
     public function findReportTemplate(?string $name = null): ?array
     {
@@ -66,6 +67,16 @@ class WialonEngineHoursReportService
      * @return array<string, mixed>
      */
     public function executeForGroupWithSession(ProjectWialonGroup|int|string $group, CarbonInterface $from, CarbonInterface $to, string $sid): array
+    {
+        return ($this->reportSessionLock ?? app(WialonReportSessionLock::class))->run(
+            fn (): array => $this->executeForGroupWithSessionUnlocked($group, $from, $to, $sid)
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function executeForGroupWithSessionUnlocked(ProjectWialonGroup|int|string $group, CarbonInterface $from, CarbonInterface $to, string $sid): array
     {
         $groupId = $group instanceof ProjectWialonGroup ? $group->wialon_group_id : $group;
         $settings = $this->settings();

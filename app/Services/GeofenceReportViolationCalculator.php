@@ -264,6 +264,10 @@ class GeofenceReportViolationCalculator
             return $this->excluded($detail, (string) $record['invalid_reason'], 'invalid_rows');
         }
 
+        if (! $this->recordOverlapsReportPeriod($record, $context)) {
+            return $this->excluded($detail, 'outside_report_period', 'outside_report_period');
+        }
+
         if (! $homeProject instanceof Project) {
             return $this->excluded($detail, 'missing_home_project', 'missing_home_project');
         }
@@ -694,6 +698,32 @@ class GeofenceReportViolationCalculator
             || (string) ($record['unit_name'] ?? '') === $unitFilter;
     }
 
+    /**
+     * @param  array<string, mixed>  $record
+     * @param  array<string, mixed>  $context
+     */
+    private function recordOverlapsReportPeriod(array $record, array $context): bool
+    {
+        $entryAt = $record['entry_at'] ?? null;
+        $exitAt = $record['exit_at'] ?? null;
+        $reportFrom = $context['from'] ?? null;
+        $reportTo = $context['to'] ?? null;
+
+        if (
+            ! $entryAt instanceof CarbonInterface
+            || ! $exitAt instanceof CarbonInterface
+            || ! $reportFrom instanceof CarbonInterface
+            || ! $reportTo instanceof CarbonInterface
+        ) {
+            return true;
+        }
+
+        $graceHours = max(0, (int) config('fleet.wialon.report_period_grace_hours', 6));
+
+        return $entryAt->lessThanOrEqualTo($reportTo->addHours($graceHours))
+            && $exitAt->greaterThanOrEqualTo($reportFrom->subHours($graceHours));
+    }
+
     private function minimumDurationSeconds(): int
     {
         return ForeignGeofenceSettings::minimumMinutes() * 60;
@@ -714,6 +744,7 @@ class GeofenceReportViolationCalculator
             'ambiguous_geofences' => 0,
             'project_mismatches' => 0,
             'invalid_rows' => 0,
+            'outside_report_period' => 0,
         ];
     }
 }

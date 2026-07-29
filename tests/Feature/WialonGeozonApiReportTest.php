@@ -370,6 +370,11 @@ class WialonGeozonApiReportTest extends TestCase
 
         $overlapping = $this->reportInterval($group, '2026-07-16 06:30:00', '2026-07-17 06:30:00');
         $previous = $this->reportInterval($group, '2026-07-15 00:00:00', '2026-07-16 23:59:59');
+        $wrongReportPeriod = $this->reportInterval($group, '2026-07-17 08:00:00', '2026-07-17 12:00:00');
+        $wrongReportPeriod->update([
+            'report_from' => '2026-07-14 00:00:00',
+            'report_to' => '2026-07-15 23:59:59',
+        ]);
         $otherGroupInterval = $this->reportInterval($otherGroup, '2026-07-16 06:30:00', '2026-07-17 06:30:00');
 
         $this->mock(WialonGeozonReportService::class, function (MockInterface $mock): void {
@@ -396,7 +401,46 @@ class WialonGeozonApiReportTest extends TestCase
 
         $this->assertDatabaseMissing('unit_foreign_geofence_intervals', ['id' => $overlapping->id]);
         $this->assertDatabaseHas('unit_foreign_geofence_intervals', ['id' => $previous->id]);
+        $this->assertDatabaseMissing('unit_foreign_geofence_intervals', ['id' => $wrongReportPeriod->id]);
         $this->assertDatabaseHas('unit_foreign_geofence_intervals', ['id' => $otherGroupInterval->id]);
+    }
+
+    public function test_record_outside_requested_report_period_is_rejected(): void
+    {
+        [$homeProject, $group, $equipment] = $this->fixture();
+        $foreignProject = Project::create(['name' => 'Foreign Project', 'active' => true]);
+        $this->geofences($homeProject, $foreignProject);
+
+        $result = app(GeofenceReportViolationCalculator::class)->processGroupReport(
+            $group,
+            [$this->record('Foreign Zone', '19', 3600, $equipment->wialon_unit_id, '2026-07-27 20:00:00')],
+            $this->context(),
+            null,
+            true
+        );
+
+        $this->assertSame(1, $result['outside_report_period']);
+        $this->assertSame('outside_report_period', $result['details'][0]['reason']);
+        $this->assertDatabaseCount('unit_foreign_geofence_intervals', 0);
+    }
+
+    public function test_report_period_validation_allows_wialon_timezone_offset(): void
+    {
+        [$homeProject, $group, $equipment] = $this->fixture();
+        $foreignProject = Project::create(['name' => 'Foreign Project', 'active' => true]);
+        $this->geofences($homeProject, $foreignProject);
+
+        $result = app(GeofenceReportViolationCalculator::class)->processGroupReport(
+            $group,
+            [$this->record('Foreign Zone', '19', 3600, $equipment->wialon_unit_id, '2026-07-16 20:00:00')],
+            $this->context(),
+            null,
+            true
+        );
+
+        $this->assertSame(0, $result['outside_report_period']);
+        $this->assertSame(1, $result['foreign_visits']);
+        $this->assertDatabaseCount('unit_foreign_geofence_intervals', 1);
     }
 
     public function test_carbon_duration_rejects_reversed_interval(): void

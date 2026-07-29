@@ -8,9 +8,10 @@ use Throwable;
 
 class WialonGeozonReportService
 {
-    public function __construct(private WialonService $wialon)
-    {
-    }
+    public function __construct(
+        private WialonService $wialon,
+        private ?WialonReportSessionLock $reportSessionLock = null,
+    ) {}
 
     public function findTemplateByName(?string $name = null): ?array
     {
@@ -24,6 +25,16 @@ class WialonGeozonReportService
      * @return array<string, mixed>
      */
     public function executeForGroup(int|string $groupId, CarbonInterface $from, CarbonInterface $to): array
+    {
+        return ($this->reportSessionLock ?? app(WialonReportSessionLock::class))->run(
+            fn (): array => $this->executeForGroupUnlocked($groupId, $from, $to)
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function executeForGroupUnlocked(int|string $groupId, CarbonInterface $from, CarbonInterface $to): array
     {
         $settings = $this->settings();
         $sid = $this->wialon->getSessionId();
