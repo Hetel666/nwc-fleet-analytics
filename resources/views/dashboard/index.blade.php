@@ -96,7 +96,6 @@
     $geofenceViolations = $data['geofenceViolations'] ?? ['labels' => [], 'counts' => [], 'project_ids' => [], 'geofence_ids' => [], 'sector_keys' => [], 'total' => 0, 'rows' => []];
     $geofenceViolationRows = collect($geofenceViolations['rows'] ?? [])->sortByDesc('count')->values();
     $geofenceViolationTotal = (int) ($geofenceViolations['total'] ?? 0);
-    $geofenceViolationMaxCount = max(1, (int) $geofenceViolationRows->max('count'));
     $geofenceViolationActiveProjects = $geofenceViolationRows->count();
     $geofenceViolationTopRow = $geofenceViolationRows->first();
     $geofenceViolationPalette = ['#2563EB', '#22C55E', '#F59E0B', '#8B5CF6', '#14B8A6', '#EF4444', '#64748B', '#0EA5E9', '#A855F7', '#F97316'];
@@ -1184,12 +1183,6 @@
     .dashboard-page:not(.dashboard-layout-editing) .foreign-geofence-action.dashboard-drag-handle {
         display: none;
     }
-    .foreign-geofence-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.04fr) minmax(360px, .96fr);
-        gap: 16px;
-        align-items: stretch;
-    }
     .foreign-geofence-card,
     .foreign-geofence-kpi,
     .foreign-geofence-table-card {
@@ -1211,12 +1204,6 @@
         min-height: 0;
         padding: 18px 20px;
         overflow: hidden;
-    }
-    .foreign-geofence-card-title {
-        margin: 0 0 12px;
-        color: #0f172a;
-        font-size: 1rem;
-        font-weight: 800;
     }
     .foreign-geofence-donut-layout {
         display: grid;
@@ -1328,66 +1315,6 @@
         text-align: right;
         font-size: .75rem;
         font-weight: 800;
-    }
-    .foreign-geofence-stat-wrap {
-        max-height: 305px;
-        overflow-y: auto;
-        padding-right: 4px;
-    }
-    .foreign-geofence-stat-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0 7px;
-    }
-    .foreign-geofence-stat-table thead th {
-        padding: 0 12px 4px;
-        color: #64748b;
-        font-size: .6875rem;
-        text-transform: uppercase;
-        font-weight: 900;
-    }
-    .foreign-geofence-stat-row {
-        cursor: pointer;
-        transition: transform .22s ease, box-shadow .22s ease;
-    }
-    .foreign-geofence-stat-row td {
-        background: #f8fafc;
-        padding: 10px 12px;
-        font-size: .8125rem;
-        line-height: 1.25;
-        vertical-align: middle;
-    }
-    .foreign-geofence-stat-row td:first-child {
-        border-radius: 14px 0 0 14px;
-    }
-    .foreign-geofence-stat-row td:last-child {
-        border-radius: 0 14px 14px 0;
-    }
-    .foreign-geofence-stat-row:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 14px 28px rgba(15, 23, 42, .08);
-    }
-    .foreign-geofence-progress {
-        height: 7px;
-        border-radius: 999px;
-        overflow: hidden;
-        background: #e2e8f0;
-        margin-top: 7px;
-    }
-    .foreign-geofence-progress span {
-        display: block;
-        height: 100%;
-        border-radius: inherit;
-        background: linear-gradient(90deg, #2563eb, #14b8a6);
-    }
-    .foreign-geofence-show-all {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        color: #2563eb;
-        font-size: .8125rem;
-        font-weight: 900;
-        text-decoration: none;
     }
     .foreign-geofence-kpi-grid {
         display: grid;
@@ -1623,7 +1550,6 @@
         animation: foreignGeofenceFadeUp .32s ease both;
     }
     @media (max-width: 1199.98px) {
-        .foreign-geofence-grid,
         .foreign-geofence-donut-layout {
             grid-template-columns: minmax(0, 1fr);
         }
@@ -1796,7 +1722,6 @@
         box-shadow: 0 22px 54px rgba(15, 23, 42, .075) !important;
     }
     .dashboard-card-title-text,
-    .foreign-geofence-card-title,
     .foreign-geofence-table-title {
         color: var(--fleet-ink);
         font-weight: 800;
@@ -1825,8 +1750,7 @@
     }
     .dashboard-scroll-table,
     .dashboard-drilldown-table-wrapper,
-    .foreign-geofence-table-wrap,
-    .foreign-geofence-stat-wrap {
+    .foreign-geofence-table-wrap {
         border: 1px solid var(--fleet-line);
         border-radius: 14px;
         background: var(--fleet-card);
@@ -1834,7 +1758,6 @@
     .dashboard-scroll-table thead th,
     .dashboard-drilldown-table thead th,
     .foreign-geofence-detail-table thead th,
-    .foreign-geofence-stat-table thead th,
     .table thead th {
         color: var(--fleet-muted);
         background: var(--fleet-card-soft);
@@ -1847,21 +1770,18 @@
     .dashboard-scroll-table tbody td,
     .dashboard-drilldown-table tbody td,
     .foreign-geofence-detail-table tbody td,
-    .foreign-geofence-stat-table tbody td,
     .table tbody td {
         border-color: var(--fleet-line);
     }
     .dashboard-scroll-table tbody tr,
     .dashboard-drilldown-table tbody tr,
     .foreign-geofence-detail-table tbody tr,
-    .foreign-geofence-stat-row,
     .table tbody tr {
         transition: background .15s ease, box-shadow .15s ease;
     }
     .dashboard-scroll-table tbody tr:hover,
     .dashboard-drilldown-table tbody tr:hover,
     .foreign-geofence-detail-table tbody tr:hover,
-    .foreign-geofence-stat-row:hover,
     .table tbody tr:hover,
     .dashboard-drilldown-trigger:hover {
         background: var(--fleet-hover) !important;
@@ -1911,9 +1831,6 @@
     .foreign-geofence-legend-row {
         border-radius: 12px;
     }
-    .foreign-geofence-progress {
-        background: color-mix(in srgb, var(--fleet-muted) 12%, transparent);
-    }
     .dashboard-loading-card,
     .modal-content {
         border-radius: 16px;
@@ -1931,8 +1848,7 @@
     [data-theme="dark"] #dashboardFilterForm .form-select,
     [data-theme="dark"] .dashboard-scroll-table,
     [data-theme="dark"] .dashboard-drilldown-table-wrapper,
-    [data-theme="dark"] .foreign-geofence-table-wrap,
-    [data-theme="dark"] .foreign-geofence-stat-wrap {
+    [data-theme="dark"] .foreign-geofence-table-wrap {
         background: var(--fleet-card);
         border-color: var(--fleet-line);
     }
@@ -1950,7 +1866,6 @@
     [data-theme="dark"] .dashboard-scroll-table thead th,
     [data-theme="dark"] .dashboard-drilldown-table thead th,
     [data-theme="dark"] .foreign-geofence-detail-table thead th,
-    [data-theme="dark"] .foreign-geofence-stat-table thead th,
     [data-theme="dark"] .table thead th {
         background: var(--fleet-card-soft);
     }
@@ -2361,100 +2276,45 @@
                         </div>
                     </div>
 
-                    <div class="foreign-geofence-grid">
-                        <div class="foreign-geofence-card">
-                            <div class="foreign-geofence-donut-layout">
-                                <div class="foreign-geofence-donut-wrap">
-                                    <canvas id="geofenceViolationsDonut"></canvas>
-                                    <div class="foreign-geofence-center">
-                                        <div>
-                                            <strong>{{ number_format($geofenceViolationTotal) }}</strong>
-                                            <span>Ümumi texnika</span>
-                                        </div>
+                    <div class="foreign-geofence-card">
+                        <div class="foreign-geofence-donut-layout">
+                            <div class="foreign-geofence-donut-wrap">
+                                <canvas id="geofenceViolationsDonut"></canvas>
+                                <div class="foreign-geofence-center">
+                                    <div>
+                                        <strong>{{ number_format($geofenceViolationTotal) }}</strong>
+                                        <span>Ümumi texnika</span>
                                     </div>
                                 </div>
-                                <div class="foreign-geofence-legend" aria-label="Cari geozona üzrə bölgü">
-                                    @if ($geofenceViolationRows->isNotEmpty())
-                                        @foreach ($geofenceViolationRows as $row)
-                                            @php
-                                                $count = (int) ($row['count'] ?? 0);
-                                                $percent = $geofenceViolationTotal > 0 ? round(($count / $geofenceViolationTotal) * 100) : 0;
-                                                $color = $geofenceViolationPalette[$loop->index % count($geofenceViolationPalette)];
-                                            @endphp
-                                            <button
-                                                type="button"
-                                                class="foreign-geofence-legend-row dashboard-drilldown-trigger"
-                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geofence Transferləri"
-                                                data-drilldown-geofence-violation="1"
-                                                data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
-                                                data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
-                                                data-drilldown-current-geozone-key="{{ $row['sector_key'] }}"
-                                                title="{{ $row['label'] ?? $row['project'] }}"
-                                            >
-                                                <span class="foreign-geofence-dot" style="background: {{ $color }}"></span>
-                                                <span class="foreign-geofence-legend-name">{{ $row['label'] ?? $row['project'] }}</span>
-                                                <span class="foreign-geofence-legend-count">{{ number_format($count) }}</span>
-                                                <span class="foreign-geofence-legend-percent">{{ $percent }}%</span>
-                                            </button>
-                                        @endforeach
-                                    @else
-                                        <div class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</div>
-                                    @endif
-                                </div>
                             </div>
-                        </div>
-                        <div class="foreign-geofence-card">
-                            <h3 class="foreign-geofence-card-title">Cari geozona / layihə üzrə statistika</h3>
-                            <div class="table-responsive foreign-geofence-stat-wrap">
-                                <table class="foreign-geofence-stat-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Layihə</th>
-                                            <th class="text-end">Texnika sayı</th>
-                                            <th class="text-end">Faiz</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @forelse ($geofenceViolationRows as $row)
-                                            @php
-                                                $count = (int) ($row['count'] ?? 0);
-                                                $percent = $geofenceViolationTotal > 0 ? round(($count / $geofenceViolationTotal) * 100) : 0;
-                                                $barWidth = min(100, max(3, round(($count / $geofenceViolationMaxCount) * 100)));
-                                            @endphp
-                                            <tr
-                                                class="foreign-geofence-stat-row dashboard-drilldown-trigger"
-                                                role="button"
-                                                tabindex="0"
-                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geofence Transferləri"
-                                                data-drilldown-geofence-violation="1"
-                                                data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
-                                                data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
-                                                data-drilldown-current-geozone-key="{{ $row['sector_key'] }}"
-                                                title="{{ $row['label'] ?? $row['project'] }}"
-                                            >
-                                                <td>
-                                                    <div class="fw-bold text-truncate" title="{{ $row['label'] ?? $row['project'] }}">{{ $row['label'] ?? $row['project'] }}</div>
-                                                    <div class="foreign-geofence-progress"><span style="width: {{ $barWidth }}%"></span></div>
-                                                </td>
-                                                <td class="text-end fw-bold">{{ number_format($count) }}</td>
-                                                <td class="text-end text-secondary fw-bold">{{ $percent }}%</td>
-                                            </tr>
-                                        @empty
-                                            <tr><td colspan="3" class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</td></tr>
-                                        @endforelse
-                                    </tbody>
-                                </table>
+                            <div class="foreign-geofence-legend" aria-label="Cari geozona üzrə bölgü">
+                                @if ($geofenceViolationRows->isNotEmpty())
+                                    @foreach ($geofenceViolationRows as $row)
+                                        @php
+                                            $count = (int) ($row['count'] ?? 0);
+                                            $percent = $geofenceViolationTotal > 0 ? round(($count / $geofenceViolationTotal) * 100) : 0;
+                                            $color = $geofenceViolationPalette[$loop->index % count($geofenceViolationPalette)];
+                                        @endphp
+                                        <button
+                                            type="button"
+                                            class="foreign-geofence-legend-row dashboard-drilldown-trigger"
+                                            data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geofence Transferləri"
+                                            data-drilldown-geofence-violation="1"
+                                            data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
+                                            data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
+                                            data-drilldown-current-geozone-key="{{ $row['sector_key'] }}"
+                                            title="{{ $row['label'] ?? $row['project'] }}"
+                                        >
+                                            <span class="foreign-geofence-dot" style="background: {{ $color }}"></span>
+                                            <span class="foreign-geofence-legend-name">{{ $row['label'] ?? $row['project'] }}</span>
+                                            <span class="foreign-geofence-legend-count">{{ number_format($count) }}</span>
+                                            <span class="foreign-geofence-legend-percent">{{ $percent }}%</span>
+                                        </button>
+                                    @endforeach
+                                @else
+                                    <div class="foreign-geofence-empty">Seçilmiş layihə üzrə məlumat tapılmadı</div>
+                                @endif
                             </div>
-                            @if ($geofenceViolationTotal > 0)
-                                <button
-                                    type="button"
-                                    class="btn btn-link foreign-geofence-show-all mt-2 dashboard-drilldown-trigger"
-                                    data-drilldown-title="Geofence Transferləri"
-                                    data-drilldown-geofence-violation="1"
-                                >
-                                    Hamısını göstər <i class="bi bi-arrow-right"></i>
-                                </button>
-                            @endif
                         </div>
                     </div>
 

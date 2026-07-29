@@ -66,6 +66,7 @@ class DashboardAccessTest extends TestCase
 
         $this->assertStringContainsString('Geofence Transferləri', $html);
         $this->assertStringContainsString('Öz layihəsinin geozonasından kənarda olan texnikalar', $html);
+        $this->assertStringNotContainsString('Cari geozona / layihə üzrə statistika', $html);
 
         foreach (['Ã', 'Ð', 'Р ', 'РЎ', 'Pё', 'SeP', 'вЂ'] as $marker) {
             $this->assertStringNotContainsString($marker, $html);
