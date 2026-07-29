@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Equipment;
 use App\Models\EquipmentType;
+use App\Models\GeofenceViolationReportRow;
 use App\Models\GeofenceViolationSyncItem;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
@@ -174,6 +175,82 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
             'status' => GeofenceViolationSyncItem::STATUS_COMPLETED,
             'source_rows' => 0,
         ]);
+    }
+
+    public function test_command_prunes_legacy_and_operationally_excluded_rows(): void
+    {
+        $project = Project::create(['name' => 'Cleanup project', 'active' => true]);
+        $repair = Project::create(['name' => 'Təmir', 'active' => true]);
+        $group = ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601703001',
+            'name' => 'Cleanup project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $repairGroup = ProjectWialonGroup::create([
+            'project_id' => $repair->id,
+            'wialon_group_id' => '601703002',
+            'name' => 'Təmir - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+
+        foreach ([
+            [$project, $group, 'legacy-row', null, null],
+            [$repair, $repairGroup, 'repair-row', '2026-07-28 00:00:00', '2026-07-28 23:59:59'],
+        ] as [$rowProject, $rowGroup, $periodKey, $periodFrom, $periodTo]) {
+            GeofenceViolationReportRow::create([
+                'report_name' => GeofenceViolationReportRow::REPORT_NAME,
+                'period_key' => $periodKey,
+                'project_id' => $rowProject->id,
+                'project_wialon_group_id' => $rowGroup->id,
+                'wialon_unit_id' => $periodKey,
+                'equipment_name' => $periodKey,
+                'equipment_type' => 'Excavator',
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'project_name' => $rowProject->name,
+                'exited_at' => '2026-07-28 10:00:00',
+                'last_confirmed_at' => '2026-07-28 14:00:00',
+                'outside_duration_seconds' => 14_400,
+                'is_active' => false,
+                'report_period_from' => $periodFrom,
+                'report_period_to' => $periodTo,
+                'report_generated_at' => '2026-07-28 14:05:00',
+            ]);
+        }
+
+        GeofenceViolationSyncItem::create([
+            'checkpoint_key' => sha1('repair-checkpoint'),
+            'project_id' => $repair->id,
+            'project_wialon_group_id' => $repairGroup->id,
+            'wialon_group_id' => $repairGroup->wialon_group_id,
+            'wialon_group_name' => $repairGroup->name,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'report_period_from' => '2026-07-28 00:00:00',
+            'report_period_to' => '2026-07-28 23:59:59',
+            'status' => GeofenceViolationSyncItem::STATUS_COMPLETED,
+        ]);
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('loginByToken')->once()->with(false)->andReturn('cleanup-session');
+        $wialon->shouldReceive('cleanupReportResult')->twice()->with('cleanup-session');
+        $wialon->shouldReceive('executeReport')->once()->andReturn([
+            'reportResult' => ['tables' => []],
+        ]);
+        $wialon->shouldReceive('logoutSession')->once()->with('cleanup-session');
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('fleet:sync-geofence-violations-report', [
+            '--from' => '2026-07-28 00:00:00',
+            '--to' => '2026-07-28 23:59:59',
+            '--group' => '601703001',
+            '--force' => true,
+        ])->assertSuccessful();
+
+        $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'legacy-row']);
+        $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'repair-row']);
+        $this->assertDatabaseMissing('geofence_violation_sync_items', ['checkpoint_key' => sha1('repair-checkpoint')]);
     }
 
     /**

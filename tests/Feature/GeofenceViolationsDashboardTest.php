@@ -52,6 +52,10 @@ class GeofenceViolationsDashboardTest extends TestCase
             'exited_at' => '2026-07-27 15:00:00',
             'last_confirmed_at' => '2026-07-27 14:00:00',
         ]);
+        $this->reportRow($project, $excavatorType, 'Legacy row without report range', 18_000, [
+            'report_period_from' => null,
+            'report_period_to' => null,
+        ]);
 
         Equipment::create([
             'name' => 'Inside another project geofence',
@@ -84,6 +88,7 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertDontSee('Disallowed type')
             ->assertDontSee('Wrong report source')
             ->assertDontSee('Invalid report timestamps')
+            ->assertDontSee('Legacy row without report range')
             ->assertDontSee('Inside another project geofence')
             ->assertViewHas('kpis', [
                 'total_violations' => 3,
@@ -263,6 +268,8 @@ class GeofenceViolationsDashboardTest extends TestCase
             'outside_duration_seconds' => $durationSeconds,
             'last_location' => '40.4093, 49.8671',
             'is_active' => true,
+            'report_period_from' => '2026-07-27 00:00:00',
+            'report_period_to' => '2026-07-27 23:59:59',
             'report_generated_at' => '2026-07-27 13:05:00',
             ...$overrides,
         ]);

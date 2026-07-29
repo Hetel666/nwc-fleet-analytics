@@ -136,6 +136,8 @@ class GeofenceViolationsDashboardService
                 'geofence_violations.minimum_duration_seconds',
                 GeofenceViolationReportRow::MINIMUM_DURATION_SECONDS
             ))
+            ->whereNotNull('report_period_from')
+            ->whereNotNull('report_period_to')
             ->whereNotNull('exited_at')
             ->whereNotNull('last_confirmed_at')
             ->whereColumn('last_confirmed_at', '>=', 'exited_at');

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\GeofenceViolationReportRow;
 use App\Models\GeofenceViolationSyncItem;
+use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Services\GeofenceViolationReportImporter;
 use App\Services\GeofenceViolationReportParser;
@@ -447,5 +448,28 @@ class SyncGeofenceViolationReport extends Command
             ->whereNotNull('source_payload')
             ->where('report_generated_at', '<', $payloadCutoff)
             ->update(['source_payload' => null]);
+
+        GeofenceViolationReportRow::query()
+            ->where('report_name', GeofenceViolationReportRow::REPORT_NAME)
+            ->where(function (Builder $query): void {
+                $query->whereNull('report_period_from')
+                    ->orWhereNull('report_period_to')
+                    ->orWhereIn(
+                        'project_id',
+                        Project::query()
+                            ->select('id')
+                            ->whereIn('name', Project::dashboardOperationalExcludedNames())
+                    );
+            })
+            ->delete();
+
+        GeofenceViolationSyncItem::query()
+            ->whereIn(
+                'project_id',
+                Project::query()
+                    ->select('id')
+                    ->whereIn('name', Project::dashboardOperationalExcludedNames())
+            )
+            ->delete();
     }
 }
