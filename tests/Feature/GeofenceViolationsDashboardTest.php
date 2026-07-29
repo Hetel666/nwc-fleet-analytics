@@ -18,6 +18,9 @@ class GeofenceViolationsDashboardTest extends TestCase
     {
         $this->get(route('geofence-violations.index'))
             ->assertRedirect(route('login'));
+
+        $this->getJson(route('dashboard.geofence-violations.drilldown'))
+            ->assertUnauthorized();
     }
 
     public function test_only_valid_report_periods_strictly_over_three_hours_are_displayed(): void
@@ -185,6 +188,8 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertSee('data-widget-key="geofence-analysis"', false)
             ->assertSee('data-widget-key="geofence-violations-report"', false)
             ->assertSee('data-geofence-violations-list-link', false)
+            ->assertSee('data-geofence-violations-drilldown', false)
+            ->assertSee(route('dashboard.geofence-violations.drilldown'))
             ->assertSee(route('geofence-violations.index', [
                 'date_from' => '2026-07-27',
                 'date_to' => '2026-07-27',
@@ -197,6 +202,40 @@ class GeofenceViolationsDashboardTest extends TestCase
                     && $widget['distribution']->first()['project_id'] === $project->id
                     && $widget['distribution']->first()['count'] === 1;
             });
+    }
+
+    public function test_report_donut_drilldown_uses_independent_rows_and_marks_current_project_unknown(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$project, $type] = $this->fleet();
+        $otherProject = Project::create(['name' => 'Other project', 'active' => true]);
+
+        $this->reportRow($project, $type, 'Outside unit', 14_400, [
+            'last_project_geofence' => null,
+            'last_location' => null,
+        ]);
+        $this->reportRow($otherProject, $type, 'Other outside unit', 18_000);
+        $this->reportRow($project, $type, 'Below threshold', 10_800);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.geofence-violations.drilldown', [
+                'date_from' => '2026-07-27',
+                'date_to' => '2026-07-27',
+                'project_id' => $project->id,
+                'ownership' => 'nwc',
+                'per_page' => 20,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('title', $project->name.' - Geofence Pozuntuları')
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('columns.current_project', 'Cari layihə')
+            ->assertJsonPath('data.0.equipment_name', 'Outside unit')
+            ->assertJsonPath('data.0.home_project', $project->name)
+            ->assertJsonPath('data.0.current_project', 'Layihədən kənarda / Məlumatsız')
+            ->assertJsonPath('data.0.last_project_geofence', 'Məlumatsız')
+            ->assertJsonPath('data.0.last_location', 'Məlumatsız')
+            ->assertJsonMissing(['equipment_name' => 'Other outside unit'])
+            ->assertJsonMissing(['equipment_name' => 'Below threshold']);
     }
 
     public function test_repair_project_is_shown_in_operational_violation_dashboard(): void

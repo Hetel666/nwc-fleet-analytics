@@ -13,6 +13,7 @@ use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\EquipmentTypeController;
 use App\Http\Controllers\GeofenceController;
 use App\Http\Controllers\GeofenceViolationsDashboardController;
+use App\Http\Controllers\GeofenceViolationsDrilldownController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\ProjectController;
@@ -36,6 +37,8 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/geofence-violations', GeofenceViolationsDashboardController::class)
         ->name('geofence-violations.index');
+    Route::get('/dashboard/geofence-violations/drilldown', GeofenceViolationsDrilldownController::class)
+        ->name('dashboard.geofence-violations.drilldown');
     Route::get('/dashboard/tabs/{tab}', [DashboardController::class, 'tab'])->name('dashboard.tabs.show');
     Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->name('dashboard.drilldown.units');
     Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->name('dashboard.drilldown.units.export');

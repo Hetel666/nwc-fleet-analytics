@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\EquipmentType;
 use App\Models\GeofenceViolationReportRow;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -112,6 +113,16 @@ class GeofenceViolationsDashboardService
         }
 
         return $query;
+    }
+
+    public function paginateRows(array $filters, int $perPage = 20): LengthAwarePaginator
+    {
+        return $this->filteredQuery($filters)
+            ->orderByDesc('is_active')
+            ->orderByDesc('outside_duration_seconds')
+            ->orderBy('equipment_name')
+            ->paginate(max(1, min(100, $perPage)))
+            ->withQueryString();
     }
 
     public function formatDuration(int $seconds): string

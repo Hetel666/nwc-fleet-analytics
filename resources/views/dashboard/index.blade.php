@@ -1961,6 +1961,7 @@
         data-dashboard-tab-url-template="{{ route('dashboard.tabs.show', ['tab' => '__TAB__']) }}"
         data-dashboard-drilldown-url="{{ route('dashboard.drilldown.units') }}"
         data-dashboard-drilldown-export-url="{{ route('dashboard.drilldown.units.export') }}"
+        data-geofence-violations-drilldown-url="{{ route('dashboard.geofence-violations.drilldown') }}"
         data-dashboard-date-from="{{ $filters['from'] }}"
         data-dashboard-date-to="{{ $filters['to'] }}"
         data-dashboard-today="{{ $today->toDateString() }}"
@@ -2465,6 +2466,7 @@
                                 href="{{ $geofenceReportDetailsUrl }}"
                                 class="foreign-geofence-donut-wrap geofence-report-donut-link"
                                 data-geofence-violations-list-link
+                                data-geofence-violations-drilldown
                                 aria-label="Geofence Pozuntuları siyahısını aç"
                                 title="Geofence Pozuntuları siyahısını aç"
                             >
@@ -2480,12 +2482,18 @@
                                 <h3 class="geofence-report-legend-heading">Geozonadan çıxma halları</h3>
                                 <div class="foreign-geofence-legend" aria-label="Geozonadan çıxma hallarının layihə üzrə bölgüsü">
                                     @forelse ($geofenceReportDistribution as $segment)
-                                        <div class="foreign-geofence-legend-row" title="{{ $segment['label'] }}">
+                                        <button
+                                            type="button"
+                                            class="foreign-geofence-legend-row"
+                                            title="{{ $segment['label'] }}"
+                                            data-geofence-violations-drilldown
+                                            data-geofence-violations-project-id="{{ $segment['project_id'] }}"
+                                        >
                                             <span class="foreign-geofence-dot" style="background: {{ $segment['color'] }}"></span>
                                             <span class="foreign-geofence-legend-name">{{ $segment['label'] }}</span>
                                             <span class="foreign-geofence-legend-count">{{ number_format($segment['count']) }}</span>
                                             <span class="foreign-geofence-legend-percent">{{ number_format($segment['percentage'], 1) }}%</span>
-                                        </div>
+                                        </button>
                                     @empty
                                         <div class="foreign-geofence-empty">Seçilmiş dövr üçün pozuntu məlumatı yoxdur</div>
                                     @endforelse
@@ -2681,7 +2689,7 @@
                             <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="nwc" aria-pressed="false">NWC</button>
                             <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="icare" aria-pressed="false">İCARƏ</button>
                         </div>
-                        <div class="btn-group btn-group-sm" role="group" aria-label="Məlumat statusu">
+                        <div class="btn-group btn-group-sm" id="dashboardDrilldownDataStatusGroup" role="group" aria-label="Məlumat statusu">
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="all" aria-pressed="false">Hamısı</button>
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="available" aria-pressed="false">Məlumat var</button>
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="missing" aria-pressed="false">Məlumat yoxdur</button>
@@ -3951,6 +3959,8 @@ const drilldownRows = document.getElementById('dashboardDrilldownRows');
 const drilldownHeader = document.getElementById('dashboardDrilldownHeader');
 const drilldownSearch = document.getElementById('dashboardDrilldownSearch');
 const drilldownFilterToggle = document.getElementById('dashboardDrilldownFilterToggle');
+const drilldownFilterTab = document.getElementById('dashboardDrilldownTabFilters');
+const drilldownDataStatusGroup = document.getElementById('dashboardDrilldownDataStatusGroup');
 const drilldownGroupMode = document.getElementById('dashboardDrilldownGroupMode');
 const drilldownFilterPanel = document.getElementById('dashboardDrilldownFilterPanel');
 const drilldownFilterClose = document.getElementById('dashboardDrilldownFilterClose');
@@ -3978,6 +3988,9 @@ let drilldownState = {
     page: 1,
     meta: null,
     columns: {},
+    endpointUrl: '',
+    exportEnabled: true,
+    mode: 'fleet',
 };
 
 const setDrilldownControlsDisabled = disabled => {
@@ -4705,8 +4718,16 @@ const updateDrilldownFilterButtons = () => {
 };
 
 const updateDrilldownExportUrl = () => {
-    if (drilldownExport && dashboardPage?.dataset.dashboardDrilldownExportUrl) {
+    if (!drilldownExport) {
+        return;
+    }
+
+    drilldownExport.classList.toggle('d-none', !drilldownState.exportEnabled);
+
+    if (drilldownState.exportEnabled && dashboardPage?.dataset.dashboardDrilldownExportUrl) {
         drilldownExport.href = drilldownUrl(dashboardPage.dataset.dashboardDrilldownExportUrl, drilldownState.filters);
+    } else {
+        drilldownExport.href = '#';
     }
 };
 
@@ -4729,6 +4750,9 @@ const resetDashboardDrilldownState = (options = {}) => {
         page: 1,
         meta: null,
         columns: defaultDrilldownColumns(),
+        endpointUrl: dashboardPage?.dataset.dashboardDrilldownUrl || '',
+        exportEnabled: true,
+        mode: 'fleet',
     };
 
     if (clearTitle && drilldownTitle) {
@@ -4757,17 +4781,22 @@ const resetDashboardDrilldownState = (options = {}) => {
 
     if (drilldownExport) {
         drilldownExport.href = '#';
+        drilldownExport.classList.remove('d-none');
     }
 
     drilldownFilterPanel?.classList.add('d-none');
     drilldownFilterToggle?.classList.add('d-none');
+    drilldownFilterTab?.classList.remove('d-none');
+    drilldownDataStatusGroup?.classList.remove('d-none');
     drilldownEfficiencyFilterGroups.forEach(group => group.classList.remove('d-none'));
     syncDrilldownFilterControls();
     renderDrilldownChips();
 };
 
 const loadDashboardDrilldown = async () => {
-    if (!dashboardPage?.dataset.dashboardDrilldownUrl) {
+    const endpointUrl = drilldownState.endpointUrl || dashboardPage?.dataset.dashboardDrilldownUrl;
+
+    if (!endpointUrl) {
         return;
     }
 
@@ -4785,7 +4814,7 @@ const loadDashboardDrilldown = async () => {
     updateDrilldownExportUrl();
 
     try {
-        const response = await fetch(drilldownUrl(dashboardPage.dataset.dashboardDrilldownUrl, drilldownState.filters), {
+        const response = await fetch(drilldownUrl(endpointUrl, drilldownState.filters), {
             headers: { 'Accept': 'application/json' },
             signal: drilldownController.signal,
         });
@@ -4845,6 +4874,13 @@ const openDashboardDrilldown = (filters = {}) => {
     drilldownReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     resetDashboardDrilldownState({ abortRequest: true, clearTitle: false });
     const nextFilters = cleanDrilldownFilters(filters);
+    const endpointUrl = nextFilters.endpoint_url || dashboardPage?.dataset.dashboardDrilldownUrl || '';
+    const exportEnabled = nextFilters.export_enabled !== false;
+    const mode = nextFilters.drilldown_mode || 'fleet';
+
+    delete nextFilters.endpoint_url;
+    delete nextFilters.export_enabled;
+    delete nextFilters.drilldown_mode;
 
     const initialFilters = {
         ...baseDrilldownFilters(),
@@ -4878,9 +4914,16 @@ const openDashboardDrilldown = (filters = {}) => {
     drilldownState.baseTotal = null;
     drilldownState.initialized = false;
     drilldownState.title = nextFilters.title || '';
+    drilldownState.endpointUrl = endpointUrl;
+    drilldownState.exportEnabled = exportEnabled;
+    drilldownState.mode = mode;
 
     delete drilldownState.filters.title;
     delete drilldownState.baseFilters.title;
+
+    const isGeofenceViolationsDrilldown = mode === 'geofence_violations';
+    drilldownFilterTab?.classList.toggle('d-none', isGeofenceViolationsDrilldown);
+    drilldownDataStatusGroup?.classList.toggle('d-none', isGeofenceViolationsDrilldown);
 
     if (drilldownSearch) {
         drilldownSearch.value = '';
@@ -4892,10 +4935,21 @@ const openDashboardDrilldown = (filters = {}) => {
 
     syncDrilldownFilterControls();
     renderDrilldownChips();
+    updateDrilldownExportUrl();
     activateDrilldownTab('data');
     setDrilldownControlsDisabled(true);
     drilldownModal?.show();
     loadDashboardDrilldown();
+};
+
+const openGeofenceViolationsDrilldown = trigger => {
+    openDashboardDrilldown({
+        title: 'Geofence Pozuntuları',
+        endpoint_url: dashboardPage?.dataset.geofenceViolationsDrilldownUrl || '',
+        export_enabled: false,
+        drilldown_mode: 'geofence_violations',
+        project_id: trigger?.dataset.geofenceViolationsProjectId || undefined,
+    });
 };
 
 drilldownModalElement?.addEventListener('hidden.bs.modal', () => {
@@ -4911,6 +4965,15 @@ drilldownModalElement?.addEventListener('hidden.bs.modal', () => {
 });
 
 document.addEventListener('click', event => {
+    const geofenceViolationsTrigger = event.target.closest('[data-geofence-violations-drilldown]');
+
+    if (geofenceViolationsTrigger) {
+        event.preventDefault();
+        event.stopPropagation();
+        openGeofenceViolationsDrilldown(geofenceViolationsTrigger);
+        return;
+    }
+
     const trigger = event.target.closest('.dashboard-drilldown-trigger');
 
     if (!trigger || trigger.dataset.expandToggle) {
