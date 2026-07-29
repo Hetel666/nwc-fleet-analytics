@@ -70,6 +70,7 @@ return [
     'equipment_details' => 'Детали техники',
     'generated_at' => 'Сформировано',
     'geofence_analysis' => 'Перемещения между геозонами',
+    'geofence_violations' => 'Нарушения геозон',
     'utilization_trend' => 'Коэффициент использования',
     'hours' => 'ч',
     'km' => 'км',

@@ -23,6 +23,8 @@ class HistoricalRecalculation extends Model
     public const SECTION_TOP_WORKING_UNITS = 'top_working_units';
     public const SECTION_GEOFENCE_OUTSIDE = 'geofence_outside';
 
+    public const SECTION_GEOFENCE_VIOLATIONS = 'geofence_violations';
+
     public const SCOPE_ALL_PROJECTS = 'all_projects';
     public const SCOPE_SELECTED_PROJECTS = 'selected_projects';
 

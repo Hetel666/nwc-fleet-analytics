@@ -20,6 +20,7 @@ class DashboardLayoutTest extends TestCase
         $this->assertSame('ownership-share', $layout[0]['key']);
         $this->assertTrue($layout[0]['visible']);
         $this->assertContains('project-comparison', collect($layout)->pluck('key')->all());
+        $this->assertContains('geofence-violations-report', collect($layout)->pluck('key')->all());
     }
 
     public function test_admin_can_save_global_dashboard_layout(): void

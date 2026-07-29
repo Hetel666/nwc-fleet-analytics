@@ -47,6 +47,9 @@
 
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-outside" value="geofence_outside" autocomplete="off" @checked(old('dashboard_section') === 'geofence_outside')>
                                 <label class="btn btn-outline-primary text-start" for="section-geofence-outside">Geofence Transferləri</label>
+
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-violations" value="geofence_violations" autocomplete="off" @checked(old('dashboard_section') === 'geofence_violations')>
+                                <label class="btn btn-outline-primary text-start" for="section-geofence-violations">Geofence Pozuntuları</label>
                             </div>
                         </div>
                         <div class="col-12">
@@ -129,6 +132,7 @@
                                     'daily_averages' => 'Orta göstəricilər',
                                     'top_working_units' => 'Top 20',
                                     'geofence_outside' => 'Geofence Transferləri',
+                                    'geofence_violations' => 'Geofence Pozuntuları',
                                 ][$run->dashboard_section] ?? $run->dashboard_section }}</td>
                                 <td><span class="badge text-bg-secondary">{{ $run->status }}</span></td>
                                 <td style="min-width: 150px;">

@@ -75,12 +75,14 @@ class AutoSyncFleetDataTest extends TestCase
         $this->assertSame(0, $kernel->call('fleet:auto-sync', ['--force' => true]));
         $this->assertSame(2, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:sync-engine-hours-report')->count());
         $this->assertSame(2, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:run-shift-sync')->count());
+        $this->assertSame(1, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:sync-geofence-violations-report')->count());
         $this->assertDatabaseMissing('wialon_report_sync_items', [
             'report_date' => $date,
             'status' => WialonReportSyncItem::STATUS_PENDING,
         ]);
         $this->assertSame('success', Setting::query()->where('key', 'auto_sync_top20_last_status')->value('value'));
         $this->assertSame('success', Setting::query()->where('key', 'auto_sync_shift_last_status')->value('value'));
+        $this->assertSame('success', Setting::query()->where('key', 'auto_sync_geofence_violations_last_status')->value('value'));
     }
 
     private function settings(array $values): void

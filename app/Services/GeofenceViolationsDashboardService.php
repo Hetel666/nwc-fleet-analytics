@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\EquipmentType;
 use App\Models\GeofenceViolationReportRow;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -22,26 +23,10 @@ class GeofenceViolationsDashboardService
             ->orderBy('equipment_name')
             ->paginate(max(1, (int) config('geofence_violations.per_page', 25)))
             ->withQueryString();
-        $activeRows = (clone $query)
-            ->where('is_active', true)
-            ->get(['equipment_id', 'wialon_unit_id', 'equipment_name']);
-        $projectRows = (clone $query)
-            ->where(function (Builder $query): void {
-                $query->whereNotNull('project_id')->orWhereNotNull('project_name');
-            })
-            ->get(['project_id', 'project_name']);
-        $distribution = $this->projectDistribution(clone $query);
 
         return [
             'rows' => $rows,
-            'distribution' => $distribution,
-            'kpis' => [
-                'total_violations' => (clone $query)->count(),
-                'active_violations' => $this->uniqueEquipmentCount($activeRows),
-                'active_projects' => $this->uniqueProjectCount($projectRows),
-                'longest_duration_seconds' => (int) ((clone $query)->max('outside_duration_seconds') ?? 0),
-            ],
-            'latest_report_at' => (clone $query)->max('report_generated_at'),
+            ...$this->summary(clone $query),
             'projects' => $this->facetQuery()
                 ->whereNotNull('project_id')
                 ->whereNotNull('project_name')
@@ -51,6 +36,39 @@ class GeofenceViolationsDashboardService
                 ->get(),
             'equipment_types' => config('geofence_violations.allowed_equipment_types', []),
         ];
+    }
+
+    /**
+     * Keeps the new report-backed widget independent from DashboardService.
+     *
+     * @param  array<string, mixed>  $dashboardFilters
+     * @return array<string, mixed>
+     */
+    public function getDashboardWidget(array $dashboardFilters): array
+    {
+        $equipmentType = filled($dashboardFilters['equipment_type_id'] ?? null)
+            ? EquipmentType::query()->whereKey((int) $dashboardFilters['equipment_type_id'])->value('name')
+            : null;
+
+        $filters = [
+            'date_from' => (string) $dashboardFilters['from'],
+            'date_to' => (string) $dashboardFilters['to'],
+            'project_id' => filled($dashboardFilters['project_id'] ?? null)
+                ? (int) $dashboardFilters['project_id']
+                : null,
+            'equipment_type' => $equipmentType,
+            'ownership_type' => filled($dashboardFilters['ownership_type'] ?? null)
+                ? (string) $dashboardFilters['ownership_type']
+                : null,
+            'status' => null,
+            'search' => '',
+        ];
+
+        if ($equipmentType !== null && ! in_array($equipmentType, config('geofence_violations.allowed_equipment_types', []), true)) {
+            return $this->emptySummary();
+        }
+
+        return $this->summary($this->filteredQuery($filters));
     }
 
     /**
@@ -132,6 +150,49 @@ class GeofenceViolationsDashboardService
             ? 'project:'.$row->project_id
             : 'report:'.mb_strtolower((string) $row->project_name)
         )->count();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function summary(Builder $query): array
+    {
+        $activeRows = (clone $query)
+            ->where('is_active', true)
+            ->get(['equipment_id', 'wialon_unit_id', 'equipment_name']);
+        $projectRows = (clone $query)
+            ->where(function (Builder $query): void {
+                $query->whereNotNull('project_id')->orWhereNotNull('project_name');
+            })
+            ->get(['project_id', 'project_name']);
+
+        return [
+            'distribution' => $this->projectDistribution(clone $query),
+            'kpis' => [
+                'total_violations' => (clone $query)->count(),
+                'active_violations' => $this->uniqueEquipmentCount($activeRows),
+                'active_projects' => $this->uniqueProjectCount($projectRows),
+                'longest_duration_seconds' => (int) ((clone $query)->max('outside_duration_seconds') ?? 0),
+            ],
+            'latest_report_at' => (clone $query)->max('report_generated_at'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptySummary(): array
+    {
+        return [
+            'distribution' => collect(),
+            'kpis' => [
+                'total_violations' => 0,
+                'active_violations' => 0,
+                'active_projects' => 0,
+                'longest_duration_seconds' => 0,
+            ],
+            'latest_report_at' => null,
+        ];
     }
 
     /**

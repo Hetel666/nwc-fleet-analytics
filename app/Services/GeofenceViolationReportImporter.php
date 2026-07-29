@@ -96,7 +96,9 @@ class GeofenceViolationReportImporter
             'report_name' => GeofenceViolationReportRow::REPORT_NAME,
             'period_key' => $periodKey,
             'equipment_id' => $equipment?->id,
-            'project_id' => $equipment?->project_id,
+            'project_id' => filled($row['project_id'] ?? null)
+                ? (int) $row['project_id']
+                : $equipment?->project_id,
             'wialon_unit_id' => $wialonUnitId !== '' ? $wialonUnitId : null,
             'equipment_name' => $equipmentName,
             'equipment_type' => $equipmentType,

@@ -383,7 +383,14 @@ class HistoricalRecalculationService
     {
         $projectIds = $this->selectedProjectIds($payload);
 
-        if (($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES) === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {
+        if (in_array(
+            $payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+            [
+                HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+                HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+            ],
+            true
+        )) {
             return Project::query()
                 ->where('active', true)
                 ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('id', $projectIds))

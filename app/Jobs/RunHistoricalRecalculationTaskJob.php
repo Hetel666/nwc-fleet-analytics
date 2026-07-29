@@ -135,6 +135,17 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
             return 0;
         }
 
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
+            $this->runArtisanOrFail('fleet:sync-geofence-violations-report', array_filter([
+                '--from' => $date.' 00:00:00',
+                '--to' => $date.' 23:59:59',
+                '--project' => $task->project_id,
+                '--force' => (bool) $run->force,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+
+            return 0;
+        }
+
         $result = $sync->syncDailyEngineHoursReport([
             'date_from' => $date,
             'date_to' => $date,

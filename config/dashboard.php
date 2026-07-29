@@ -105,6 +105,13 @@ return [
             'column_class' => 'col-12 col-xl-7',
             'active' => true,
         ],
+        'geofence-violations-report' => [
+            'label_key' => 'app.geofence_violations',
+            'default_order' => 115,
+            'default_width' => 12,
+            'column_class' => 'col-12',
+            'active' => true,
+        ],
         'utilization-trend' => [
             'label_key' => 'app.utilization_trend',
             'default_order' => 120,

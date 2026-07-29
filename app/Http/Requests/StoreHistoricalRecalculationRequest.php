@@ -32,6 +32,7 @@ class StoreHistoricalRecalculationRequest extends FormRequest
                 HistoricalRecalculation::SECTION_DAILY_AVERAGES,
                 HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
                 HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+                HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
             ])],
             'operation' => ['required', Rule::in([
                 HistoricalRecalculation::OPERATION_FETCH,

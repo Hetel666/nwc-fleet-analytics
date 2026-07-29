@@ -115,6 +115,7 @@ class SettingsController extends Controller
             ['label' => 'Gundelik statistika', 'key' => 'daily'],
             ['label' => 'Top 20 motosaat', 'key' => 'top20'],
             ['label' => 'Geozonadan cixma', 'key' => 'geozon'],
+            ['label' => 'Geofence Pozuntuları', 'key' => 'geofence_violations'],
             ['label' => 'Effektivlik shift hesabatı', 'key' => 'shift'],
         ];
     }

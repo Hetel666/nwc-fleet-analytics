@@ -29,7 +29,8 @@ class HistoricalRecalculationTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.historical-recalculations.index'))
             ->assertOk()
-            ->assertSee('Tarixi məlumatların yenilənməsi');
+            ->assertSee('Tarixi məlumatların yenilənməsi')
+            ->assertSee('Geofence Pozuntuları');
     }
 
     public function test_viewer_cannot_open_historical_recalculation_page(): void
@@ -159,6 +160,44 @@ class HistoricalRecalculationTest extends TestCase
                 'fetch_tasks' => 3,
                 'aggregate_tasks' => 0,
                 'total_tasks' => 3,
+            ]);
+    }
+
+    public function test_preview_for_geofence_violations_uses_separate_project_tasks(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Violation project', 'active' => true]);
+
+        foreach ([
+            ['id' => '310', 'ownership' => Equipment::OWNERSHIP_NWC],
+            ['id' => '311', 'ownership' => Equipment::OWNERSHIP_ICARE],
+        ] as $group) {
+            ProjectWialonGroup::query()->create([
+                'project_id' => $project->id,
+                'wialon_group_id' => $group['id'],
+                'name' => 'Violation project - '.$group['ownership'],
+                'ownership_type' => $group['ownership'],
+            ]);
+        }
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-27',
+                'date_to' => '2026-07-28',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 2,
+                'project_groups' => 1,
+                'fetch_tasks' => 2,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 2,
             ]);
     }
 
@@ -303,6 +342,48 @@ class HistoricalRecalculationTest extends TestCase
 
         $this->assertSame(HistoricalRecalculationTask::STATUS_FAILED, $task->refresh()->status);
         $this->assertStringContainsString('exit code 1', (string) $task->error_message);
+    }
+
+    public function test_geofence_violations_history_uses_its_own_fetch_command(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Violation command project', 'active' => true]);
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '510',
+            'name' => 'Violation command project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $service = app(HistoricalRecalculationService::class);
+        $run = $service->createRun([
+            'date_from' => '2026-07-28',
+            'date_to' => '2026-07-28',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => true,
+        ], $admin);
+        $task = $run->tasks()->where('operation', HistoricalRecalculation::OPERATION_FETCH)->firstOrFail();
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('fleet:sync-geofence-violations-report', \Mockery::on(
+                fn (array $parameters): bool => $parameters['--project'] === $project->id
+                    && $parameters['--from'] === '2026-07-28 00:00:00'
+                    && $parameters['--to'] === '2026-07-28 23:59:59'
+                    && $parameters['--force'] === true
+            ))
+            ->andReturn(0);
+
+        (new RunHistoricalRecalculationTaskJob($task->id))->handle(
+            app(WialonReportStatsSyncService::class),
+            $service
+        );
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
     }
 
     private function equipment(

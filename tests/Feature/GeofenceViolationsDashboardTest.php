@@ -151,6 +151,32 @@ class GeofenceViolationsDashboardTest extends TestCase
         ]))->assertSessionHasErrors('date_to');
     }
 
+    public function test_report_donut_is_added_to_geozones_tab_without_replacing_existing_widget(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$project, $type] = $this->fleet();
+
+        $this->reportRow($project, $type, 'Report violation', 14_400);
+        $this->reportRow($project, $type, 'Below threshold', 10_800);
+
+        $this->actingAs($user)->get(route('dashboard', [
+            'tab' => 'geozones',
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+        ]))
+            ->assertOk()
+            ->assertSee('data-widget-key="geofence-analysis"', false)
+            ->assertSee('data-widget-key="geofence-violations-report"', false)
+            ->assertSee('Geozonadan çıxma halları')
+            ->assertSee('Mənbə: Geofence Pozuntuları api')
+            ->assertViewHas('geofenceViolationDashboardWidget', function (array $widget) use ($project): bool {
+                return data_get($widget, 'kpis.total_violations') === 1
+                    && $widget['distribution']->count() === 1
+                    && $widget['distribution']->first()['project_id'] === $project->id
+                    && $widget['distribution']->first()['count'] === 1;
+            });
+    }
+
     /**
      * @return array{Project, EquipmentType}
      */

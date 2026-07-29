@@ -28,6 +28,7 @@ class DashboardAnalyticsController extends Controller
             'average-engine-hours', 'average-mileage', 'utilization-trend' => 'daily_averages',
             'least-working', 'most-working' => 'top_working_units',
             'geofence-analysis' => 'geofence_outside',
+            'geofence-violations-report' => 'geofence_violations',
             'project-work-categories-nwc', 'project-work-categories-icare' => 'shift_efficiency',
             default => 'static_fleet',
         };

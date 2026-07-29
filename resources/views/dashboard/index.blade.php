@@ -100,6 +100,37 @@
     $geofenceViolationTopRow = $geofenceViolationRows->first();
     $geofenceViolationPalette = ['#2563EB', '#22C55E', '#F59E0B', '#8B5CF6', '#14B8A6', '#EF4444', '#64748B', '#0EA5E9', '#A855F7', '#F97316'];
     $geofenceHomeProjectLabel = $selectedProject?->name ?? ($filters['project_id'] ? 'ID '.$filters['project_id'] : __('app.all_projects'));
+    $geofenceReportWidget = $geofenceViolationDashboardWidget ?? [
+        'distribution' => collect(),
+        'kpis' => [
+            'total_violations' => 0,
+            'active_violations' => 0,
+            'active_projects' => 0,
+            'longest_duration_seconds' => 0,
+        ],
+        'latest_report_at' => null,
+    ];
+    $geofenceReportDistribution = collect($geofenceReportWidget['distribution'] ?? []);
+    $geofenceReportTotal = (int) data_get($geofenceReportWidget, 'kpis.total_violations', 0);
+    $geofenceReportCursor = 0.0;
+    $geofenceReportSegments = [];
+
+    foreach ($geofenceReportDistribution as $segmentIndex => $segment) {
+        $segmentEnd = $segmentIndex === $geofenceReportDistribution->count() - 1
+            ? 100.0
+            : min(100.0, $geofenceReportCursor + (float) $segment['share']);
+        $geofenceReportSegments[] = sprintf(
+            '%s %.4f%% %.4f%%',
+            $segment['color'],
+            $geofenceReportCursor,
+            $segmentEnd
+        );
+        $geofenceReportCursor = $segmentEnd;
+    }
+
+    $geofenceReportDonutBackground = $geofenceReportSegments === []
+        ? 'conic-gradient(#E5E7EB 0% 100%)'
+        : 'conic-gradient('.implode(', ', $geofenceReportSegments).')';
     $utilizationTrendByOwnership = $data['utilizationTrendByOwnership'] ?? ['labels' => [], 'series' => [$nwc => [], $icare => []], 'has_data' => false];
     $latestPublishedReportDate = $latestPublishedReportDate
         ?? ($data['latestPublishedReportDate'] ?? null)
@@ -178,6 +209,7 @@
         'least-working' => __('app.least_working'),
         'most-working' => __('app.most_working'),
         'geofence-analysis' => __('app.geofence_analysis'),
+        'geofence-violations-report' => __('app.geofence_violations'),
         'current-live' => __('app.current_live'),
         'utilization-trend' => __('app.utilization_trend'),
         'project-comparison' => __('app.work_hours_by_ownership'),
@@ -1092,6 +1124,10 @@
         flex: 0 0 100%;
         max-width: 100%;
     }
+    .dashboard-widget[data-widget-key="geofence-violations-report"] {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
     .foreign-geofence-shell {
         background: transparent;
         border: 0;
@@ -1235,6 +1271,32 @@
         width: 100% !important;
         height: 100% !important;
         cursor: pointer;
+    }
+    .geofence-report-donut {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: var(--geofence-report-donut-background);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
+    }
+    .geofence-report-donut::after {
+        content: "";
+        position: absolute;
+        inset: 22%;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: inset 0 0 0 1px #e2e8f0;
+    }
+    .geofence-report-legend-heading {
+        margin: 0 0 10px;
+        color: #0f172a;
+        font-size: .95rem;
+        font-weight: 850;
+    }
+    .geofence-report-legend-wrap {
+        min-width: 0;
     }
     .foreign-geofence-center {
         position: absolute;
@@ -2338,6 +2400,72 @@
                             <div class="foreign-geofence-kpi-label">Ən böyük geozona</div>
                             <div class="foreign-geofence-kpi-value">{{ number_format((int) ($geofenceViolationTopRow['count'] ?? 0)) }}</div>
                             <div class="foreign-geofence-kpi-note">{{ $geofenceViolationTopRow['label'] ?? __('app.no_data') }}</div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('geofence-violations-report', 'col-12', 12);
+                $geofenceReportTitle = $dashboardWidgetTitleFor('geofence-violations-report', __('app.geofence_violations'));
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('geofence-violations-report') }}" data-dashboard-widget="geofence-violations-report" data-widget-key="geofence-violations-report" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-violations-report') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+                <section class="panel dashboard-card foreign-geofence-shell" aria-labelledby="geofenceReportTitle">
+                    <div class="foreign-geofence-header">
+                        <div class="min-w-0">
+                            <h2 class="foreign-geofence-title dashboard-card-title-text" id="geofenceReportTitle">{{ $geofenceReportTitle }}</h2>
+                            <input type="text" class="form-control form-control-sm dashboard-title-input mt-1 d-none" value="{{ $geofenceReportTitle }}" maxlength="120" aria-label="Dashboard başlığı">
+                            <div class="foreign-geofence-subtitle">Bütün layihə geozonalarından kənarda fasiləsiz 3 saatdan çox qalan texnika</div>
+                            <div class="foreign-geofence-context">
+                                <i class="bi bi-shield-check"></i>
+                                <span>Mənbə: Geofence Pozuntuları api</span>
+                            </div>
+                        </div>
+                        <div class="foreign-geofence-actions">
+                            <a href="{{ route('geofence-violations.index', array_filter([
+                                'date_from' => $filters['from'],
+                                'date_to' => $filters['to'],
+                                'project_id' => $filters['project_id'],
+                                'ownership_type' => $filters['ownership_type'],
+                            ])) }}" class="btn btn-sm btn-outline-primary foreign-geofence-action">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                                <span>Ətraflı baxış</span>
+                            </a>
+                            <button type="button" class="btn btn-sm dashboard-visibility-toggle foreign-geofence-action" title="Bloku gizlət" aria-label="Bloku gizlət">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm dashboard-drag-handle foreign-geofence-action" title="Bloku daşı" aria-label="Bloku daşı">
+                                <i class="bi bi-grip-vertical"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="foreign-geofence-card">
+                        <div class="foreign-geofence-donut-layout">
+                            <div class="foreign-geofence-donut-wrap">
+                                <div class="geofence-report-donut" style="--geofence-report-donut-background: {{ $geofenceReportDonutBackground }};"></div>
+                                <div class="foreign-geofence-center">
+                                    <div>
+                                        <strong>{{ number_format($geofenceReportTotal) }}</strong>
+                                        <span>Ümumi pozuntu</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="geofence-report-legend-wrap">
+                                <h3 class="geofence-report-legend-heading">Geozonadan çıxma halları</h3>
+                                <div class="foreign-geofence-legend" aria-label="Geozonadan çıxma hallarının layihə üzrə bölgüsü">
+                                    @forelse ($geofenceReportDistribution as $segment)
+                                        <div class="foreign-geofence-legend-row" title="{{ $segment['label'] }}">
+                                            <span class="foreign-geofence-dot" style="background: {{ $segment['color'] }}"></span>
+                                            <span class="foreign-geofence-legend-name">{{ $segment['label'] }}</span>
+                                            <span class="foreign-geofence-legend-count">{{ number_format($segment['count']) }}</span>
+                                            <span class="foreign-geofence-legend-percent">{{ number_format($segment['percentage'], 1) }}%</span>
+                                        </div>
+                                    @empty
+                                        <div class="foreign-geofence-empty">Seçilmiş dövr üçün pozuntu məlumatı yoxdur</div>
+                                    @endforelse
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>

@@ -70,6 +70,7 @@ return [
     'equipment_details' => 'Equipment details',
     'generated_at' => 'Generated at',
     'geofence_analysis' => 'Geofence Transfers',
+    'geofence_violations' => 'Geofence Violations',
     'utilization_trend' => 'Utilization rate',
     'hours' => 'hours',
     'km' => 'km',

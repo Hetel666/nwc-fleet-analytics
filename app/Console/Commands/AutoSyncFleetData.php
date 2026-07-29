@@ -104,10 +104,12 @@ class AutoSyncFleetData extends Command
         $top20Success = true;
         $shiftSuccess = true;
         $geozonSuccess = true;
+        $geofenceViolationsSuccess = true;
         $dailyMessages = [];
         $top20Messages = [];
         $shiftMessages = [];
         $geozonMessages = [];
+        $geofenceViolationsMessages = [];
         $top20Limit = max(1, min(50, (int) $this->setting('auto_sync_top20_batch_limit', 10)));
         $shiftLimit = max(1, min(50, (int) $this->setting('auto_sync_shift_batch_limit', 10)));
 
@@ -126,6 +128,11 @@ class AutoSyncFleetData extends Command
                 '--to' => $date.' 23:59:59',
                 '--force' => true,
             ]);
+            $geofenceViolationsOk = $this->runArtisanCommand('fleet:sync-geofence-violations-report', [
+                '--from' => $date.' 00:00:00',
+                '--to' => $date.' 23:59:59',
+                '--force' => true,
+            ]);
             $shiftPlanOk = $this->runArtisanCommand('fleet:plan-shift-sync', ['--from' => $date, '--to' => $date]);
             $shiftRunOk = $shiftPlanOk['ok']
                 ? $this->runBatchedReportCommand(
@@ -139,17 +146,24 @@ class AutoSyncFleetData extends Command
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
             $top20Success = $top20Success && $top20Ok['ok'];
             $geozonSuccess = $geozonSuccess && $geozonOk['ok'];
+            $geofenceViolationsSuccess = $geofenceViolationsSuccess && $geofenceViolationsOk['ok'];
             $shiftSuccess = $shiftSuccess && $shiftPlanOk['ok'] && $shiftRunOk['ok'];
 
             $dailyMessages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
             $top20Messages[] = $date.': '.trim($top20Ok['output']);
             $geozonMessages[] = $date.': '.trim($geozonOk['output']);
+            $geofenceViolationsMessages[] = $date.': '.trim($geofenceViolationsOk['output']);
             $shiftMessages[] = $date.': '.trim($shiftPlanOk['output'].' '.$shiftRunOk['output']);
         }
 
         $this->storeTaskResult('daily', $dailySuccess, implode(' | ', array_filter($dailyMessages)));
         $this->storeTaskResult('top20', $top20Success, implode(' | ', array_filter($top20Messages)));
         $this->storeTaskResult('geozon', $geozonSuccess, implode(' | ', array_filter($geozonMessages)));
+        $this->storeTaskResult(
+            'geofence_violations',
+            $geofenceViolationsSuccess,
+            implode(' | ', array_filter($geofenceViolationsMessages))
+        );
         $this->storeTaskResult('shift', $shiftSuccess, implode(' | ', array_filter($shiftMessages)));
 
         Setting::updateOrCreate(
@@ -157,7 +171,11 @@ class AutoSyncFleetData extends Command
             ['value' => now(config('app.timezone'))->toDateString(), 'is_secret' => false]
         );
 
-        return $dailySuccess && $top20Success && $geozonSuccess && $shiftSuccess;
+        return $dailySuccess
+            && $top20Success
+            && $geozonSuccess
+            && $geofenceViolationsSuccess
+            && $shiftSuccess;
     }
 
     /**

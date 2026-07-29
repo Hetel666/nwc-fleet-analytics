@@ -6,29 +6,40 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
+use App\Services\GeofenceViolationsDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request, DashboardService $dashboard, DashboardLayoutService $layout): View
-    {
-        return $this->renderDashboard($request, $dashboard, $layout);
+    public function index(
+        Request $request,
+        DashboardService $dashboard,
+        DashboardLayoutService $layout,
+        GeofenceViolationsDashboardService $geofenceViolations
+    ): View {
+        return $this->renderDashboard($request, $dashboard, $layout, $geofenceViolations);
     }
 
-    public function tab(Request $request, string $tab, DashboardService $dashboard, DashboardLayoutService $layout): View
-    {
+    public function tab(
+        Request $request,
+        string $tab,
+        DashboardService $dashboard,
+        DashboardLayoutService $layout,
+        GeofenceViolationsDashboardService $geofenceViolations
+    ): View {
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $layout, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $layout, $geofenceViolations, $selectedTab, true);
     }
 
     private function renderDashboard(
         Request $request,
         DashboardService $dashboard,
         DashboardLayoutService $layout,
+        GeofenceViolationsDashboardService $geofenceViolations,
         ?string $selectedTab = null,
         bool $fragment = false
     ): View {
@@ -69,6 +80,9 @@ class DashboardController extends Controller
             'dashboardTabs' => config('dashboard.tabs', []),
             'selectedDashboardTab' => $selectedTab,
             'dashboardTabFragment' => $fragment,
+            'geofenceViolationDashboardWidget' => $selectedTab === 'geozones'
+                ? $geofenceViolations->getDashboardWidget($filters)
+                : null,
         ]);
     }
 }

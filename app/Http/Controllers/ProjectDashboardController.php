@@ -6,14 +6,20 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
+use App\Services\GeofenceViolationsDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class ProjectDashboardController extends Controller
 {
-    public function show(Request $request, Project $project, DashboardService $dashboard, DashboardLayoutService $layout): View
-    {
+    public function show(
+        Request $request,
+        Project $project,
+        DashboardService $dashboard,
+        DashboardLayoutService $layout,
+        GeofenceViolationsDashboardService $geofenceViolations
+    ): View {
         $selectedTab = array_key_exists((string) $request->query('tab'), config('dashboard.tabs', []))
             ? (string) $request->query('tab')
             : (string) config('dashboard.default_tab', 'overview');
@@ -52,6 +58,9 @@ class ProjectDashboardController extends Controller
             'dashboardTabs' => config('dashboard.tabs', []),
             'selectedDashboardTab' => $selectedTab,
             'dashboardTabFragment' => false,
+            'geofenceViolationDashboardWidget' => $selectedTab === 'geozones'
+                ? $geofenceViolations->getDashboardWidget($filters)
+                : null,
         ]);
     }
 }
