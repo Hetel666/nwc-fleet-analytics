@@ -8,7 +8,6 @@ use App\Models\Equipment;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
-use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
@@ -397,12 +396,15 @@ class HistoricalRecalculationService
                 ->values();
         }
 
-        return ProjectWialonGroup::query()
-            ->whereHas('project', fn ($query) => $query->where('active', true))
-            ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('project_id', $projectIds))
-            ->whereIn('ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
-            ->get(['project_id', 'ownership_type'])
-            ->unique(fn (ProjectWialonGroup $group): string => $group->project_id.'|'.$group->ownership_type)
+        return Equipment::query()
+            ->where('equipments.active', true)
+            ->visibleInDashboard()
+            ->boundToProjectWialonGroup()
+            ->operationalDashboardProject()
+            ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('equipments.project_id', $projectIds))
+            ->whereIn('equipments.ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE])
+            ->get(['equipments.project_id', 'equipments.ownership_type'])
+            ->unique(fn (Equipment $equipment): string => $equipment->project_id.'|'.$equipment->ownership_type)
             ->values();
     }
 
