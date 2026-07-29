@@ -30,9 +30,11 @@ class GeofenceViolationsDashboardService
                 $query->whereNotNull('project_id')->orWhereNotNull('project_name');
             })
             ->get(['project_id', 'project_name']);
+        $distribution = $this->projectDistribution(clone $query);
 
         return [
             'rows' => $rows,
+            'distribution' => $distribution,
             'kpis' => [
                 'total_violations' => (clone $query)->count(),
                 'active_violations' => $this->uniqueEquipmentCount($activeRows),
@@ -130,5 +132,43 @@ class GeofenceViolationsDashboardService
             ? 'project:'.$row->project_id
             : 'report:'.mb_strtolower((string) $row->project_name)
         )->count();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function projectDistribution(Builder $query): Collection
+    {
+        $rows = $query
+            ->select(['project_id', 'project_name'])
+            ->selectRaw('COUNT(*) as violation_count')
+            ->groupBy('project_id', 'project_name')
+            ->orderByDesc('violation_count')
+            ->orderBy('project_name')
+            ->get();
+        $total = (int) $rows->sum('violation_count');
+        $palette = [
+            '#2563EB',
+            '#22C55E',
+            '#F59E0B',
+            '#7C3AED',
+            '#0EA5A8',
+            '#EF4444',
+            '#0891B2',
+            '#64748B',
+        ];
+
+        return $rows->values()->map(function (GeofenceViolationReportRow $row, int $index) use ($total, $palette): array {
+            $count = (int) $row->violation_count;
+
+            return [
+                'project_id' => $row->project_id ? (int) $row->project_id : null,
+                'label' => filled($row->project_name) ? $row->project_name : 'Layihə göstərilməyib',
+                'count' => $count,
+                'percentage' => $total > 0 ? round(($count / $total) * 100, 1) : 0.0,
+                'share' => $total > 0 ? ($count / $total) * 100 : 0.0,
+                'color' => $palette[$index % count($palette)],
+            ];
+        });
     }
 }

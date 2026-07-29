@@ -103,6 +103,121 @@
         color: var(--fleet-muted);
         font-size: 11px;
     }
+    .gv-distribution-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid var(--fleet-line);
+    }
+    .gv-distribution-head h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 850;
+    }
+    .gv-distribution-body {
+        display: grid;
+        grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+        gap: 28px;
+        align-items: center;
+        min-height: 360px;
+    }
+    .gv-donut-wrap {
+        display: grid;
+        place-items: center;
+        min-width: 0;
+    }
+    .gv-donut {
+        position: relative;
+        width: min(290px, 100%);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: var(--gv-donut-background);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
+    }
+    .gv-donut::after {
+        content: "";
+        position: absolute;
+        inset: 20%;
+        border-radius: 50%;
+        background: var(--fleet-card);
+        box-shadow: inset 0 0 0 1px var(--fleet-line);
+    }
+    .gv-donut-center {
+        position: absolute;
+        inset: 27%;
+        z-index: 1;
+        display: grid;
+        place-content: center;
+        text-align: center;
+    }
+    .gv-donut-value {
+        font-size: 34px;
+        font-weight: 900;
+        line-height: 1;
+    }
+    .gv-donut-label {
+        margin-top: 7px;
+        color: var(--fleet-muted);
+        font-size: 12px;
+        font-weight: 800;
+    }
+    .gv-distribution-list {
+        min-width: 0;
+    }
+    .gv-distribution-list h3 {
+        margin: 0 0 12px;
+        font-size: 15px;
+        font-weight: 800;
+    }
+    .gv-legend-scroll {
+        display: grid;
+        gap: 8px;
+        max-height: 290px;
+        overflow-y: auto;
+        padding-right: 5px;
+    }
+    .gv-legend-row {
+        min-height: 44px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        align-items: center;
+        gap: 15px;
+        padding: 9px 12px;
+        border-radius: 7px;
+        background: var(--fleet-card-soft);
+    }
+    .gv-legend-name {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 750;
+    }
+    .gv-legend-name span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .gv-legend-swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        flex: 0 0 auto;
+        background: var(--gv-segment-color);
+    }
+    .gv-legend-count {
+        min-width: 38px;
+        text-align: right;
+        font-weight: 850;
+    }
+    .gv-legend-percent {
+        min-width: 52px;
+        color: var(--fleet-muted);
+        text-align: right;
+        font-size: 12px;
+        font-weight: 800;
+    }
     .gv-table-head {
         display: flex;
         align-items: center;
@@ -217,6 +332,10 @@
         .gv-filter-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+        .gv-distribution-body {
+            grid-template-columns: minmax(230px, 320px) minmax(0, 1fr);
+            gap: 20px;
+        }
     }
     @media (max-width: 640px) {
         .gv-filter-grid,
@@ -230,6 +349,16 @@
         .gv-kpi {
             min-height: 98px;
         }
+        .gv-distribution-body {
+            grid-template-columns: 1fr;
+            min-height: 0;
+        }
+        .gv-donut {
+            width: min(250px, 78vw);
+        }
+        .gv-legend-scroll {
+            max-height: 260px;
+        }
     }
 </style>
 @endpush
@@ -239,6 +368,25 @@
     $formatDateTime = static fn ($value) => $value
         ? \Illuminate\Support\Carbon::parse($value)->timezone(config('app.timezone'))->format('d.m.Y H:i:s')
         : '—';
+    $donutCursor = 0.0;
+    $donutSegments = [];
+
+    foreach ($distribution as $segmentIndex => $segment) {
+        $segmentEnd = $segmentIndex === $distribution->count() - 1
+            ? 100.0
+            : min(100.0, $donutCursor + $segment['share']);
+        $donutSegments[] = sprintf(
+            '%s %.4f%% %.4f%%',
+            $segment['color'],
+            $donutCursor,
+            $segmentEnd
+        );
+        $donutCursor = $segmentEnd;
+    }
+
+    $donutBackground = $donutSegments === []
+        ? 'conic-gradient(#E5E7EB 0% 100%)'
+        : 'conic-gradient('.implode(', ', $donutSegments).')';
 @endphp
 
 <div class="gv-shell py-4 px-3 px-lg-4">
@@ -346,6 +494,45 @@
                 <div class="gv-kpi-note">Maksimum fasiləsiz müddət</div>
             </div>
         </article>
+    </section>
+
+    <section class="gv-panel overflow-hidden mb-3">
+        <div class="gv-distribution-head p-3 p-lg-4">
+            <div>
+                <h2>Geozonadan çıxma halları</h2>
+                <div class="text-secondary small mt-1">Seçilmiş filtrlər üzrə pozuntu dövrlərinin layihə paylanması</div>
+            </div>
+            <span class="gv-count">{{ number_format($kpis['total_violations']) }} pozuntu</span>
+        </div>
+        <div class="gv-distribution-body p-3 p-lg-4">
+            <div class="gv-donut-wrap">
+                <div class="gv-donut" style="--gv-donut-background: {{ $donutBackground }};">
+                    <div class="gv-donut-center">
+                        <div class="gv-donut-value">{{ number_format($kpis['total_violations']) }}</div>
+                        <div class="gv-donut-label">Ümumi pozuntu</div>
+                    </div>
+                </div>
+            </div>
+            <div class="gv-distribution-list">
+                <h3>Geozonadan çıxma halları</h3>
+                @if ($distribution->isEmpty())
+                    <div class="text-secondary">Seçilmiş dövr üçün paylanma məlumatı yoxdur.</div>
+                @else
+                    <div class="gv-legend-scroll">
+                        @foreach ($distribution as $segment)
+                            <div class="gv-legend-row" style="--gv-segment-color: {{ $segment['color'] }};">
+                                <div class="gv-legend-name" title="{{ $segment['label'] }}">
+                                    <span class="gv-legend-swatch"></span>
+                                    <span>{{ $segment['label'] }}</span>
+                                </div>
+                                <div class="gv-legend-count">{{ number_format($segment['count']) }}</div>
+                                <div class="gv-legend-percent">{{ number_format($segment['percentage'], 1) }}%</div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        </div>
     </section>
 
     <section class="gv-panel overflow-hidden">

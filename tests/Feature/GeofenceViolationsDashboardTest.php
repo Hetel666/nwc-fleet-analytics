@@ -74,6 +74,7 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertSee('Completed 4h')
             ->assertSee('Aktiv pozuntu')
             ->assertSee('Tamamlanmış pozuntu')
+            ->assertSee('Geozonadan çıxma halları')
             ->assertSee('Cari layihə geozonası: Yoxdur')
             ->assertDontSee('Boundary 2h59m')
             ->assertDontSee('Boundary exactly 3h')
@@ -88,7 +89,13 @@ class GeofenceViolationsDashboardTest extends TestCase
                 'active_violations' => 2,
                 'active_projects' => 1,
                 'longest_duration_seconds' => 14_400,
-            ]);
+            ])
+            ->assertViewHas('distribution', function ($distribution) use ($project): bool {
+                return $distribution->count() === 1
+                    && $distribution->first()['project_id'] === $project->id
+                    && $distribution->first()['count'] === 3
+                    && $distribution->first()['percentage'] === 100.0;
+            });
     }
 
     public function test_filters_are_independent_from_existing_dashboard_filters(): void
@@ -119,6 +126,15 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertSee('NWC active')
             ->assertDontSee('ICARE completed')
             ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 1);
+
+        $this->actingAs($user)->get(route('geofence-violations.index', [
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+        ]))
+            ->assertOk()
+            ->assertViewHas('distribution', fn ($distribution): bool => $distribution->count() === 2
+                && $distribution->sum('count') === 2
+                && $distribution->sum('percentage') === 100.0);
     }
 
     public function test_partial_or_reversed_date_range_is_rejected(): void
