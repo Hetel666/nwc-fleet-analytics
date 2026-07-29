@@ -59,7 +59,7 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
         $this->assertSame(['Project unit'], array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name'));
     }
 
-    public function test_repair_project_is_visible_only_in_share_widgets_and_their_exports(): void
+    public function test_repair_project_is_visible_in_all_dashboard_widgets_and_exports(): void
     {
         config(['fleet.dashboard.cache_minutes' => 0]);
 
@@ -91,8 +91,8 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
         $dashboard = $dashboardService->getDashboard($filters);
         $ownershipShare = collect($dashboard['overview']['ownership_share'])->keyBy('label');
 
-        $this->assertSame(5.0, $dashboard['overview']['total_hours']);
-        $this->assertSame(1, $dashboard['overview']['equipment_count']);
+        $this->assertSame(18.0, $dashboard['overview']['total_hours']);
+        $this->assertSame(3, $dashboard['overview']['equipment_count']);
         $this->assertSame(2, $ownershipShare[Equipment::OWNERSHIP_NWC]['count']);
         $this->assertSame(1, $ownershipShare[Equipment::OWNERSHIP_ICARE]['count']);
         $this->assertSame(2, collect($dashboard['equipmentTypesByOwnership'][Equipment::OWNERSHIP_NWC])->firstWhere('name', 'Excavator')['total']);
@@ -102,9 +102,12 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
         $this->assertSame(1.0, $repairComparison[Equipment::OWNERSHIP_NWC]);
         $this->assertSame(1.0, $repairComparison[Equipment::OWNERSHIP_ICARE]);
 
-        $this->assertSame(1, app(DashboardDailyAverageService::class)->typeSummary($filters, 'engine_hours')->sum('units_count'));
-        $this->assertSame(1, app(FleetEfficiencyService::class)->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC)[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
-        $this->assertSame(['Project unit'], array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name'));
+        $this->assertSame(3, app(DashboardDailyAverageService::class)->typeSummary($filters, 'engine_hours')->sum('units_count'));
+        $this->assertSame(2, app(FleetEfficiencyService::class)->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC)[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
+        $this->assertSame(
+            ['Repair ICARE unit', 'Repair NWC unit', 'Project unit'],
+            array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name')
+        );
 
         $overviewRows = $dashboardService->getDashboardExport($filters, 'overview')['sections'][1]['rows'];
         $ownershipRows = $dashboardService->getDashboardExport($filters, 'ownership-share')['sections'][1]['rows'];
@@ -113,8 +116,8 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
         $icareTypeRows = $dashboardService->getDashboardExport($filters, 'equipment-types-icare')['sections'][1]['rows'];
         $projectComparisonRows = $dashboardService->getDashboardExport($filters, 'project-comparison')['sections'][1]['rows'];
 
-        $this->assertNotContains('Təmir', array_column($overviewRows, 1));
-        $this->assertNotContains('Təmir', array_column($typeRows, 4));
+        $this->assertContains('Təmir', array_column($overviewRows, 1));
+        $this->assertContains('Təmir', array_column($typeRows, 4));
         $this->assertContains('Təmir', array_column($ownershipRows, 1));
         $this->assertContains('Təmir', array_column($nwcTypeRows, 4));
         $this->assertContains('Təmir', array_column($icareTypeRows, 4));

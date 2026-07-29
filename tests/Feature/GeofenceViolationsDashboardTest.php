@@ -199,7 +199,7 @@ class GeofenceViolationsDashboardTest extends TestCase
             });
     }
 
-    public function test_share_only_repair_project_is_not_shown_in_operational_violation_dashboard(): void
+    public function test_repair_project_is_shown_in_operational_violation_dashboard(): void
     {
         $user = User::factory()->create(['active' => true]);
         [$project, $type] = $this->fleet();
@@ -213,8 +213,8 @@ class GeofenceViolationsDashboardTest extends TestCase
         ]))
             ->assertOk()
             ->assertSee('Operational violation')
-            ->assertDontSee('Repair violation')
-            ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 1);
+            ->assertSee('Repair violation')
+            ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 2);
     }
 
     /**

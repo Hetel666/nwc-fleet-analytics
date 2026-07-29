@@ -15,9 +15,7 @@ class Project extends Model
         '-Layihesiz-',
     ];
 
-    public const DASHBOARD_SHARE_ONLY_NAMES = [
-        'Təmir',
-    ];
+    public const DASHBOARD_SHARE_ONLY_NAMES = [];
 
     protected $fillable = [
         'name',

@@ -180,7 +180,7 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
     public function test_command_prunes_legacy_and_operationally_excluded_rows(): void
     {
         $project = Project::create(['name' => 'Cleanup project', 'active' => true]);
-        $repair = Project::create(['name' => 'Təmir', 'active' => true]);
+        $excluded = Project::create(['name' => Project::DASHBOARD_UNASSIGNED_NAMES[0], 'active' => true]);
         $group = ProjectWialonGroup::create([
             'project_id' => $project->id,
             'wialon_group_id' => '601703001',
@@ -188,17 +188,17 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'is_active' => true,
         ]);
-        $repairGroup = ProjectWialonGroup::create([
-            'project_id' => $repair->id,
+        $excludedGroup = ProjectWialonGroup::create([
+            'project_id' => $excluded->id,
             'wialon_group_id' => '601703002',
-            'name' => 'Təmir - NWC',
+            'name' => 'Excluded - NWC',
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'is_active' => true,
         ]);
 
         foreach ([
             [$project, $group, 'legacy-row', null, null],
-            [$repair, $repairGroup, 'repair-row', '2026-07-28 00:00:00', '2026-07-28 23:59:59'],
+            [$excluded, $excludedGroup, 'excluded-row', '2026-07-28 00:00:00', '2026-07-28 23:59:59'],
         ] as [$rowProject, $rowGroup, $periodKey, $periodFrom, $periodTo]) {
             GeofenceViolationReportRow::create([
                 'report_name' => GeofenceViolationReportRow::REPORT_NAME,
@@ -221,11 +221,11 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         }
 
         GeofenceViolationSyncItem::create([
-            'checkpoint_key' => sha1('repair-checkpoint'),
-            'project_id' => $repair->id,
-            'project_wialon_group_id' => $repairGroup->id,
-            'wialon_group_id' => $repairGroup->wialon_group_id,
-            'wialon_group_name' => $repairGroup->name,
+            'checkpoint_key' => sha1('excluded-checkpoint'),
+            'project_id' => $excluded->id,
+            'project_wialon_group_id' => $excludedGroup->id,
+            'wialon_group_id' => $excludedGroup->wialon_group_id,
+            'wialon_group_name' => $excludedGroup->name,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'report_period_from' => '2026-07-28 00:00:00',
             'report_period_to' => '2026-07-28 23:59:59',
@@ -249,8 +249,8 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         ])->assertSuccessful();
 
         $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'legacy-row']);
-        $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'repair-row']);
-        $this->assertDatabaseMissing('geofence_violation_sync_items', ['checkpoint_key' => sha1('repair-checkpoint')]);
+        $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'excluded-row']);
+        $this->assertDatabaseMissing('geofence_violation_sync_items', ['checkpoint_key' => sha1('excluded-checkpoint')]);
     }
 
     /**

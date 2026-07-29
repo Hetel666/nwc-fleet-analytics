@@ -572,7 +572,7 @@ class DashboardDrilldownTest extends TestCase
             ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     }
 
-    public function test_repair_project_is_available_only_in_share_widget_drilldowns(): void
+    public function test_repair_project_is_available_in_operational_and_share_drilldowns(): void
     {
         $user = $this->user();
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
@@ -602,9 +602,9 @@ class DashboardDrilldownTest extends TestCase
         $this->actingAs($user)
             ->getJson(route('dashboard.drilldown.units', $baseQuery))
             ->assertOk()
-            ->assertJsonPath('summary.total', 1)
-            ->assertJsonPath('data.0.name', 'Project unit')
-            ->assertJsonMissing(['name' => 'Repair unit']);
+            ->assertJsonPath('summary.total', 2)
+            ->assertJsonFragment(['name' => 'Project unit'])
+            ->assertJsonFragment(['name' => 'Repair unit']);
 
         $this->actingAs($user)
             ->getJson(route('dashboard.drilldown.units', [
