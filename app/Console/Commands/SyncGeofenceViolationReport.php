@@ -13,6 +13,7 @@ use App\Services\WialonService;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -449,7 +450,7 @@ class SyncGeofenceViolationReport extends Command
             ->where('report_generated_at', '<', $payloadCutoff)
             ->update(['source_payload' => null]);
 
-        GeofenceViolationReportRow::query()
+        $deletedRows = GeofenceViolationReportRow::query()
             ->where('report_name', GeofenceViolationReportRow::REPORT_NAME)
             ->where(function (Builder $query): void {
                 $query->whereNull('report_period_from')
@@ -462,6 +463,10 @@ class SyncGeofenceViolationReport extends Command
                     );
             })
             ->delete();
+
+        if ($deletedRows > 0) {
+            Cache::forever('geofence_violations:data_version', sprintf('%.6F', microtime(true)));
+        }
 
         GeofenceViolationSyncItem::query()
             ->whereIn(
