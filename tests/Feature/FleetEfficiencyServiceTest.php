@@ -63,7 +63,7 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame(3, $summary['total']);
     }
 
-    public function test_overtime_is_independent_from_daytime_status_and_does_not_inflate_total(): void
+    public function test_overtime_indicator_is_independent_from_total_work_category(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Loader']);
@@ -76,12 +76,12 @@ class FleetEfficiencyServiceTest extends TestCase
             'to' => '2026-07-01',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(1, $summary['less_than_7_hours']);
+        $this->assertSame(1, $summary['between_7_and_10_hours']);
         $this->assertSame(1, $summary['overtime']);
         $this->assertSame(1, $summary['total']);
     }
 
-    public function test_daytime_status_ignores_overtime_total_hours(): void
+    public function test_work_status_uses_total_hours_while_overtime_stays_independent(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Loader']);
@@ -99,8 +99,8 @@ class FleetEfficiencyServiceTest extends TestCase
             'to' => '2026-07-01',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(2, $summary['between_7_and_10_hours']);
-        $this->assertSame(1, $summary['over_10_hours']);
+        $this->assertSame(1, $summary['between_7_and_10_hours']);
+        $this->assertSame(2, $summary['over_10_hours']);
         $this->assertSame(1, $summary['overtime']);
         $this->assertSame(3, $summary['total']);
 
@@ -111,9 +111,9 @@ class FleetEfficiencyServiceTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(1, $tenPlusRows->total());
+        $this->assertSame(2, $tenPlusRows->total());
         $this->assertSame(
-            ['Loader daytime over ten'],
+            ['Loader 10 with overtime', 'Loader daytime over ten'],
             collect($tenPlusRows->items())->pluck('name')->all()
         );
     }
@@ -151,7 +151,7 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame('Positive overtime', $rows[0][2]);
     }
 
-    public function test_daytime_category_does_not_require_overtime_data(): void
+    public function test_total_work_category_requires_total_data_but_day_status_remains_filterable(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Excavator']);
@@ -166,29 +166,29 @@ class FleetEfficiencyServiceTest extends TestCase
         ], Equipment::OWNERSHIP_NWC);
 
         $this->assertSame(0, $summary['less_than_1_hour']);
-        $this->assertSame(1, $summary['less_than_7_hours']);
-        $this->assertSame(0, $summary['missing_data']);
+        $this->assertSame(0, $summary['less_than_7_hours']);
+        $this->assertSame(1, $summary['missing_data']);
         $this->assertSame(1, $summary['overtime_unknown']);
 
-        $lessThanOne = $service->paginate([
-            'from' => '2026-07-01',
-            'to' => '2026-07-01',
-            'work_category' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_1,
-            'per_page' => 20,
-        ]);
         $lessThanSeven = $service->paginate([
             'from' => '2026-07-01',
             'to' => '2026-07-01',
             'work_category' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_7,
             'per_page' => 20,
         ]);
+        $daytimeLessThanSeven = $service->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'day_status' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_7,
+            'per_page' => 20,
+        ]);
 
-        $this->assertSame(0, $lessThanOne->total());
-        $this->assertSame(1, $lessThanSeven->total());
-        $this->assertSame('Daytime only excavator', $lessThanSeven->items()[0]['name']);
-        $this->assertSame(3.5, $lessThanSeven->items()[0]['daytime_hours']);
-        $this->assertTrue($lessThanSeven->items()[0]['data_available']);
-        $this->assertNull($lessThanSeven->items()[0]['has_overtime']);
+        $this->assertSame(0, $lessThanSeven->total());
+        $this->assertSame(1, $daytimeLessThanSeven->total());
+        $this->assertSame('Daytime only excavator', $daytimeLessThanSeven->items()[0]['name']);
+        $this->assertSame(3.5, $daytimeLessThanSeven->items()[0]['daytime_hours']);
+        $this->assertFalse($daytimeLessThanSeven->items()[0]['data_available']);
+        $this->assertNull($daytimeLessThanSeven->items()[0]['has_overtime']);
     }
 
     public function test_missing_data_is_separate_from_less_than_one_hour_and_can_be_filtered(): void

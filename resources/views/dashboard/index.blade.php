@@ -4841,9 +4841,6 @@ const openDashboardDrilldown = (filters = {}) => {
         page: 1,
         search: '',
     };
-    if (!initialFilters.day_status && ['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'over_10_hours'].includes(initialFilters.work_category)) {
-        initialFilters.day_status = initialFilters.work_category;
-    }
     if ((initialFilters.work_category || initialFilters.day_status) && !initialFilters.sort) {
         initialFilters.sort = 'date';
         initialFilters.direction = 'asc';
@@ -4977,12 +4974,6 @@ drilldownApplyFilters?.addEventListener('click', () => {
         ...panelFilters,
         page: 1,
     };
-
-    if (drilldownState.filters.day_status) {
-        drilldownState.filters.work_category = drilldownState.filters.day_status;
-    } else if (['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'over_10_hours'].includes(drilldownState.filters.work_category)) {
-        delete drilldownState.filters.work_category;
-    }
 
     activateDrilldownTab('data');
     loadDashboardDrilldown();

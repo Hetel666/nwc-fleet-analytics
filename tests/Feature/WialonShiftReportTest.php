@@ -246,7 +246,7 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame([], $parsed['records']);
     }
 
-    public function test_daytime_status_and_overtime_are_stored_independently_from_shift_values(): void
+    public function test_shift_values_keep_daytime_status_and_use_total_hours_for_work_categories(): void
     {
         $project = Project::query()->create(['name' => 'Shift Project', 'active' => true]);
         $group = ProjectWialonGroup::query()->create([
@@ -306,10 +306,10 @@ class WialonShiftReportTest extends TestCase
             'project_id' => $project->id,
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(1, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_1]);
+        $this->assertSame(0, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_1]);
         $this->assertSame(2, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
-        $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10]);
-        $this->assertSame(1, $summary[FleetEfficiencyService::DAY_STATUS_OVER_10]);
+        $this->assertSame(2, $summary[FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10]);
+        $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_OVER_10]);
         $this->assertSame(4, $summary[FleetEfficiencyService::STATUS_OVERTIME]);
         $this->assertSame(7, $summary['total']);
 
@@ -333,9 +333,9 @@ class WialonShiftReportTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(3, $dayRows->total());
+        $this->assertSame(2, $dayRows->total());
         $this->assertEqualsCanonicalizing(
-            ['Unit daytime 9 overtime 4', 'Unit daytime 8 overtime 0', 'Unit daytime 10 overtime 2'],
+            ['Unit daytime 3 overtime 5', 'Unit daytime 8 overtime 0'],
             collect($dayRows->items())->pluck('name')->all()
         );
 
@@ -348,9 +348,9 @@ class WialonShiftReportTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(1, $overTenRows->total());
-        $this->assertSame(
-            ['Unit daytime 10.5 overtime 0'],
+        $this->assertSame(3, $overTenRows->total());
+        $this->assertEqualsCanonicalizing(
+            ['Unit daytime 9 overtime 4', 'Unit daytime 10.5 overtime 0', 'Unit daytime 10 overtime 2'],
             collect($overTenRows->items())->pluck('name')->all()
         );
 
@@ -362,9 +362,9 @@ class WialonShiftReportTest extends TestCase
             'work_category' => FleetEfficiencyService::DAY_STATUS_OVER_10,
         ]);
 
-        $this->assertCount(1, $overTenExcelRows);
-        $this->assertSame(
-            ['Unit daytime 10.5 overtime 0'],
+        $this->assertCount(3, $overTenExcelRows);
+        $this->assertEqualsCanonicalizing(
+            ['Unit daytime 9 overtime 4', 'Unit daytime 10.5 overtime 0', 'Unit daytime 10 overtime 2'],
             collect($overTenExcelRows)->pluck(2)->all()
         );
 

@@ -1100,7 +1100,7 @@ class DashboardService
                 'Gündüz iş saatı',
                 'Overtime saatı',
                 'Ümumi iş saatı',
-                'Gündüz statusu',
+                'Ümumi iş statusu',
                 'Overtime',
                 'Məlumat statusu',
                 'Wialon ID',

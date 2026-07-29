@@ -494,8 +494,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ], 'actual-work-hours-nwc');
         $summaryRows = $export['sections'][0]['rows'];
 
-        $this->assertSame([0, 0, 1, 0, 1, 1, 2], array_column($summaryRows, 1));
-        $this->assertSame(['0.0%', '0.0%', '50.0%', '0.0%', '50.0%', '50.0%', '100.0%'], array_column($summaryRows, 2));
+        $this->assertSame([0, 0, 0, 1, 1, 1, 2], array_column($summaryRows, 1));
+        $this->assertSame(['0.0%', '0.0%', '0.0%', '50.0%', '50.0%', '50.0%', '100.0%'], array_column($summaryRows, 2));
         $this->assertCount(2, $export['sections'][1]['rows']);
     }
 
