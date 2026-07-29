@@ -402,9 +402,6 @@
                     <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}">
                         <i data-lucide="layout-dashboard"></i><span>{{ __('app.dashboard') }}</span>
                     </a>
-                    <a class="nav-link {{ request()->routeIs('geofence-violations.*') ? 'active' : '' }}" href="{{ route('geofence-violations.index') }}">
-                        <i data-lucide="shield-alert"></i><span>Geofence Pozuntuları</span>
-                    </a>
                     @if (auth()->user()?->isAdmin())
                         <a class="nav-link {{ request()->routeIs('admin.dashboard-analytics.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-analytics.index') }}">
                             <i data-lucide="database"></i><span>Dashboard mənbələri</span>

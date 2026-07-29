@@ -1281,6 +1281,24 @@
         background: var(--geofence-report-donut-background);
         box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
     }
+    .geofence-report-donut-link {
+        display: block;
+        color: inherit;
+        text-decoration: none;
+        cursor: pointer;
+        border-radius: 50%;
+        transition: transform .15s ease, filter .15s ease;
+    }
+    .geofence-report-donut-link:hover,
+    .geofence-report-donut-link:focus-visible {
+        color: inherit;
+        transform: translateY(-2px);
+        filter: brightness(.99);
+    }
+    .geofence-report-donut-link:focus-visible {
+        outline: 3px solid rgba(37, 99, 235, .3);
+        outline-offset: 4px;
+    }
     .geofence-report-donut::after {
         content: "";
         position: absolute;
@@ -2408,6 +2426,12 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('geofence-violations-report', 'col-12', 12);
                 $geofenceReportTitle = $dashboardWidgetTitleFor('geofence-violations-report', __('app.geofence_violations'));
+                $geofenceReportDetailsUrl = route('geofence-violations.index', array_filter([
+                    'date_from' => $filters['from'],
+                    'date_to' => $filters['to'],
+                    'project_id' => $filters['project_id'],
+                    'ownership_type' => $filters['ownership_type'],
+                ]));
             @endphp
             <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('geofence-violations-report') }}" data-dashboard-widget="geofence-violations-report" data-widget-key="geofence-violations-report" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-violations-report') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel dashboard-card foreign-geofence-shell" aria-labelledby="geofenceReportTitle">
@@ -2422,12 +2446,7 @@
                             </div>
                         </div>
                         <div class="foreign-geofence-actions">
-                            <a href="{{ route('geofence-violations.index', array_filter([
-                                'date_from' => $filters['from'],
-                                'date_to' => $filters['to'],
-                                'project_id' => $filters['project_id'],
-                                'ownership_type' => $filters['ownership_type'],
-                            ])) }}" class="btn btn-sm btn-outline-primary foreign-geofence-action">
+                            <a href="{{ $geofenceReportDetailsUrl }}" class="btn btn-sm btn-outline-primary foreign-geofence-action">
                                 <i class="bi bi-box-arrow-up-right"></i>
                                 <span>Ətraflı baxış</span>
                             </a>
@@ -2442,7 +2461,13 @@
 
                     <div class="foreign-geofence-card">
                         <div class="foreign-geofence-donut-layout">
-                            <div class="foreign-geofence-donut-wrap">
+                            <a
+                                href="{{ $geofenceReportDetailsUrl }}"
+                                class="foreign-geofence-donut-wrap geofence-report-donut-link"
+                                data-geofence-violations-list-link
+                                aria-label="Geofence Pozuntuları siyahısını aç"
+                                title="Geofence Pozuntuları siyahısını aç"
+                            >
                                 <div class="geofence-report-donut" style="--geofence-report-donut-background: {{ $geofenceReportDonutBackground }};"></div>
                                 <div class="foreign-geofence-center">
                                     <div>
@@ -2450,7 +2475,7 @@
                                         <span>Ümumi pozuntu</span>
                                     </div>
                                 </div>
-                            </div>
+                            </a>
                             <div class="geofence-report-legend-wrap">
                                 <h3 class="geofence-report-legend-heading">Geozonadan çıxma halları</h3>
                                 <div class="foreign-geofence-legend" aria-label="Geozonadan çıxma hallarının layihə üzrə bölgüsü">

@@ -167,6 +167,11 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('data-widget-key="geofence-analysis"', false)
             ->assertSee('data-widget-key="geofence-violations-report"', false)
+            ->assertSee('data-geofence-violations-list-link', false)
+            ->assertSee(route('geofence-violations.index', [
+                'date_from' => '2026-07-27',
+                'date_to' => '2026-07-27',
+            ]))
             ->assertSee('Geozonadan çıxma halları')
             ->assertSee('Mənbə: Geofence Pozuntuları api')
             ->assertViewHas('geofenceViolationDashboardWidget', function (array $widget) use ($project): bool {
