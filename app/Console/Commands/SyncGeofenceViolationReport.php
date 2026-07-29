@@ -45,59 +45,66 @@ class SyncGeofenceViolationReport extends Command
         $settings = $this->settings($wialon);
         $totals = ['source' => 0, 'imported' => 0, 'rejected' => 0, 'skipped' => 0, 'malformed' => 0];
         $failures = 0;
+        $sessionId = $wialon->loginByToken(false);
 
-        foreach ($groups as $group) {
-            try {
-                $report = $reportLock->run(fn (): array => $wialon->getReportTablesRows(
-                    $settings['resource_id'],
-                    $settings['template_id'],
-                    $group->wialon_group_id,
-                    $from->timestamp,
-                    $to->timestamp,
-                    $settings['chunk_size'],
-                    $settings['interval_flags'],
-                    false,
-                    $settings['timeout']
-                ));
-                $parsed = $parser->parse($report, $group, $from, $to);
-                $result = $importer->import($parsed['records'], now(config('app.timezone')));
-
-                if ($result['rejected'] > 0 || $parsed['malformed_rows'] > 0) {
-                    throw new RuntimeException(sprintf(
-                        'Report rows rejected: %d; malformed: %d. Aggregated or invalid intervals were not imported.',
-                        $result['rejected'],
-                        $parsed['malformed_rows']
+        try {
+            foreach ($groups as $group) {
+                try {
+                    $report = $reportLock->run(fn (): array => $this->fetchReport(
+                        $wialon,
+                        $sessionId,
+                        $settings,
+                        $group->wialon_group_id,
+                        $from->timestamp,
+                        $to->timestamp
                     ));
+                    $parsed = $parser->parse($report, $group, $from, $to);
+                    $result = $importer->import($parsed['records'], now(config('app.timezone')));
+
+                    if ($result['rejected'] > 0 || $parsed['malformed_rows'] > 0) {
+                        throw new RuntimeException(sprintf(
+                            'Report rows rejected: %d; malformed: %d. Aggregated or invalid intervals were not imported.',
+                            $result['rejected'],
+                            $parsed['malformed_rows']
+                        ));
+                    }
+
+                    if ((bool) $this->option('force')) {
+                        $this->removeStaleRows($group, $from, $to, $parsed['records']);
+                    }
+
+                    $totals['source'] += $parsed['source_rows'];
+                    $totals['imported'] += $result['imported'];
+                    $totals['rejected'] += $result['rejected'];
+                    $totals['skipped'] += $parsed['skipped_types'];
+                    $totals['malformed'] += $parsed['malformed_rows'];
+
+                    $this->line(sprintf(
+                        '%s | %s | source=%d imported=%d skipped_types=%d',
+                        $group->wialon_group_id,
+                        $group->name,
+                        $parsed['source_rows'],
+                        $result['imported'],
+                        $parsed['skipped_types']
+                    ));
+                } catch (Throwable $exception) {
+                    $failures++;
+                    $this->error($group->wialon_group_id.' | '.$group->name.' | '.$exception->getMessage());
+                    Log::warning('Geofence violations report synchronization failed', [
+                        'group_id' => $group->wialon_group_id,
+                        'project_id' => $group->project_id,
+                        'from' => $from->toDateTimeString(),
+                        'to' => $to->toDateTimeString(),
+                        'message' => $exception->getMessage(),
+                    ]);
                 }
-
-                if ((bool) $this->option('force')) {
-                    $this->removeStaleRows($group, $from, $to, $parsed['records']);
-                }
-
-                $totals['source'] += $parsed['source_rows'];
-                $totals['imported'] += $result['imported'];
-                $totals['rejected'] += $result['rejected'];
-                $totals['skipped'] += $parsed['skipped_types'];
-                $totals['malformed'] += $parsed['malformed_rows'];
-
-                $this->line(sprintf(
-                    '%s | %s | source=%d imported=%d skipped_types=%d',
-                    $group->wialon_group_id,
-                    $group->name,
-                    $parsed['source_rows'],
-                    $result['imported'],
-                    $parsed['skipped_types']
-                ));
-            } catch (Throwable $exception) {
-                $failures++;
-                $this->error($group->wialon_group_id.' | '.$group->name.' | '.$exception->getMessage());
-                Log::warning('Geofence violations report synchronization failed', [
-                    'group_id' => $group->wialon_group_id,
-                    'project_id' => $group->project_id,
-                    'from' => $from->toDateTimeString(),
-                    'to' => $to->toDateTimeString(),
-                    'message' => $exception->getMessage(),
-                ]);
+            }
+        } finally {
+            try {
+                $wialon->cleanupReportResult($sessionId);
+                $wialon->logoutSession($sessionId);
+            } catch (Throwable) {
+                // The report result is already persisted locally; session cleanup is best-effort.
             }
         }
 
@@ -112,6 +119,118 @@ class SyncGeofenceViolationReport extends Command
         ]);
 
         return $failures > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * Fetch this module's report through its own Wialon session.
+     *
+     * @param  array{resource_id: int, template_id: int, chunk_size: int, interval_flags: int, timeout: int}  $settings
+     * @return array{result: array<string, mixed>, tables: array<int, array<string, mixed>>}
+     */
+    private function fetchReport(
+        WialonService $wialon,
+        string $sessionId,
+        array $settings,
+        int|string $objectId,
+        int $from,
+        int $to
+    ): array {
+        $wialon->cleanupReportResult($sessionId);
+        $result = $wialon->executeReport(
+            $settings['resource_id'],
+            $settings['template_id'],
+            $objectId,
+            $from,
+            $to,
+            $settings['interval_flags'],
+            $sessionId,
+            false,
+            $settings['timeout']
+        );
+        $tables = [];
+
+        foreach (($result['reportResult']['tables'] ?? []) as $tableIndex => $table) {
+            $rowCount = (int) ($table['rows'] ?? 0);
+            $rows = [];
+
+            if ($rowCount > 0) {
+                $levels = array_values(array_unique([
+                    max(1, (int) ($table['level'] ?? 1) - 1),
+                    max(0, (int) ($table['level'] ?? 1)),
+                    0,
+                ]));
+
+                foreach ($levels as $level) {
+                    try {
+                        $rows = $this->selectRows(
+                            $wialon,
+                            $sessionId,
+                            (int) $tableIndex,
+                            $rowCount,
+                            $settings['chunk_size'],
+                            $level
+                        );
+                    } catch (RuntimeException) {
+                        $rows = [];
+                    }
+
+                    if ($rows !== []) {
+                        break;
+                    }
+                }
+
+                if ($rows === []) {
+                    for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $settings['chunk_size']) {
+                        $rows = array_merge($rows, $wialon->getReportResultRows(
+                            (int) $tableIndex,
+                            $indexFrom,
+                            min($rowCount - 1, $indexFrom + $settings['chunk_size'] - 1),
+                            $sessionId
+                        ));
+                    }
+                }
+            }
+
+            $tables[] = [
+                'index' => (int) $tableIndex,
+                'table' => $table,
+                'rows' => $rows,
+            ];
+        }
+
+        return ['result' => $result, 'tables' => $tables];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function selectRows(
+        WialonService $wialon,
+        string $sessionId,
+        int $tableIndex,
+        int $rowCount,
+        int $chunkSize,
+        int $level
+    ): array {
+        $rows = [];
+
+        for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
+            $rows = array_merge($rows, $wialon->selectReportResultRows(
+                $tableIndex,
+                [
+                    'type' => 'range',
+                    'data' => [
+                        'from' => $indexFrom,
+                        'to' => min($rowCount - 1, $indexFrom + $chunkSize - 1),
+                        'level' => $level,
+                        'unitInfo' => 1,
+                    ],
+                ],
+                $sessionId
+            ));
+        }
+
+        return $rows;
     }
 
     /**
