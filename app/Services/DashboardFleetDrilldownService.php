@@ -410,7 +410,7 @@ class DashboardFleetDrilldownService
         }
 
         if ($filters['geofence_violation']) {
-            $summary['Növ'] = 'Geozonadan çıxma halları';
+            $summary['Növ'] = 'Geofence Transferləri';
         }
 
         if ($filters['search'] !== '') {

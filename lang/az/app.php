@@ -69,7 +69,7 @@ return [
     'block_data' => 'Blok məlumatı',
     'equipment_details' => 'Texnika detalları',
     'generated_at' => 'Yaradıldı',
-    'geofence_analysis' => 'Geozonadan kənara çıxma hadisələri',
+    'geofence_analysis' => 'Geofence Transferləri',
     'utilization_trend' => 'İstifadə əmsalı',
     'hours' => 'saat',
     'km' => 'km',

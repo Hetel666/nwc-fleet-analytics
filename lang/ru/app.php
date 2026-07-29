@@ -69,7 +69,7 @@ return [
     'block_data' => 'Данные блока',
     'equipment_details' => 'Детали техники',
     'generated_at' => 'Сформировано',
-    'geofence_analysis' => 'Выезды за пределы геозоны',
+    'geofence_analysis' => 'Перемещения между геозонами',
     'utilization_trend' => 'Коэффициент использования',
     'hours' => 'ч',
     'km' => 'км',

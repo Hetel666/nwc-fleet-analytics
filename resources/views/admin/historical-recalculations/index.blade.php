@@ -46,7 +46,7 @@
                                 <label class="btn btn-outline-primary text-start" for="section-top-working-units">Top 20 az işləyənlər / Top 20 çox işləyənlər</label>
 
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-outside" value="geofence_outside" autocomplete="off" @checked(old('dashboard_section') === 'geofence_outside')>
-                                <label class="btn btn-outline-primary text-start" for="section-geofence-outside">Geozonadan çıxma halları</label>
+                                <label class="btn btn-outline-primary text-start" for="section-geofence-outside">Geofence Transferləri</label>
                             </div>
                         </div>
                         <div class="col-12">
@@ -128,7 +128,7 @@
                                 <td>{{ [
                                     'daily_averages' => 'Orta göstəricilər',
                                     'top_working_units' => 'Top 20',
-                                    'geofence_outside' => 'Geozonadan çıxma',
+                                    'geofence_outside' => 'Geofence Transferləri',
                                 ][$run->dashboard_section] ?? $run->dashboard_section }}</td>
                                 <td><span class="badge text-bg-secondary">{{ $run->status }}</span></td>
                                 <td style="min-width: 150px;">

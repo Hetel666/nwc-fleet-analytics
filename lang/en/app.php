@@ -69,7 +69,7 @@ return [
     'block_data' => 'Block data',
     'equipment_details' => 'Equipment details',
     'generated_at' => 'Generated at',
-    'geofence_analysis' => 'Geofence outside events',
+    'geofence_analysis' => 'Geofence Transfers',
     'utilization_trend' => 'Utilization rate',
     'hours' => 'hours',
     'km' => 'km',

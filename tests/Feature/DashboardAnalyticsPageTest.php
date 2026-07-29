@@ -19,7 +19,7 @@ class DashboardAnalyticsPageTest extends TestCase
             ->assertOk()
             ->assertSee('Orta motosaat / Orta yürüş')
             ->assertSee('Top 20 az işləyənlər / Top 20 çox işləyənlər')
-            ->assertSee('Geozonadan çıxma halları')
+            ->assertSee('Geofence Transferləri')
             ->assertSee('Tarixi məlumatların yenilənməsi')
             ->assertSee('fleet:sync-engine-hours-report')
             ->assertSee('fleet:sync-geozon-api');

@@ -27,9 +27,9 @@ return [
             'local_tables' => 'engine_hours_report_unit_days, wialon_report_sync_items',
         ],
         'geofence_outside' => [
-            'title' => 'Geozonadan çıxma halları',
+            'title' => 'Geofence Transferləri',
             'dashboard_section' => 'geofence_outside',
-            'manual' => 'Tarixi məlumatların yenilənməsi -> Geozonadan çıxma halları',
+            'manual' => 'Tarixi məlumatların yenilənməsi -> Geofence Transferləri',
             'auto' => 'Gündəlik 00:00 paketində dünənki geozon api intervalı yenilənir.',
             'wialon_command' => 'fleet:sync-geozon-api',
             'local_tables' => 'unit_foreign_geofence_intervals',
@@ -262,7 +262,7 @@ return [
         ],
         [
             'key' => 'geofence-analysis',
-            'title' => 'Geozonadan çıxma halları',
+            'title' => 'Geofence Transferləri',
             'purpose' => 'Ev geozonasından çıxıb başqa layihə geozonasında olan texnikaları göstərir.',
             'dashboard_block' => 'Donut chart cari foreign layihə/geozona üzrə + sağ cədvəl',
             'wialon_report' => 'geozon api',

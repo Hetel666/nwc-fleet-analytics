@@ -2384,7 +2384,7 @@
                                             <button
                                                 type="button"
                                                 class="foreign-geofence-legend-row dashboard-drilldown-trigger"
-                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geozonadan çıxma halları"
+                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geofence Transferləri"
                                                 data-drilldown-geofence-violation="1"
                                                 data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
                                                 data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
@@ -2425,7 +2425,7 @@
                                                 class="foreign-geofence-stat-row dashboard-drilldown-trigger"
                                                 role="button"
                                                 tabindex="0"
-                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geozonadan çıxma halları"
+                                                data-drilldown-title="{{ $row['label'] ?? $row['project'] }} - Geofence Transferləri"
                                                 data-drilldown-geofence-violation="1"
                                                 data-drilldown-current-geozone-project-id="{{ $row['project_id'] }}"
                                                 data-drilldown-current-geozone-id="{{ $row['geofence_id'] }}"
@@ -2449,7 +2449,7 @@
                                 <button
                                     type="button"
                                     class="btn btn-link foreign-geofence-show-all mt-2 dashboard-drilldown-trigger"
-                                    data-drilldown-title="Geozonadan çıxma halları"
+                                    data-drilldown-title="Geofence Transferləri"
                                     data-drilldown-geofence-violation="1"
                                 >
                                     Hamısını göstər <i class="bi bi-arrow-right"></i>
@@ -2510,7 +2510,7 @@
                     <div class="foreign-geofence-table-card">
                         <div class="foreign-geofence-table-toolbar">
                             <div class="min-w-0">
-                                <h3 class="foreign-geofence-table-title">Geozonadan çıxma halları{{ $filters['project_id'] ? ' - '.$geofenceHomeProjectLabel : '' }}</h3>
+                                <h3 class="foreign-geofence-table-title">Geofence Transferləri{{ $filters['project_id'] ? ' - '.$geofenceHomeProjectLabel : '' }}</h3>
                                 <div class="foreign-geofence-table-meta" id="foreignGeofenceTableMeta">Məlumatlar yüklənir...</div>
                             </div>
                         </div>
@@ -4273,7 +4273,7 @@ const renderForeignGeofenceRows = (rows, meta) => {
     foreignGeofencePage = foreignGeofenceMeta.current_page;
 
     if (!rows.length) {
-        setForeignGeofenceLoading('Seçilmiş layihə və dövr üzrə geozonadan çıxma halı aşkarlanmadı.');
+        setForeignGeofenceLoading('Seçilmiş layihə və dövr üzrə geofence transferi aşkarlanmadı.');
         renderForeignGeofencePagination();
         return;
     }
@@ -5084,7 +5084,7 @@ const typeIcareDrilldownItems = () => typeIcareIds.map((id, index) => ({
     ownership_scope: 'project_groups',
 }));
 const geofenceViolationDrilldownItems = () => geofenceViolationProjectIds.map((id, index) => ({
-    title: `${geofenceViolationLabels[index]} - Geozonadan çıxma halları`,
+    title: `${geofenceViolationLabels[index]} - Geofence Transferləri`,
     geofence_violation: 1,
     current_geozone_project_id: id,
     current_geozone_id: geofenceViolationGeofenceIds[index],
@@ -5107,7 +5107,7 @@ const initializeDashboardCharts = () => {
         hoverOffset: 10,
         total: geofenceViolationTotal,
         drilldownItems: geofenceViolationDrilldownItems(),
-        centerDrilldown: { title: 'Geozonadan çıxma halları', geofence_violation: 1 },
+        centerDrilldown: { title: 'Geofence Transferləri', geofence_violation: 1 },
     });
     createProjectWorkCategoryChart('projectWorkCategoriesNwc', projectWorkCategoryNwcDonutCounts, {
         labels: workCategoryDonutLabels,

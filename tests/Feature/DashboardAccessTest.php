@@ -64,7 +64,7 @@ class DashboardAccessTest extends TestCase
         $admin = User::where('email', 'admin@example.com')->firstOrFail();
         $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
 
-        $this->assertStringContainsString('Geozonadan çıxma halları', $html);
+        $this->assertStringContainsString('Geofence Transferləri', $html);
         $this->assertStringContainsString('Öz layihəsinin geozonasından kənarda olan texnikalar', $html);
 
         foreach (['Ã', 'Ð', 'Р ', 'РЎ', 'Pё', 'SeP', 'вЂ'] as $marker) {
