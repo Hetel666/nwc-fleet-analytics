@@ -310,7 +310,7 @@
         position: sticky;
         top: 0;
         z-index: 2;
-        background: #f8fafc;
+        background: var(--fleet-card-soft);
     }
     .dashboard-drilldown-table.dashboard-project-type-table {
         width: 100%;
@@ -333,8 +333,8 @@
         font-feature-settings: "tnum" 1;
     }
     .dashboard-project-type-table .dashboard-project-type-total {
-        border-left: 1px solid #dbe5f4;
-        background: #f8fafc;
+        border-left: 1px solid var(--fleet-line);
+        background: var(--fleet-card-soft);
         font-weight: 800;
     }
     @media (max-width: 575.98px) {
@@ -346,9 +346,9 @@
         min-height: 24px;
     }
     .dashboard-drilldown-filter-panel {
-        border: 1px solid #dbe5f4;
+        border: 1px solid var(--fleet-line);
         border-radius: 14px;
-        background: #f8fbff;
+        background: var(--fleet-card-soft);
         box-shadow: 0 18px 45px rgba(15, 31, 58, .08);
         padding: 14px;
         margin-bottom: 12px;
@@ -356,7 +356,7 @@
     .dashboard-drilldown-filter-panel .form-label {
         font-size: 11px;
         font-weight: 700;
-        color: #5b6b84;
+        color: var(--fleet-muted);
         margin-bottom: 4px;
     }
     .dashboard-drilldown-chips {
@@ -366,9 +366,9 @@
         margin-bottom: 10px;
     }
     .dashboard-drilldown-chip {
-        border: 1px solid #cfe0ff;
-        background: #f1f6ff;
-        color: #1f4ea3;
+        border: 1px solid color-mix(in srgb, var(--fleet-blue) 28%, var(--fleet-line));
+        background: color-mix(in srgb, var(--fleet-blue) 10%, var(--fleet-card));
+        color: var(--fleet-blue);
         border-radius: 999px;
         font-size: 12px;
         font-weight: 700;
@@ -436,8 +436,8 @@
     .dashboard-reset-order:hover,
     .dashboard-reset-order:focus {
         color: var(--fleet-blue);
-        background: #eef4ff;
-        border-color: #d8e5ff;
+        background: var(--fleet-hover);
+        border-color: var(--fleet-line);
     }
     .dashboard-widget.dragging .dashboard-drag-handle {
         cursor: grabbing;
@@ -591,7 +591,7 @@
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
         padding: 12px 14px;
-        background: #fff;
+        background: var(--fleet-card);
     }
     .dashboard-work-status-legend-item {
         display: inline-flex;
@@ -610,12 +610,12 @@
     }
     .dashboard-empty {
         min-height: 180px;
-        border: 1px dashed #d8e0ec;
+        border: 1px dashed var(--fleet-line);
         border-radius: 8px;
         display: grid;
         place-items: center;
         color: var(--fleet-muted);
-        background: #fbfcff;
+        background: var(--fleet-card-soft);
         text-align: center;
         padding: 18px;
     }
@@ -628,7 +628,7 @@
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
         padding: 12px;
-        background: #fff;
+        background: var(--fleet-card);
     }
     .dashboard-mini-kpi-value {
         font-size: 1.5rem;
@@ -700,7 +700,7 @@
     .dashboard-average-note {
         border-radius: 8px;
         padding: 12px 14px;
-        background: #f2f7ff;
+        background: var(--fleet-card-soft);
         color: var(--fleet-muted);
         font-size: .9rem;
     }
@@ -716,7 +716,7 @@
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
         padding: 6px 10px;
-        background: #fff;
+        background: var(--fleet-card);
         color: var(--fleet-muted);
         font-size: .82rem;
         white-space: nowrap;
@@ -727,7 +727,7 @@
         gap: 10px;
         border-radius: 8px;
         padding: 10px 12px;
-        background: #f6f9ff;
+        background: var(--fleet-card-soft);
         color: var(--fleet-muted);
         font-size: .88rem;
     }
@@ -752,7 +752,7 @@
     .dashboard-average-kpi {
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
-        background: #fff;
+        background: var(--fleet-card);
         padding: 12px 14px;
         min-width: 0;
         min-height: 78px;
@@ -837,7 +837,7 @@
         max-height: 280px;
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
-        background: #fff;
+        background: var(--fleet-card);
     }
     .dashboard-average-daily-table th,
     .dashboard-average-daily-table td {
@@ -856,7 +856,7 @@
     .dashboard-average-day-card {
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
-        background: #fff;
+        background: var(--fleet-card);
         padding: 9px 11px;
         flex: 0 0 150px;
         height: 70px;
@@ -896,7 +896,7 @@
         display: inline-grid;
         place-items: center;
         color: var(--fleet-blue);
-        background: #eef5ff;
+        background: color-mix(in srgb, var(--fleet-blue) 12%, var(--fleet-card));
         font-size: .9rem;
         flex: 0 0 auto;
     }
@@ -922,7 +922,7 @@
     .dashboard-average-type-row {
         border: 1px solid var(--fleet-line);
         border-radius: 12px;
-        background: #fff;
+        background: var(--fleet-card);
         padding: 10px 12px;
         transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
     }
@@ -949,7 +949,7 @@
         min-width: 0;
         border: 0;
         border-radius: 10px;
-        background: #f8fafc;
+        background: var(--fleet-card-soft);
         padding: 8px 10px;
         display: grid;
         grid-template-columns: minmax(72px, 1fr) auto;
@@ -961,7 +961,7 @@
     }
     .dashboard-average-type-cell:hover,
     .dashboard-average-type-cell:focus-visible {
-        background: #eef5ff;
+        background: var(--fleet-hover);
         box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .18);
     }
     .dashboard-average-type-cell--empty {
@@ -1031,7 +1031,7 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        background: rgba(245, 247, 251, .82);
+        background: color-mix(in srgb, var(--fleet-bg) 82%, transparent);
         backdrop-filter: blur(10px);
     }
     .dashboard-loading-overlay.is-active {
@@ -1041,7 +1041,7 @@
         width: min(460px, 100%);
         border: 1px solid var(--fleet-line);
         border-radius: 8px;
-        background: #fff;
+        background: var(--fleet-card);
         box-shadow: 0 20px 60px rgba(24, 39, 75, .18);
         padding: 24px;
     }
@@ -1202,14 +1202,14 @@
     }
     .foreign-geofence-title {
         margin: 0;
-        color: #0f172a;
+        color: var(--fleet-ink);
         font-size: clamp(1.25rem, 1.65vw, 1.75rem);
         font-weight: 800;
         line-height: 1.2;
     }
     .foreign-geofence-subtitle {
         margin-top: 4px;
-        color: #64748b;
+        color: var(--fleet-muted);
         font-size: .875rem;
         line-height: 1.4;
     }
@@ -1220,8 +1220,8 @@
         margin-top: 8px;
         border-radius: 999px;
         padding: 5px 10px;
-        background: #eff6ff;
-        color: #1d4ed8;
+        background: color-mix(in srgb, var(--fleet-blue) 12%, var(--fleet-card));
+        color: var(--fleet-blue);
         font-size: .75rem;
         font-weight: 900;
         max-width: 100%;
@@ -1242,11 +1242,11 @@
     .foreign-geofence-period {
         min-width: 220px;
         height: 42px;
-        border: 1px solid #dbe7f5;
+        border: 1px solid var(--fleet-line);
         border-radius: 14px;
         padding: 8px 38px 8px 14px;
-        color: #0f172a;
-        background-color: #fff;
+        color: var(--fleet-ink);
+        background-color: var(--fleet-card);
         box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
         font-size: .875rem;
         font-weight: 700;
@@ -1276,15 +1276,15 @@
         display: none;
     }
     .foreign-geofence-card {
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--fleet-line);
         border-radius: 16px;
-        background: #fff;
+        background: var(--fleet-card);
         box-shadow: 0 18px 42px rgba(15, 23, 42, .06);
         transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
     }
     .foreign-geofence-card:hover {
         transform: translateY(-2px);
-        border-color: #cbdaf0;
+        border-color: color-mix(in srgb, var(--fleet-blue) 24%, var(--fleet-line));
         box-shadow: 0 24px 54px rgba(15, 23, 42, .1);
     }
     .foreign-geofence-card {
@@ -1360,8 +1360,8 @@
         position: absolute;
         inset: 22%;
         border-radius: 50%;
-        background: #fff;
-        box-shadow: inset 0 0 0 1px #e2e8f0;
+        background: var(--fleet-card);
+        box-shadow: inset 0 0 0 1px var(--fleet-line);
     }
     .geofence-report-legend-wrap {
         min-width: 0;
@@ -1374,7 +1374,7 @@
         place-items: center;
         text-align: center;
         pointer-events: none;
-        color: #0f172a;
+        color: var(--fleet-ink);
         z-index: 2;
     }
     .foreign-geofence-center strong {
@@ -1385,7 +1385,7 @@
     }
     .foreign-geofence-center span {
         margin-top: 6px;
-        color: #64748b;
+        color: var(--fleet-muted);
         font-weight: 800;
         font-size: .875rem;
     }
@@ -1402,20 +1402,20 @@
         width: 100%;
         border: 0;
         border-radius: 10px;
-        background: #f8fafc;
+        background: var(--fleet-card-soft);
         display: grid;
         grid-template-columns: 14px minmax(0, 1fr) auto auto;
         gap: 10px;
         align-items: center;
         min-height: 42px;
         padding: 7px 10px;
-        color: #0f172a;
+        color: var(--fleet-ink);
         text-align: left;
         transition: background .24s ease, transform .24s ease, box-shadow .24s ease;
     }
     .foreign-geofence-legend-row:hover,
     .foreign-geofence-legend-row:focus-visible {
-        background: #eff6ff;
+        background: var(--fleet-hover);
         transform: translateX(2px);
         box-shadow: inset 3px 0 0 #2563eb;
     }
@@ -1435,21 +1435,21 @@
         font-weight: 800;
     }
     .foreign-geofence-legend-count {
-        color: #0f172a;
+        color: var(--fleet-ink);
         font-size: .8125rem;
         font-weight: 900;
     }
     .foreign-geofence-legend-percent {
         min-width: 40px;
-        color: #64748b;
+        color: var(--fleet-muted);
         text-align: right;
         font-size: .75rem;
         font-weight: 800;
     }
     .foreign-geofence-empty {
         border-radius: 12px;
-        background: #f8fafc;
-        color: #64748b;
+        background: var(--fleet-card-soft);
+        color: var(--fleet-muted);
         padding: 14px;
         font-size: .8125rem;
         font-weight: 800;
@@ -2719,6 +2719,54 @@ const labels = {
     hours: @json(__('app.hours')),
     utilization: @json(__('app.utilization')),
 };
+const dashboardChartTheme = () => {
+    const styles = getComputedStyle(document.documentElement);
+
+    return {
+        text: styles.getPropertyValue('--fleet-chart-text').trim() || '#334155',
+        grid: styles.getPropertyValue('--fleet-chart-grid').trim() || 'rgba(100, 116, 139, .18)',
+        border: styles.getPropertyValue('--fleet-chart-border').trim() || '#ffffff',
+    };
+};
+const applyDashboardChartTheme = chart => {
+    if (!chart) {
+        return chart;
+    }
+
+    const theme = dashboardChartTheme();
+    chart.options.color = theme.text;
+    chart.options.plugins = chart.options.plugins || {};
+    chart.options.plugins.legend = chart.options.plugins.legend || {};
+    chart.options.plugins.legend.labels = chart.options.plugins.legend.labels || {};
+    chart.options.plugins.legend.labels.color = theme.text;
+
+    Object.values(chart.options.scales || {}).forEach(scale => {
+        scale.ticks = scale.ticks || {};
+        scale.grid = scale.grid || {};
+        scale.border = scale.border || {};
+        scale.ticks.color = theme.text;
+        scale.grid.color = theme.grid;
+        scale.border.color = theme.grid;
+    });
+
+    if (chart.config.type === 'doughnut') {
+        chart.data.datasets.forEach(dataset => {
+            dataset.borderColor = theme.border;
+        });
+    }
+
+    chart.update('none');
+
+    return chart;
+};
+const registerDashboardChart = chart => applyDashboardChartTheme(chart);
+const refreshDashboardChartTheme = () => {
+    const theme = dashboardChartTheme();
+    Chart.defaults.color = theme.text;
+    Chart.defaults.borderColor = theme.grid;
+    Object.values(Chart.instances || {}).forEach(applyDashboardChartTheme);
+};
+window.addEventListener('fleet:theme-change', refreshDashboardChartTheme);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;',
     '<': '&lt;',
@@ -2819,7 +2867,7 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
 
             ctx.save();
             ctx.font = '700 24px Arial, sans-serif';
-            ctx.fillStyle = '#0f1f3a';
+            ctx.fillStyle = dashboardChartTheme().text;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(formatDonutCenterTotal(total), (chartArea.left + chartArea.right) / 2, (chartArea.top + chartArea.bottom) / 2);
@@ -2859,12 +2907,12 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
         },
     };
 
-    return new Chart(canvas, {
+    return registerDashboardChart(new Chart(canvas, {
         type: 'doughnut',
-        data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff', hoverOffset: settings.hoverOffset ?? 0 }] },
+        data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: dashboardChartTheme().border, hoverOffset: settings.hoverOffset ?? 0 }] },
         options,
         plugins: settings.showCenterTotal ? [centerTotalPlugin] : [],
-    });
+    }));
 };
 
 const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues, unit = '') => {
@@ -2876,7 +2924,7 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
 
     const shortLabels = chartLabels.map(truncateLabel);
 
-    return new Chart(canvas, {
+    return registerDashboardChart(new Chart(canvas, {
         type: 'bar',
         data: {
             labels: shortLabels,
@@ -2923,7 +2971,7 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
                 }
             }
         }
-    });
+    }));
 };
 
 
@@ -2940,14 +2988,14 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
         return null;
     }
 
-    return new Chart(canvas, {
+    return registerDashboardChart(new Chart(canvas, {
         type: 'doughnut',
         data: {
             labels: displayLabels,
             datasets: [{
                 data: displayValues,
                 backgroundColor: displayColors,
-                borderColor: '#fff',
+                borderColor: dashboardChartTheme().border,
                 borderWidth: 2,
                 hoverOffset: total > 0 ? 4 : 0,
             }],
@@ -2979,7 +3027,7 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
             },
         },
         plugins: [],
-    });
+    }));
 };
 
 const setDashboardLoadingProgress = value => {
@@ -4791,7 +4839,7 @@ const initializeDashboardCharts = () => {
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
     if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
-        new Chart(document.getElementById('utilizationLine'), {
+        registerDashboardChart(new Chart(document.getElementById('utilizationLine'), {
         type: 'line',
         data: {
             labels: utilizationTrend.labels,
@@ -4814,10 +4862,11 @@ const initializeDashboardCharts = () => {
                 }
             }
         }
-        });
+        }));
     }
 };
 
+refreshDashboardChartTheme();
 initializeDashboardCharts();
 
 </script>

@@ -7,24 +7,24 @@
 @push('styles')
     <style>
         .analytics-map-hero {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+            background: linear-gradient(135deg, var(--fleet-card) 0%, var(--fleet-card-soft) 100%);
             border: 1px solid var(--fleet-line);
             border-radius: 16px;
-            box-shadow: 0 14px 34px rgba(24, 39, 75, .05);
+            box-shadow: var(--fleet-shadow);
         }
 
         .analytics-map-stat {
             min-height: 86px;
             border-radius: 14px;
-            background: #fff;
-            border: 1px solid #e6edf7;
+            background: var(--fleet-card);
+            border: 1px solid var(--fleet-line);
         }
 
         .analytics-map-card {
-            border: 1px solid #e6edf7;
+            border: 1px solid var(--fleet-line);
             border-radius: 16px;
-            background: #fff;
-            box-shadow: 0 10px 26px rgba(24, 39, 75, .045);
+            background: var(--fleet-card);
+            box-shadow: var(--fleet-shadow);
         }
 
         .analytics-map-card[data-hidden="true"] {
@@ -33,8 +33,8 @@
 
         .analytics-map-key {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-            color: #2563eb;
-            background: #eff6ff;
+            color: var(--fleet-blue);
+            background: color-mix(in srgb, var(--fleet-blue) 12%, var(--fleet-card));
             border-radius: 999px;
             padding: .28rem .62rem;
             font-size: .76rem;
@@ -42,7 +42,7 @@
         }
 
         .analytics-map-label {
-            color: #64748b;
+            color: var(--fleet-muted);
             font-size: .74rem;
             font-weight: 800;
             letter-spacing: .03em;
@@ -50,7 +50,7 @@
         }
 
         .analytics-map-value {
-            color: #111827;
+            color: var(--fleet-ink);
             font-weight: 700;
         }
 
@@ -59,9 +59,9 @@
             align-items: center;
             gap: .35rem;
             border-radius: 999px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            color: #334155;
+            background: var(--fleet-card-soft);
+            border: 1px solid var(--fleet-line);
+            color: var(--fleet-ink);
             padding: .35rem .58rem;
             font-size: .78rem;
             font-weight: 700;
@@ -70,7 +70,7 @@
         .analytics-map-list {
             margin: 0;
             padding-left: 1rem;
-            color: #475569;
+            color: var(--fleet-muted);
         }
 
         .analytics-map-list li + li {
@@ -80,7 +80,7 @@
         .analytics-map-section-title {
             font-size: .86rem;
             font-weight: 800;
-            color: #0f172a;
+            color: var(--fleet-ink);
         }
 
         .analytics-map-search {
@@ -88,9 +88,15 @@
             border-radius: 12px;
         }
 
+        .analytics-map-search-icon {
+            color: var(--fleet-muted);
+            background: var(--fleet-card);
+            border-color: var(--fleet-line);
+        }
+
         .analytics-map-binding {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
+            background: var(--fleet-card-soft);
+            border: 1px solid var(--fleet-line);
             border-radius: 14px;
         }
 
@@ -116,7 +122,7 @@
             <div class="col-12 col-xl-4">
                 <label for="analyticsMapSearch" class="form-label analytics-map-label">Axtarış</label>
                 <div class="input-group">
-                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                    <span class="input-group-text analytics-map-search-icon border-end-0"><i class="bi bi-search"></i></span>
                     <input id="analyticsMapSearch" type="search" class="form-control analytics-map-search border-start-0" placeholder="Vidjet, report, service və ya cədvəl...">
                 </div>
             </div>

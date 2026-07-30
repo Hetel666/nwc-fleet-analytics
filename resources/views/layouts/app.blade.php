@@ -16,6 +16,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         :root {
+            color-scheme: light;
             --fleet-blue: #2563EB;
             --fleet-green: #22C55E;
             --fleet-ink: #0F172A;
@@ -27,10 +28,16 @@
             --fleet-sidebar: #FFFFFF;
             --fleet-hover: #EFF6FF;
             --fleet-shadow: 0 18px 48px rgba(15, 23, 42, .06);
+            --fleet-chart-text: #334155;
+            --fleet-chart-grid: rgba(100, 116, 139, .18);
+            --fleet-chart-border: #FFFFFF;
+            --fleet-scrollbar-track: #E2E8F0;
+            --fleet-scrollbar-thumb: #94A3B8;
             --fleet-sidebar-width: 280px;
             --fleet-sidebar-collapsed-width: 72px;
         }
         [data-theme="dark"] {
+            color-scheme: dark;
             --fleet-blue: #3B82F6;
             --fleet-green: #22C55E;
             --fleet-ink: #F8FAFC;
@@ -42,6 +49,26 @@
             --fleet-sidebar: #111827;
             --fleet-hover: #1E293B;
             --fleet-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+            --fleet-chart-text: #CBD5E1;
+            --fleet-chart-grid: rgba(148, 163, 184, .18);
+            --fleet-chart-border: #111827;
+            --fleet-scrollbar-track: #0B1220;
+            --fleet-scrollbar-thumb: #475569;
+        }
+        * {
+            scrollbar-color: var(--fleet-scrollbar-thumb) var(--fleet-scrollbar-track);
+        }
+        *::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        *::-webkit-scrollbar-track {
+            background: var(--fleet-scrollbar-track);
+        }
+        *::-webkit-scrollbar-thumb {
+            border: 2px solid var(--fleet-scrollbar-track);
+            border-radius: 999px;
+            background: var(--fleet-scrollbar-thumb);
         }
         body {
             background: var(--fleet-bg);
@@ -184,6 +211,24 @@
         .nav-link.active {
             color: #fff;
             background: var(--fleet-blue);
+        }
+        .nav-tabs {
+            border-color: var(--fleet-line);
+        }
+        .nav-tabs .nav-link {
+            color: var(--fleet-muted);
+            border-color: transparent;
+        }
+        .nav-tabs .nav-link:hover,
+        .nav-tabs .nav-link:focus-visible {
+            color: var(--fleet-blue);
+            border-color: var(--fleet-line);
+            background: var(--fleet-hover);
+        }
+        .nav-tabs .nav-link.active {
+            color: var(--fleet-ink);
+            border-color: var(--fleet-line) var(--fleet-line) var(--fleet-card);
+            background: var(--fleet-card);
         }
         .sidebar-scroll {
             flex: 1 1 auto;
@@ -452,8 +497,8 @@
                         <div class="fw-semibold text-truncate">Fleet Admin</div>
                         <div class="small text-secondary">admin</div>
                     </div>
-                    <button id="themeToggle" type="button" class="theme-toggle" aria-label="Theme">
-                        <i data-lucide="sun"></i>
+                    <button id="themeToggle" type="button" class="theme-toggle" aria-label="Tünd mövzuya keç" aria-pressed="false">
+                        <i data-lucide="moon"></i>
                     </button>
                 </div>
                 <div class="sidebar-version">v2.0</div>
@@ -514,8 +559,19 @@
         if (!toggle) {
             return;
         }
-        toggle.innerHTML = `<i data-lucide="${document.documentElement.dataset.theme === 'dark' ? 'moon' : 'sun'}"></i>`;
+        const isDark = document.documentElement.dataset.theme === 'dark';
+        const label = isDark ? 'İşıqlı mövzuya keç' : 'Tünd mövzuya keç';
+        toggle.innerHTML = `<i data-lucide="${isDark ? 'sun' : 'moon'}"></i>`;
+        toggle.setAttribute('aria-label', label);
+        toggle.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+        toggle.title = label;
         window.lucide?.createIcons();
+    };
+
+    const notifyThemeChange = () => {
+        window.dispatchEvent(new CustomEvent('fleet:theme-change', {
+            detail: { theme: document.documentElement.dataset.theme },
+        }));
     };
 
     document.getElementById('themeToggle')?.addEventListener('click', () => {
@@ -523,6 +579,17 @@
         document.documentElement.dataset.theme = nextTheme;
         localStorage.setItem('fleet-theme', nextTheme);
         refreshThemeIcon();
+        notifyThemeChange();
+    });
+
+    window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', event => {
+        if (localStorage.getItem('fleet-theme') !== null) {
+            return;
+        }
+
+        document.documentElement.dataset.theme = event.matches ? 'dark' : 'light';
+        refreshThemeIcon();
+        notifyThemeChange();
     });
 
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
