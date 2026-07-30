@@ -101,15 +101,15 @@ return [
         'geofence-analysis' => [
             'label_key' => 'app.geofence_analysis',
             'default_order' => 110,
-            'default_width' => 7,
-            'column_class' => 'col-12 col-xl-7',
+            'default_width' => 6,
+            'column_class' => 'col-12 col-xl-6',
             'active' => true,
         ],
         'geofence-violations-report' => [
             'label_key' => 'app.geofence_violations',
             'default_order' => 115,
-            'default_width' => 12,
-            'column_class' => 'col-12',
+            'default_width' => 6,
+            'column_class' => 'col-12 col-xl-6',
             'active' => true,
         ],
         'utilization-trend' => [

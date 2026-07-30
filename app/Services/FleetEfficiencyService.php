@@ -27,6 +27,8 @@ class FleetEfficiencyService
 
     public const STATUS_OVERTIME = 'overtime';
 
+    public const STATUS_NIGHT_SHIFT_ONLY = 'night_shift_only';
+
     public const STATUS_NO_DATA = 'no_data';
 
     public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
@@ -87,6 +89,62 @@ class FleetEfficiencyService
         $summary['total'] = (int) ($row['total_rows'] ?? $this->daytimeTotal($summary));
 
         return $summary;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginateProjects(array $filters): LengthAwarePaginator
+    {
+        $filters = $this->normalizeFilters($filters);
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perPage = min(100, max(10, (int) ($filters['per_page'] ?? 20)));
+        $category = $filters['work_category'] ?? $filters['day_status'] ?? null;
+
+        if ($category === null) {
+            return new LengthAwarePaginator([], 0, $perPage, $page);
+        }
+
+        $search = mb_strtolower(trim((string) ($filters['search'] ?? '')));
+        $rows = $this->summaryAggregates($filters, byProject: true)
+            ->groupBy(fn (array $row): int => (int) $row['project_id'])
+            ->map(function (Collection $projectRows) use ($category): array {
+                $first = $projectRows->first();
+                $nwc = (int) ($projectRows
+                    ->firstWhere('ownership_type', Equipment::OWNERSHIP_NWC)[$category] ?? 0);
+                $icare = (int) ($projectRows
+                    ->firstWhere('ownership_type', Equipment::OWNERSHIP_ICARE)[$category] ?? 0);
+
+                return [
+                    'project_id' => (int) $first['project_id'],
+                    'project' => (string) $first['project'],
+                    'nwc_count' => $nwc,
+                    'icare_count' => $icare,
+                    'count' => $nwc + $icare,
+                ];
+            })
+            ->filter(fn (array $row): bool => $row['count'] > 0)
+            ->when(
+                $search !== '',
+                fn (Collection $rows): Collection => $rows->filter(
+                    fn (array $row): bool => str_contains(mb_strtolower($row['project']), $search)
+                )
+            )
+            ->sortBy([
+                ['count', 'desc'],
+                ['project', 'asc'],
+            ])
+            ->values();
+        $total = $rows->count();
+        $items = $rows->slice(($page - 1) * $perPage, $perPage)->values()->all();
+
+        return new LengthAwarePaginator(
+            $items,
+            $total,
+            $perPage,
+            $page,
+            ['path' => request()->url(), 'query' => request()->query()]
+        );
     }
 
     /**
@@ -178,7 +236,17 @@ class FleetEfficiencyService
 
     public function efficiencyStatusForHours(?float $daytimeHours, ?float $totalHours): ?string
     {
-        return $daytimeHours === null ? null : $this->statusForHours($daytimeHours);
+        if ($daytimeHours === null || $totalHours === null) {
+            return null;
+        }
+
+        if ($totalHours <= 0) {
+            return self::STATUS_NO_DATA;
+        }
+
+        return $daytimeHours <= 0
+            ? self::STATUS_NIGHT_SHIFT_ONLY
+            : $this->statusForHours($daytimeHours);
     }
 
     public function statusLabelFor(string $status): string
@@ -201,29 +269,29 @@ class FleetEfficiencyService
         $unitName = mb_strtolower(trim((string) ($filters['unit_name'] ?? '')));
         $registrationNumber = mb_strtolower(trim((string) ($filters['registration_number'] ?? '')));
         $wialonId = mb_strtolower(trim((string) ($filters['wialon_id'] ?? '')));
-        $workStatus = in_array($category, $this->dayStatusKeys(), true) ? $category : null;
+        $primaryStatus = in_array($category, $this->primaryDayStatusKeys(), true) ? $category : null;
 
         $filtered = $rows->filter(function (array $row) use (
             $category,
             $dayStatus,
             $dataStatus,
             $hasOvertime,
-            $workStatus,
+            $primaryStatus,
             $search,
             $unitName,
             $registrationNumber,
             $wialonId,
             $filters
         ): bool {
-            if ($dataStatus === 'available' && ! $row['data_available']) {
+            if ($dataStatus === 'available' && $this->isNoDataStatusRow($row)) {
                 return false;
             }
 
-            if ($dataStatus === 'missing' && $row['data_available']) {
+            if ($dataStatus === 'missing' && ! $this->isNoDataStatusRow($row)) {
                 return false;
             }
 
-            if ($category === self::STATUS_NO_DATA && $row['data_available']) {
+            if ($category === self::STATUS_NO_DATA && ! $this->isNoDataStatusRow($row)) {
                 return false;
             }
 
@@ -231,9 +299,21 @@ class FleetEfficiencyService
                 return false;
             }
 
-            if ($workStatus && (
-                $row['total_hours'] === null
-                || $this->statusForHours((float) $row['total_hours']) !== $workStatus
+            if ($primaryStatus && (
+                ! $row['data_available']
+                || $row['daytime_hours'] === null
+                || $this->efficiencyStatusForHours(
+                    (float) $row['daytime_hours'],
+                    $row['total_hours'] === null ? null : (float) $row['total_hours']
+                ) !== $primaryStatus
+            )) {
+                return false;
+            }
+
+            if ($category === self::DAY_STATUS_OVER_10 && (
+                ! $row['data_available']
+                || $row['total_hours'] === null
+                || (float) $row['total_hours'] <= 10
             )) {
                 return false;
             }
@@ -434,25 +514,32 @@ class FleetEfficiencyService
     {
         $category = $filters['work_category'] ?? null;
         $dayStatus = $filters['day_status'] ?? null;
-        $workStatus = in_array($category, $this->dayStatusKeys(), true) ? $category : null;
+        $primaryStatus = in_array($category, $this->primaryDayStatusKeys(), true) ? $category : null;
         $dataStatus = $filters['data_status'] ?? 'all';
         $hasOvertime = $filters['has_overtime'] ?? 'all';
         $availableSql = $this->dataAvailableSql();
+        $noDataStatusSql = $this->noDataStatusSql();
 
         if ($dataStatus === 'available') {
-            $query->whereRaw($availableSql);
+            $query->whereRaw('NOT '.$noDataStatusSql);
         }
 
         if ($dataStatus === 'missing' || $category === self::STATUS_NO_DATA) {
-            $query->whereRaw('NOT '.$availableSql);
+            $query->whereRaw($noDataStatusSql);
         }
 
         if ($category === self::STATUS_OVERTIME) {
             $query->where('stats.overtime_hours', '>', 0);
         }
 
-        if ($workStatus) {
-            $this->applyWorkStatusFilter($query, $workStatus);
+        if ($primaryStatus) {
+            $query->whereRaw($availableSql);
+            $this->applyDayStatusFilter($query, $primaryStatus);
+        }
+
+        if ($category === self::DAY_STATUS_OVER_10) {
+            $query->whereRaw($availableSql)
+                ->whereRaw($this->totalHoursSql().' > 10');
         }
 
         if ($dayStatus) {
@@ -491,7 +578,8 @@ class FleetEfficiencyService
     {
         $availableSql = $this->daytimeAvailableSql();
         match ($status) {
-            self::DAY_STATUS_LESS_THAN_1 => $query->whereRaw($availableSql)
+            self::DAY_STATUS_LESS_THAN_1 => $query->whereRaw('NOT '.$this->noDataStatusSql())
+                ->where('stats.daytime_hours', '>', 0)
                 ->where('stats.daytime_hours', '<', 1),
             self::DAY_STATUS_LESS_THAN_7 => $query->whereRaw($availableSql)
                 ->where('stats.daytime_hours', '>=', 1)
@@ -499,6 +587,9 @@ class FleetEfficiencyService
             self::DAY_STATUS_BETWEEN_7_AND_10 => $query->whereRaw($availableSql)
                 ->where('stats.daytime_hours', '>=', 7)
                 ->where('stats.daytime_hours', '<=', 10),
+            self::STATUS_NIGHT_SHIFT_ONLY => $query->whereRaw($availableSql)
+                ->where('stats.daytime_hours', '=', 0)
+                ->where('stats.overtime_hours', '>', 0),
             self::DAY_STATUS_OVER_10 => $query->whereRaw($availableSql)
                 ->where('stats.daytime_hours', '>', 10),
             default => null,
@@ -507,24 +598,7 @@ class FleetEfficiencyService
 
     private function daytimeAvailableSql(): string
     {
-        return '(stats.id IS NOT NULL AND stats.daytime_hours IS NOT NULL)';
-    }
-
-    private function applyWorkStatusFilter(Builder $query, string $status): void
-    {
-        $hoursSql = $this->totalHoursSql();
-
-        $query->whereRaw($hoursSql.' IS NOT NULL');
-
-        match ($status) {
-            self::DAY_STATUS_LESS_THAN_1 => $query->whereRaw($hoursSql.' < 1'),
-            self::DAY_STATUS_LESS_THAN_7 => $query->whereRaw($hoursSql.' >= 1')
-                ->whereRaw($hoursSql.' < 7'),
-            self::DAY_STATUS_BETWEEN_7_AND_10 => $query->whereRaw($hoursSql.' >= 7')
-                ->whereRaw($hoursSql.' <= 10'),
-            self::DAY_STATUS_OVER_10 => $query->whereRaw($hoursSql.' > 10'),
-            default => null,
-        };
+        return '(NOT '.$this->noDataStatusSql().')';
     }
 
     private function applyRangeFilter(Builder $query, string $column, mixed $min, mixed $max, bool $raw = false): void
@@ -593,6 +667,11 @@ class FleetEfficiencyService
         return '(stats.id IS NOT NULL AND '.$this->totalHoursSql().' IS NOT NULL)';
     }
 
+    private function noDataStatusSql(): string
+    {
+        return '(NOT '.$this->dataAvailableSql().' OR stats.daytime_hours IS NULL OR '.$this->totalHoursSql().' <= 0)';
+    }
+
     /**
      * @param  array<string, mixed>  $filters
      * @return Collection<int, array<string, mixed>>
@@ -602,16 +681,19 @@ class FleetEfficiencyService
         $filters = $this->normalizeFilters($filters);
         $query = $this->dailyRowsQuery($filters);
         $availableSql = $this->dataAvailableSql();
+        $noDataStatusSql = $this->noDataStatusSql();
         $totalHoursSql = $this->totalHoursSql();
+        $daytimeHoursSql = 'stats.daytime_hours';
         $selects = [
             'equipment.ownership_type',
-            DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$totalHoursSql.' < 1 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_1),
-            DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$totalHoursSql.' >= 1 AND '.$totalHoursSql.' < 7 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_7),
-            DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$totalHoursSql.' >= 7 AND '.$totalHoursSql.' <= 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
+            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' > 0 AND '.$daytimeHoursSql.' < 1 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_1),
+            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' >= 1 AND '.$daytimeHoursSql.' < 7 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_7),
+            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' >= 7 AND '.$daytimeHoursSql.' <= 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
+            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' = 0 AND stats.overtime_hours > 0 THEN 1 ELSE 0 END) as '.self::STATUS_NIGHT_SHIFT_ONLY),
             DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$totalHoursSql.' > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
             DB::raw('COUNT(*) as total_rows'),
-            DB::raw('SUM(CASE WHEN NOT '.$availableSql.' THEN 1 ELSE 0 END) as '.self::STATUS_NO_DATA),
-            DB::raw('SUM(CASE WHEN NOT '.$availableSql.' THEN 1 ELSE 0 END) as missing_data'),
+            DB::raw('SUM(CASE WHEN '.$noDataStatusSql.' THEN 1 ELSE 0 END) as '.self::STATUS_NO_DATA),
+            DB::raw('SUM(CASE WHEN '.$noDataStatusSql.' THEN 1 ELSE 0 END) as missing_data'),
             DB::raw('SUM(CASE WHEN stats.overtime_hours IS NOT NULL THEN 1 ELSE 0 END) as overtime_denominator'),
             DB::raw('SUM(CASE WHEN stats.overtime_hours IS NULL THEN 1 ELSE 0 END) as overtime_unknown'),
             DB::raw('SUM(CASE WHEN stats.overtime_hours > 0 THEN 1 ELSE 0 END) as '.self::STATUS_OVERTIME),
@@ -636,6 +718,7 @@ class FleetEfficiencyService
                     self::DAY_STATUS_LESS_THAN_1 => (int) $row->{self::DAY_STATUS_LESS_THAN_1},
                     self::DAY_STATUS_LESS_THAN_7 => (int) $row->{self::DAY_STATUS_LESS_THAN_7},
                     self::DAY_STATUS_BETWEEN_7_AND_10 => (int) $row->{self::DAY_STATUS_BETWEEN_7_AND_10},
+                    self::STATUS_NIGHT_SHIFT_ONLY => (int) $row->{self::STATUS_NIGHT_SHIFT_ONLY},
                     self::DAY_STATUS_OVER_10 => (int) $row->{self::DAY_STATUS_OVER_10},
                     self::STATUS_OVERTIME => (int) $row->{self::STATUS_OVERTIME},
                     self::STATUS_NO_DATA => (int) $row->{self::STATUS_NO_DATA},
@@ -656,6 +739,7 @@ class FleetEfficiencyService
             self::DAY_STATUS_LESS_THAN_1,
             self::DAY_STATUS_LESS_THAN_7,
             self::DAY_STATUS_BETWEEN_7_AND_10,
+            self::STATUS_NIGHT_SHIFT_ONLY,
             self::DAY_STATUS_OVER_10,
             self::STATUS_OVERTIME,
             self::STATUS_NO_DATA,
@@ -678,9 +762,15 @@ class FleetEfficiencyService
         $totalHours = $daytimeHours !== null && $overtimeHours !== null
             ? $daytimeHours + $overtimeHours
             : ($row->total_hours === null ? null : max(0.0, (float) $row->total_hours));
-        $dataAvailable = $row->stat_id !== null && $totalHours !== null;
-        $daytimeStatus = $daytimeHours === null ? self::STATUS_NO_DATA : $this->statusForHours($daytimeHours);
-        $workStatus = $totalHours === null ? self::STATUS_NO_DATA : $this->statusForHours($totalHours);
+        $dataAvailable = $row->stat_id !== null
+            && $totalHours !== null
+            && $totalHours > 0
+            && $daytimeHours !== null
+            && $daytimeHours >= 0;
+        $daytimeStatus = $dataAvailable
+            ? ($this->efficiencyStatusForHours($daytimeHours, $totalHours) ?? self::STATUS_NO_DATA)
+            : self::STATUS_NO_DATA;
+        $workStatus = $daytimeStatus;
         $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
         $sourceIntervals = is_string($row->source_intervals_json ?? null)
             ? json_decode($row->source_intervals_json, true) ?: []
@@ -720,9 +810,15 @@ class FleetEfficiencyService
         $daytimeHours = $stat ? $this->daytimeHours($stat) : null;
         $overtimeHours = $stat ? $this->overtimeHours($stat) : null;
         $totalHours = $stat ? $this->totalHours($stat, $daytimeHours, $overtimeHours) : null;
-        $dataAvailable = $stat !== null && $totalHours !== null;
-        $daytimeStatus = $daytimeHours === null ? self::STATUS_NO_DATA : $this->statusForHours($daytimeHours);
-        $workStatus = $totalHours === null ? self::STATUS_NO_DATA : $this->statusForHours($totalHours);
+        $dataAvailable = $stat !== null
+            && $totalHours !== null
+            && $totalHours > 0
+            && $daytimeHours !== null
+            && $daytimeHours >= 0;
+        $daytimeStatus = $dataAvailable
+            ? ($this->efficiencyStatusForHours($daytimeHours, $totalHours) ?? self::STATUS_NO_DATA)
+            : self::STATUS_NO_DATA;
+        $workStatus = $daytimeStatus;
         $hasOvertime = $overtimeHours === null ? null : $overtimeHours > 0;
 
         return [
@@ -796,9 +892,10 @@ class FleetEfficiencyService
             self::DAY_STATUS_LESS_THAN_1 => __('app.worked_less_than_1_hour'),
             self::DAY_STATUS_LESS_THAN_7 => __('app.worked_less_than_7_hours'),
             self::DAY_STATUS_BETWEEN_7_AND_10 => __('app.worked_7_to_10_hours'),
+            self::STATUS_NIGHT_SHIFT_ONLY => __('app.worked_night_shift_only'),
             self::DAY_STATUS_OVER_10, self::LEGACY_DAY_STATUS_OVER_10 => __('app.worked_over_10_hours'),
             self::STATUS_OVERTIME => __('app.worked_overtime_hours'),
-            self::STATUS_NO_DATA => __('app.no_data'),
+            self::STATUS_NO_DATA => __('app.equipment_without_data'),
             default => $status,
         };
     }
@@ -838,6 +935,7 @@ class FleetEfficiencyService
             self::DAY_STATUS_LESS_THAN_1 => 0,
             self::DAY_STATUS_LESS_THAN_7 => 0,
             self::DAY_STATUS_BETWEEN_7_AND_10 => 0,
+            self::STATUS_NIGHT_SHIFT_ONLY => 0,
             self::DAY_STATUS_OVER_10 => 0,
             self::STATUS_OVERTIME => 0,
             self::STATUS_NO_DATA => 0,
@@ -857,7 +955,8 @@ class FleetEfficiencyService
             ($summary[self::DAY_STATUS_LESS_THAN_1] ?? 0)
             + ($summary[self::DAY_STATUS_LESS_THAN_7] ?? 0)
             + ($summary[self::DAY_STATUS_BETWEEN_7_AND_10] ?? 0)
-            + ($summary[self::DAY_STATUS_OVER_10] ?? 0)
+            + ($summary[self::STATUS_NIGHT_SHIFT_ONLY] ?? 0)
+            + ($summary[self::STATUS_NO_DATA] ?? 0)
         );
     }
 
@@ -945,6 +1044,7 @@ class FleetEfficiencyService
             'less_than_1', self::DAY_STATUS_LESS_THAN_1 => self::DAY_STATUS_LESS_THAN_1,
             'from_1_to_7', self::DAY_STATUS_LESS_THAN_7 => self::DAY_STATUS_LESS_THAN_7,
             'from_7_to_10', self::DAY_STATUS_BETWEEN_7_AND_10 => self::DAY_STATUS_BETWEEN_7_AND_10,
+            self::STATUS_NIGHT_SHIFT_ONLY => self::STATUS_NIGHT_SHIFT_ONLY,
             self::DAY_STATUS_OVER_10, self::LEGACY_DAY_STATUS_OVER_10 => self::DAY_STATUS_OVER_10,
             self::STATUS_OVERTIME => self::STATUS_OVERTIME,
             self::STATUS_NO_DATA => self::STATUS_NO_DATA,
@@ -958,6 +1058,7 @@ class FleetEfficiencyService
             'less_than_1', self::DAY_STATUS_LESS_THAN_1 => self::DAY_STATUS_LESS_THAN_1,
             'from_1_to_7', self::DAY_STATUS_LESS_THAN_7 => self::DAY_STATUS_LESS_THAN_7,
             'from_7_to_10', self::DAY_STATUS_BETWEEN_7_AND_10 => self::DAY_STATUS_BETWEEN_7_AND_10,
+            self::STATUS_NIGHT_SHIFT_ONLY => self::STATUS_NIGHT_SHIFT_ONLY,
             self::DAY_STATUS_OVER_10, self::LEGACY_DAY_STATUS_OVER_10 => self::DAY_STATUS_OVER_10,
             default => null,
         };
@@ -972,7 +1073,21 @@ class FleetEfficiencyService
             self::DAY_STATUS_LESS_THAN_1,
             self::DAY_STATUS_LESS_THAN_7,
             self::DAY_STATUS_BETWEEN_7_AND_10,
+            self::STATUS_NIGHT_SHIFT_ONLY,
             self::DAY_STATUS_OVER_10,
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function primaryDayStatusKeys(): array
+    {
+        return [
+            self::DAY_STATUS_LESS_THAN_1,
+            self::DAY_STATUS_LESS_THAN_7,
+            self::DAY_STATUS_BETWEEN_7_AND_10,
+            self::STATUS_NIGHT_SHIFT_ONLY,
         ];
     }
 
@@ -997,6 +1112,16 @@ class FleetEfficiencyService
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function isNoDataStatusRow(array $row): bool
+    {
+        return ! ($row['data_available'] ?? false)
+            || $row['total_hours'] === null
+            || (float) $row['total_hours'] <= 0;
     }
 
     /**

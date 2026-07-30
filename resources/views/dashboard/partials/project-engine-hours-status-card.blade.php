@@ -1,11 +1,23 @@
 @php
-    $categoryKeys = $categoryLabels->keys();
+    $primaryCategoryKeys = collect([
+        'less_than_1_hour',
+        'less_than_7_hours',
+        'between_7_and_10_hours',
+        'night_shift_only',
+        'no_data',
+    ]);
+    $additionalCategoryKeys = collect([
+        'overtime',
+        'over_10_hours',
+    ]);
     $total = (int) ($summary['total'] ?? 0);
+    $hasRows = $total + (int) $additionalCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0)) > 0;
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
     $title = $title ?? null;
     $drilldownProjectId = $drilldownProjectId ?? ($filters['project_id'] ?? null);
     $drilldownDateFrom = $drilldownDateFrom ?? ($filters['from'] ?? null);
     $drilldownDateTo = $drilldownDateTo ?? ($filters['to'] ?? null);
+    $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
 @endphp
 
 <section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column">
@@ -34,7 +46,7 @@
         </div>
     </div>
 
-    @if ($total > 0)
+    @if ($hasRows)
         <div class="dashboard-work-status-layout flex-grow-1">
             <div class="dashboard-work-status-chart">
                 <canvas id="{{ $chartId }}"></canvas>
@@ -45,18 +57,12 @@
                         <tr>
                             <th>{{ __('app.status') }}</th>
                             <th class="text-end">Say</th>
-                            <th class="text-end">Faiz</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach ($categoryKeys as $key)
+                        @foreach ($primaryCategoryKeys as $key)
                             @php
                                 $count = (int) ($summary[$key] ?? 0);
-                                $percentDenominator = $key === 'overtime'
-                                    ? (int) ($summary['overtime_denominator'] ?? 0)
-                                    : $total;
-                                $percent = $percentDenominator > 0 ? round(($count / $percentDenominator) * 100, 1) : 0;
-                                $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
                             @endphp
                             <tr
                                 class="dashboard-drilldown-trigger"
@@ -65,6 +71,8 @@
                                 data-drilldown-title="{{ ($title ?: 'Project üzrə: '.$ownershipLabel).' — '.$categoryLabels[$key] }}"
                                 data-drilldown-ownership="{{ $drilldownOwnership }}"
                                 data-drilldown-project-id="{{ $drilldownProjectId }}"
+                                data-drilldown-view="projects"
+                                data-drilldown-mode="efficiency_projects"
                                 data-drilldown-work-category="{{ $key }}"
                                 data-drilldown-status="{{ $key }}"
                                 data-drilldown-date-from="{{ $drilldownDateFrom }}"
@@ -77,14 +85,39 @@
                                     </span>
                                 </td>
                                 <td class="text-end">{{ number_format($count, 0, '.', ' ') }}</td>
-                                <td class="text-end">{{ number_format($percent, 1, '.', ' ') }}%</td>
                             </tr>
                         @endforeach
                         <tr class="dashboard-work-status-total">
                             <td>Cəmi</td>
                             <td class="text-end">{{ number_format($total, 0, '.', ' ') }}</td>
-                            <td class="text-end">100%</td>
                         </tr>
+                        @foreach ($additionalCategoryKeys as $key)
+                            @php
+                                $count = (int) ($summary[$key] ?? 0);
+                            @endphp
+                            <tr
+                                class="dashboard-drilldown-trigger dashboard-work-status-additional"
+                                role="button"
+                                tabindex="0"
+                                data-drilldown-title="{{ ($title ?: 'Project üzrə: '.$ownershipLabel).' — '.$categoryLabels[$key] }}"
+                                data-drilldown-ownership="{{ $drilldownOwnership }}"
+                                data-drilldown-project-id="{{ $drilldownProjectId }}"
+                                data-drilldown-view="projects"
+                                data-drilldown-mode="efficiency_projects"
+                                data-drilldown-work-category="{{ $key }}"
+                                data-drilldown-status="{{ $key }}"
+                                data-drilldown-date-from="{{ $drilldownDateFrom }}"
+                                data-drilldown-date-to="{{ $drilldownDateTo }}"
+                            >
+                                <td>
+                                    <span class="dashboard-work-status-label">
+                                        <span class="dashboard-color-dot" style="background: {{ $categoryColors[$key] }}"></span>
+                                        <span class="dashboard-work-status-label-text">{{ $categoryLabels[$key] }}</span>
+                                    </span>
+                                </td>
+                                <td class="text-end">{{ number_format($count, 0, '.', ' ') }}</td>
+                            </tr>
+                        @endforeach
                     </tbody>
                 </table>
             </div>

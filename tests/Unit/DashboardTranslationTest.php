@@ -15,9 +15,6 @@ class DashboardTranslationTest extends TestCase
             'dashboard_tab_geozones',
             'dashboard_sections',
             'data_updated_through',
-            'current_live',
-            'current_live_description',
-            'live_data',
             'loading_tab',
             'modal_tab_data',
             'modal_tab_summary',
@@ -28,6 +25,7 @@ class DashboardTranslationTest extends TestCase
             'next_page',
             'tab_load_failed',
             'tab_load_retry',
+            'worked_night_shift_only',
         ];
 
         foreach (['az', 'ru', 'en'] as $locale) {

@@ -54,6 +54,9 @@ class DashboardFleetDrilldownService
             'date_to' => $range['to'],
             'ownership' => $this->normalizeOwnership($input['ownership'] ?? null),
             'ownership_scope' => ($input['ownership_scope'] ?? null) === 'project_groups' ? 'project_groups' : 'operational',
+            'view' => in_array($input['view'] ?? null, ['equipment_types', 'projects'], true)
+                ? (string) $input['view']
+                : 'units',
             'project_id' => filled($projectId) ? (int) $projectId : null,
             'project_ids' => $this->integerArray($input['project_ids'] ?? []),
             'equipment_type_id' => $this->equipmentTypeId($input),
@@ -96,6 +99,14 @@ class DashboardFleetDrilldownService
      */
     public function getUnits(array $filters): LengthAwarePaginator
     {
+        if ($filters['view'] === 'projects' && ($filters['work_category'] || $filters['day_status'])) {
+            return $this->efficiency->paginateProjects($this->efficiencyFilters($filters));
+        }
+
+        if ($filters['view'] === 'equipment_types') {
+            return $this->equipmentTypePaginator($filters);
+        }
+
         if ($filters['top_working_ranking'] || ($filters['top_working_equipment_id'] && $filters['top_working_stat_date'])) {
             return $this->topWorkingUnits->paginateDetail($filters);
         }
@@ -285,6 +296,24 @@ class DashboardFleetDrilldownService
      */
     private function rawColumns(array $filters): array
     {
+        if ($filters['view'] === 'projects' && ($filters['work_category'] || $filters['day_status'])) {
+            return [
+                'project' => __('app.project'),
+                'nwc_count' => 'NWC',
+                'icare_count' => 'İCARƏ',
+                'count' => 'Say',
+            ];
+        }
+
+        if ($filters['view'] === 'equipment_types') {
+            return [
+                'vehicle_type' => 'Növ',
+                'nwc_count' => 'NWC',
+                'icare_count' => 'İCARƏ',
+                'count' => 'Say',
+            ];
+        }
+
         if ($filters['top_working_ranking'] || ($filters['top_working_equipment_id'] && $filters['top_working_stat_date'])) {
             return $this->topWorkingUnits->detailColumns();
         }
@@ -305,7 +334,7 @@ class DashboardFleetDrilldownService
                 'daytime_hours' => 'Gündüz iş saatı',
                 'overtime_hours' => 'Overtime saatı',
                 'total_hours' => 'Ümumi iş saatı',
-                'work_status_label' => 'Ümumi iş statusu',
+                'work_status_label' => 'Əsas iş statusu',
                 'overtime_label' => 'Overtime',
                 'data_status' => 'Məlumat statusu',
                 'wialon_id' => 'Wialon ID',
@@ -447,7 +476,50 @@ class DashboardFleetDrilldownService
             $parts[] = $this->metricLabel($filters['metric']);
         }
 
+        if ($filters['view'] === 'equipment_types') {
+            $parts[] = 'Texnika növü üzrə';
+        }
+
+        if ($filters['view'] === 'projects') {
+            $parts[] = 'Layihələr üzrə';
+        }
+
         return implode(' - ', array_filter($parts));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function equipmentTypePaginator(array $filters): LengthAwarePaginator
+    {
+        return $this->query($filters)
+            ->reorder()
+            ->join('equipment_types as drilldown_types', 'drilldown_types.id', '=', 'equipments.equipment_type_id')
+            ->select([
+                'drilldown_types.id as equipment_type_id',
+                'drilldown_types.name as vehicle_type',
+            ])
+            ->selectRaw(
+                'SUM(CASE WHEN equipments.ownership_type = ? THEN 1 ELSE 0 END) as nwc_count',
+                [Equipment::OWNERSHIP_NWC]
+            )
+            ->selectRaw(
+                'SUM(CASE WHEN equipments.ownership_type = ? THEN 1 ELSE 0 END) as icare_count',
+                [Equipment::OWNERSHIP_ICARE]
+            )
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('drilldown_types.id', 'drilldown_types.name')
+            ->orderByDesc('count')
+            ->orderBy('drilldown_types.name')
+            ->paginate($filters['per_page'], ['*'], 'page', $filters['page'])
+            ->withQueryString()
+            ->through(fn (object $row): array => [
+                'equipment_type_id' => (int) $row->equipment_type_id,
+                'vehicle_type' => (string) $row->vehicle_type,
+                'nwc_count' => (int) $row->nwc_count,
+                'icare_count' => (int) $row->icare_count,
+                'count' => (int) $row->count,
+            ]);
     }
 
     /**
@@ -558,6 +630,7 @@ class DashboardFleetDrilldownService
             'less_than_1', 'less_than_1_hour' => 'less_than_1_hour',
             'from_1_to_7', 'less_than_7_hours' => 'less_than_7_hours',
             'from_7_to_10', 'between_7_and_10_hours' => 'between_7_and_10_hours',
+            'night_shift_only' => 'night_shift_only',
             'over_10_hours', 'over_10_day_hours' => 'over_10_hours',
             'overtime' => 'overtime',
             'no_data' => 'no_data',
@@ -571,6 +644,7 @@ class DashboardFleetDrilldownService
             'less_than_1', 'less_than_1_hour' => 'less_than_1_hour',
             'from_1_to_7', 'less_than_7_hours' => 'less_than_7_hours',
             'from_7_to_10', 'between_7_and_10_hours' => 'between_7_and_10_hours',
+            'night_shift_only' => 'night_shift_only',
             'over_10_hours', 'over_10_day_hours' => 'over_10_hours',
             default => null,
         };
@@ -582,12 +656,13 @@ class DashboardFleetDrilldownService
             'less_than_1_hour' => __('app.worked_less_than_1_hour'),
             'less_than_7_hours' => __('app.worked_less_than_7_hours'),
             'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
+            'night_shift_only' => __('app.worked_night_shift_only'),
             'over_10_hours', 'over_10_day_hours' => __('app.worked_over_10_hours'),
             'less_than_1' => __('app.worked_less_than_1_hour'),
             'from_1_to_7' => __('app.worked_less_than_7_hours'),
             'from_7_to_10' => __('app.worked_7_to_10_hours'),
             'overtime' => __('app.worked_overtime_hours'),
-            'no_data' => 'Məlumatı olmayan texnika',
+            'no_data' => __('app.equipment_without_data'),
             default => $category,
         };
     }

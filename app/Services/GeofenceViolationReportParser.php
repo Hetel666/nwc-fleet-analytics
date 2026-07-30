@@ -194,9 +194,14 @@ class GeofenceViolationReportParser
     private function isOutsideGeofencesRow(array $row, int $groupingIndex): bool
     {
         $cells = is_array($row['c'] ?? null) ? $row['c'] : [];
-        $value = mb_strtolower($this->cellText($cells[$groupingIndex] ?? null));
+        $value = $this->cellText($cells[$groupingIndex] ?? null);
 
-        return in_array($value, [
+        return $this->isOutsideGeofencesLabel($value);
+    }
+
+    private function isOutsideGeofencesLabel(string $value): bool
+    {
+        return in_array(mb_strtolower(trim($value)), [
             'out of geofences',
             'outside geofences',
             'outside all geofences',
@@ -242,7 +247,9 @@ class GeofenceViolationReportParser
     {
         $normalized = mb_strtolower(trim($value));
 
-        if ($normalized === '' || preg_match('/^[-—_]+$/u', $normalized) === 1) {
+        if ($normalized === ''
+            || preg_match('/^[-—_]+$/u', $normalized) === 1
+            || $this->isOutsideGeofencesLabel($normalized)) {
             return null;
         }
 

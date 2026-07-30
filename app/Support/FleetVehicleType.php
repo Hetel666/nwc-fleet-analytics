@@ -31,6 +31,7 @@ final class FleetVehicleType
 
     public const EFFICIENCY_TYPES = [
         self::DUMP_TRUCK,
+        self::BULLDOZER,
         self::EXCAVATOR,
         self::ROAD_GRADER,
         self::LOADER,

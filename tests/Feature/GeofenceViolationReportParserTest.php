@@ -16,7 +16,7 @@ class GeofenceViolationReportParserTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_real_report_rows_are_filtered_and_only_continuous_periods_are_imported(): void
+    public function test_real_report_rows_trust_wialon_duration_and_keep_independent_periods(): void
     {
         CarbonImmutable::setTestNow('2026-07-29 12:00:00');
         $project = Project::create(['name' => 'Füzuli Ağdam yol', 'active' => true]);
@@ -62,18 +62,12 @@ class GeofenceViolationReportParserTest extends TestCase
         $this->assertSame(0, $parsed['malformed_rows']);
         $this->assertCount(2, $parsed['records']);
         $this->assertSame(
-            ['imported' => 0, 'rejected' => 1],
-            app(GeofenceViolationReportImporter::class)->import($parsed['records'])
-        );
-        $this->assertDatabaseCount('geofence_violation_report_rows', 0);
-
-        $this->assertSame(
-            ['imported' => 1, 'rejected' => 0],
+            ['imported' => 2, 'rejected' => 0],
             app(GeofenceViolationReportImporter::class)->replaceGroupSnapshot(
                 $group,
                 $from,
                 $to,
-                [$parsed['records'][0]],
+                $parsed['records'],
                 replace: true
             )
         );
@@ -83,8 +77,9 @@ class GeofenceViolationReportParserTest extends TestCase
             'project_wialon_group_id' => $group->id,
             'outside_duration_seconds' => 14_400,
         ]);
-        $this->assertDatabaseMissing('geofence_violation_report_rows', [
+        $this->assertDatabaseHas('geofence_violation_report_rows', [
             'equipment_name' => '10-AF-101',
+            'outside_duration_seconds' => 14_400,
         ]);
         $this->assertFalse($parsed['records'][0]['is_active']);
         $this->assertSame($from->toDateTimeString(), $parsed['records'][0]['report_period_from']);

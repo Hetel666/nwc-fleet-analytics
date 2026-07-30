@@ -969,8 +969,18 @@ class DashboardService
             'ownership-share' => [__('app.ownership'), 'Say', 'Faiz'],
             'geofence-analysis' => ['Layihə', 'Texnika sayı'],
             'utilization-trend' => ['Tarix', 'NWC (%)', __('app.ownership_icare').' (%)'],
-            'actual-work-hours-nwc', 'actual-work-hours-icare' => [__('app.status'), 'Say', 'Faiz'],
-            'actual-work-hour-categories' => array_merge([__('app.project')], array_values($this->actualWorkHourDashboardBucketLabels()), ['Cəmi', 'Məlumatı olmayan texnika']),
+            'actual-work-hours-nwc', 'actual-work-hours-icare' => [__('app.status'), 'Say'],
+            'actual-work-hour-categories' => [
+                __('app.project'),
+                __('app.worked_less_than_1_hour'),
+                __('app.worked_less_than_7_hours'),
+                __('app.worked_7_to_10_hours'),
+                __('app.worked_night_shift_only'),
+                __('app.equipment_without_data'),
+                'Cəmi',
+                __('app.worked_overtime_hours'),
+                __('app.worked_over_10_hours'),
+            ],
             'actual-work-hours' => [__('app.project'), 'NWC '.__('app.hours'), __('app.ownership_icare').' '.__('app.hours'), 'Cəmi'],
             'project-comparison' => [__('app.project'), 'NWC', __('app.ownership_icare'), 'Cəmi'],
             default => ['Göstərici', 'Dəyərlər'],
@@ -1041,9 +1051,11 @@ class DashboardService
                     $row['less_than_1_hour'] ?? 0,
                     $row['less_than_7_hours'] ?? 0,
                     $row['between_7_and_10_hours'] ?? 0,
-                    $row['overtime'],
-                    $row['total'],
+                    $row['night_shift_only'] ?? 0,
                     $row['missing_data'] ?? 0,
+                    $row['total'],
+                    $row['overtime'] ?? 0,
+                    $row['over_10_hours'] ?? 0,
                 ])
                 ->all(),
             'actual-work-hours' => collect($this->getProjectActualHoursByOwnership($filters))
@@ -1100,7 +1112,7 @@ class DashboardService
                 'Gündüz iş saatı',
                 'Overtime saatı',
                 'Ümumi iş saatı',
-                'Ümumi iş statusu',
+                'Əsas iş statusu',
                 'Overtime',
                 'Məlumat statusu',
                 'Wialon ID',
@@ -1201,13 +1213,19 @@ class DashboardService
             $total += (int) ($row['total'] ?? 0);
         }
 
-        return collect($keys)
+        $primaryKeys = ['less_than_1_hour', 'less_than_7_hours', 'between_7_and_10_hours', 'night_shift_only', 'no_data'];
+        $additionalKeys = ['overtime', 'over_10_hours'];
+
+        return collect($primaryKeys)
             ->map(fn (string $key): array => [
                 $labels[$key],
                 $summary[$key],
-                $this->dashboardExportPercent($summary[$key], $total),
             ])
-            ->push(['Cəmi', $total, $total > 0 ? '100.0%' : '0.0%'])
+            ->push(['Cəmi', $total])
+            ->concat(collect($additionalKeys)->map(fn (string $key): array => [
+                $labels[$key],
+                $summary[$key],
+            ]))
             ->all();
     }
 
@@ -1675,9 +1693,10 @@ class DashboardService
     private function actualWorkHourBucketLabel(string $bucket): string
     {
         return match ($bucket) {
-            'less_than_1', 'less_than_1_hour' => '1 saatdan az',
-            'from_1_to_7', 'less_than_7_hours' => '7 saatdan az',
-            'from_7_to_10', 'between_7_and_10_hours' => '7-10 saat işləyən',
+            'less_than_1', 'less_than_1_hour' => __('app.worked_less_than_1_hour'),
+            'from_1_to_7', 'less_than_7_hours' => __('app.worked_less_than_7_hours'),
+            'from_7_to_10', 'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
+            'night_shift_only' => __('app.worked_night_shift_only'),
             'over_10_hours' => __('app.worked_over_10_hours'),
             'overtime' => __('app.worked_overtime_hours'),
             'no_data' => __('app.no_data'),
@@ -1691,14 +1710,19 @@ class DashboardService
             'less_than_1_hour' => __('app.worked_less_than_1_hour'),
             'less_than_7_hours' => __('app.worked_less_than_7_hours'),
             'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
-            'over_10_hours' => __('app.worked_over_10_hours'),
+            'night_shift_only' => __('app.worked_night_shift_only'),
+            'no_data' => __('app.equipment_without_data'),
             'overtime' => __('app.worked_overtime_hours'),
-            'no_data' => __('app.no_data'),
+            'over_10_hours' => __('app.worked_over_10_hours'),
         ];
     }
 
     private function actualWorkHourBucket(float $hours): string
     {
+        if ($hours <= 0) {
+            return 'no_data';
+        }
+
         if ($hours < 1) {
             return 'less_than_1_hour';
         }
@@ -1716,6 +1740,10 @@ class DashboardService
 
     private function actualWorkHourBucketFromSeconds(int $seconds): string
     {
+        if ($seconds <= 0) {
+            return 'no_data';
+        }
+
         if ($seconds < 3600) {
             return 'less_than_1_hour';
         }

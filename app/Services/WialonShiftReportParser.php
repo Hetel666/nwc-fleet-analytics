@@ -142,6 +142,10 @@ class WialonShiftReportParser
             return null;
         }
 
+        if ($hours <= 0) {
+            return 'no_data';
+        }
+
         if ($hours < 1) {
             return 'less_than_1_hour';
         }

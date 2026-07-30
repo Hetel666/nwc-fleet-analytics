@@ -88,6 +88,93 @@ class DashboardDrilldownTest extends TestCase
             ->assertJsonMissing(['name' => 'NWC Excavator 01']);
     }
 
+    public function test_project_type_drilldown_inherits_dashboard_filters_and_keeps_project_scope(): void
+    {
+        $user = $this->user();
+        $targetProject = Project::query()->create(['name' => 'Füzuli Xocavənd avtomobil yolu', 'active' => true]);
+        $otherProject = Project::query()->create(['name' => 'Ağdərə təlim mərkəzi', 'active' => true]);
+        $this->projectGroup($targetProject, '601702001', Equipment::OWNERSHIP_NWC);
+        $this->projectGroup($targetProject, '601702002', Equipment::OWNERSHIP_ICARE);
+        $this->projectGroup($otherProject, '601702003', Equipment::OWNERSHIP_ICARE);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+
+        foreach ([
+            [$targetProject, $dumpTruck, Equipment::OWNERSHIP_NWC, 'Target NWC Dump', '601702001', '2101'],
+            [$targetProject, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'Target ICARE Dump', '601702002', '2102'],
+            [$targetProject, $excavator, Equipment::OWNERSHIP_ICARE, 'Target ICARE Excavator', '601702002', '2103'],
+            [$otherProject, $dumpTruck, Equipment::OWNERSHIP_ICARE, 'Other project Dump', '601702003', '2104'],
+        ] as [$project, $type, $ownership, $name, $groupId, $wialonId]) {
+            Equipment::query()->create([
+                'name' => $name,
+                'wialon_unit_id' => $wialonId,
+                'equipment_type_id' => $type->id,
+                'project_id' => $project->id,
+                'ownership_type' => $ownership,
+                'matched_wialon_group_id' => $groupId,
+                'active' => true,
+            ]);
+        }
+
+        $baseQuery = [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-29',
+            'project_id' => $targetProject->id,
+            'ownership_scope' => 'project_groups',
+        ];
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                ...$baseQuery,
+                'view' => 'equipment_types',
+                'ownership' => 'all',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 2)
+            ->assertJsonPath('columns.vehicle_type', 'Növ')
+            ->assertJsonPath('columns.nwc_count', 'NWC')
+            ->assertJsonPath('columns.icare_count', 'İCARƏ')
+            ->assertJsonPath('columns.count', 'Say')
+            ->assertJsonPath('data.0.vehicle_type', 'Dump Truck')
+            ->assertJsonPath('data.0.nwc_count', 1)
+            ->assertJsonPath('data.0.icare_count', 1)
+            ->assertJsonPath('data.0.count', 2)
+            ->assertJsonPath('data.1.vehicle_type', 'Excavator')
+            ->assertJsonPath('data.1.nwc_count', 0)
+            ->assertJsonPath('data.1.icare_count', 1)
+            ->assertJsonPath('data.1.count', 1)
+            ->assertJsonPath('filters.Dövr', '2026-07-01 - 2026-07-29')
+            ->assertJsonPath('filters.Layihə', $targetProject->name);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                ...$baseQuery,
+                'view' => 'equipment_types',
+                'ownership' => 'icare',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 2)
+            ->assertJsonPath('data.0.nwc_count', 0)
+            ->assertJsonPath('data.0.icare_count', 1)
+            ->assertJsonPath('data.0.count', 1)
+            ->assertJsonPath('data.1.nwc_count', 0)
+            ->assertJsonPath('data.1.icare_count', 1)
+            ->assertJsonPath('data.1.count', 1);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                ...$baseQuery,
+                'view' => 'units',
+                'ownership' => 'icare',
+                'equipment_type_id' => $dumpTruck->id,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('data.0.name', 'Target ICARE Dump')
+            ->assertJsonMissing(['name' => 'Target NWC Dump'])
+            ->assertJsonMissing(['name' => 'Other project Dump']);
+    }
+
     public function test_drilldown_export_uses_same_filters(): void
     {
         $user = $this->user();
@@ -141,13 +228,25 @@ class DashboardDrilldownTest extends TestCase
             'active' => true,
         ]);
 
+        $nightOnly = Equipment::query()->create([
+            'name' => 'Night Only Excavator',
+            'wialon_unit_id' => '3003',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'matched_wialon_group_id' => '601701903',
+            'active' => true,
+        ]);
+
         EquipmentDailyStat::query()->create([
             'stat_date' => '2026-07-15',
             'equipment_id' => $overtime->id,
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'worked_hours' => 6,
+            'daytime_hours' => 6,
             'overtime_hours' => 1.2,
+            'total_hours' => 7.2,
             'distance_km' => 20,
         ]);
 
@@ -157,7 +256,22 @@ class DashboardDrilldownTest extends TestCase
             'project_id' => $project->id,
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'worked_hours' => 6,
+            'daytime_hours' => 6,
+            'overtime_hours' => 0,
+            'total_hours' => 6,
             'distance_km' => 10,
+        ]);
+
+        EquipmentDailyStat::query()->create([
+            'stat_date' => '2026-07-15',
+            'equipment_id' => $nightOnly->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 2,
+            'daytime_hours' => 0,
+            'overtime_hours' => 2,
+            'total_hours' => 2,
+            'distance_km' => 4,
         ]);
 
         $this->actingAs($user)
@@ -168,9 +282,80 @@ class DashboardDrilldownTest extends TestCase
                 'work_category' => 'overtime',
             ]))
             ->assertOk()
-            ->assertJsonPath('summary.total', 1)
-            ->assertJsonPath('data.0.name', 'Overtime Excavator')
+            ->assertJsonPath('summary.total', 2)
+            ->assertJsonFragment(['name' => 'Overtime Excavator'])
+            ->assertJsonFragment(['name' => 'Night Only Excavator'])
             ->assertJsonMissing(['name' => 'Normal Excavator']);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                'date_from' => '2026-07-15',
+                'date_to' => '2026-07-15',
+                'ownership' => 'nwc',
+                'work_category' => 'night_shift_only',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('data.0.name', 'Night Only Excavator')
+            ->assertJsonMissing(['name' => 'Overtime Excavator'])
+            ->assertJsonMissing(['name' => 'Normal Excavator']);
+    }
+
+    public function test_efficiency_drilldown_groups_selected_status_by_project_before_units(): void
+    {
+        $user = $this->user();
+        $project = Project::query()->create(['name' => 'Efficiency Project', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+
+        foreach ([
+            ['NWC zero', Equipment::OWNERSHIP_NWC, '3101'],
+            ['ICARE zero', Equipment::OWNERSHIP_ICARE, '3102'],
+        ] as [$name, $ownership, $wialonId]) {
+            $equipment = Equipment::query()->create([
+                'name' => $name,
+                'wialon_unit_id' => $wialonId,
+                'equipment_type_id' => $type->id,
+                'project_id' => $project->id,
+                'ownership_type' => $ownership,
+                'matched_wialon_group_id' => '601701903',
+                'active' => true,
+            ]);
+
+            EquipmentDailyStat::query()->create([
+                'stat_date' => '2026-07-15',
+                'equipment_id' => $equipment->id,
+                'project_id' => $project->id,
+                'ownership_type' => $ownership,
+                'worked_hours' => 0,
+                'daytime_hours' => 0,
+                'overtime_hours' => 0,
+                'total_hours' => 0,
+                'day_status' => 'no_data',
+                'has_overtime' => false,
+                'data_available' => true,
+                'daytime_data_available' => true,
+                'overtime_data_available' => true,
+                'distance_km' => 0,
+                'calculation_source' => 'wialon_shift_report',
+                'calculation_status' => 'ok',
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                'date_from' => '2026-07-15',
+                'date_to' => '2026-07-15',
+                'ownership' => 'all',
+                'view' => 'projects',
+                'work_category' => 'no_data',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('summary.total', 1)
+            ->assertJsonPath('data.0.project_id', $project->id)
+            ->assertJsonPath('data.0.nwc_count', 1)
+            ->assertJsonPath('data.0.icare_count', 1)
+            ->assertJsonPath('data.0.count', 2)
+            ->assertJsonPath('columns.project', 'Layihə');
     }
 
     public function test_efficiency_drilldown_accepts_extended_filters(): void
@@ -373,7 +558,7 @@ class DashboardDrilldownTest extends TestCase
             ->assertJsonPath('data.0.name', 'LOT3 NWC less than one')
             ->assertJsonPath('data.0.ownership', 'NWC')
             ->assertJsonPath('data.0.project', 'Yuxari Shirvan LOT3')
-            ->assertJsonPath('data.0.daytime_status_label', '1 saatdan az işləyən')
+            ->assertJsonPath('data.0.daytime_status_label', '0 - 1 saat arası işləyən')
             ->assertJsonMissing(['name' => 'LOT3 ICARE less than one'])
             ->assertJsonMissing(['name' => 'Other project NWC less than one'])
             ->assertJsonMissing(['name' => 'LOT3 NWC regular'])

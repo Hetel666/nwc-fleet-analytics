@@ -63,6 +63,14 @@ class SyncGeofenceViolationReport extends Command
         $sessionId = $wialon->loginByToken(false);
 
         try {
+            $settings['report_template'] = $this->fullDetailReportTemplate(
+                $wialon->getReportTemplateData(
+                    $settings['resource_id'],
+                    $settings['template_id'],
+                    $sessionId
+                )
+            );
+
             foreach ($groups as $group) {
                 $checkpoint = $this->checkpoint($group, $from, $to);
                 $parsed = null;
@@ -93,15 +101,16 @@ class SyncGeofenceViolationReport extends Command
                 ])->save();
 
                 try {
-                    $report = $reportLock->run(fn (): array => $this->fetchReport(
+                    $parsed = $this->fetchParsedReport(
                         $wialon,
+                        $reportLock,
                         $sessionId,
                         $settings,
-                        $group->wialon_group_id,
-                        $from->timestamp,
-                        $to->timestamp
-                    ));
-                    $parsed = $parser->parse($report, $group, $from, $to);
+                        $group,
+                        $from,
+                        $to,
+                        $parser
+                    );
                     $totals['source'] += $parsed['source_rows'];
                     $totals['skipped'] += $parsed['skipped_types'];
                     $totals['malformed'] += $parsed['malformed_rows'];
@@ -132,7 +141,7 @@ class SyncGeofenceViolationReport extends Command
 
                     if ($result['rejected'] > 0) {
                         throw new RuntimeException(sprintf(
-                            'NON_CONTINUOUS_INTERVALS: %d report rows do not describe one continuous period; the group snapshot was not changed.',
+                            'INVALID_REPORT_ROWS: %d report rows failed validation; the group snapshot was not changed.',
                             $result['rejected']
                         ));
                     }
@@ -205,7 +214,7 @@ class SyncGeofenceViolationReport extends Command
     /**
      * Fetch this module's report through its own Wialon session.
      *
-     * @param  array{resource_id: int, template_id: int, chunk_size: int, interval_flags: int, timeout: int}  $settings
+     * @param  array{resource_id: int, template_id: int, report_template: array<string, mixed>, chunk_size: int, interval_flags: int, timeout: int}  $settings
      * @return array{result: array<string, mixed>, tables: array<int, array<string, mixed>>}
      */
     private function fetchReport(
@@ -217,9 +226,9 @@ class SyncGeofenceViolationReport extends Command
         int $to
     ): array {
         $wialon->cleanupReportResult($sessionId);
-        $result = $wialon->executeReport(
+        $result = $wialon->executeReportTemplate(
             $settings['resource_id'],
-            $settings['template_id'],
+            $settings['report_template'],
             $objectId,
             $from,
             $to,
@@ -280,6 +289,344 @@ class SyncGeofenceViolationReport extends Command
         }
 
         return ['result' => $result, 'tables' => $tables];
+    }
+
+    /**
+     * Execute a report with a dedicated session and renew that session when
+     * Wialon reports a temporary execution limit or an expired report context.
+     *
+     * @param  array{resource_id: int, template_id: int, report_template: array<string, mixed>, chunk_size: int, interval_flags: int, timeout: int}  $settings
+     * @return array{result: array<string, mixed>, tables: array<int, array<string, mixed>>}
+     */
+    private function fetchReportWithRetry(
+        WialonService $wialon,
+        WialonReportSessionLock $reportLock,
+        string &$sessionId,
+        array $settings,
+        int|string $objectId,
+        int $from,
+        int $to
+    ): array {
+        $attempts = max(1, (int) config('geofence_violations.report_attempts', 3));
+        $lastException = null;
+
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                return $reportLock->run(fn (): array => $this->fetchReport(
+                    $wialon,
+                    $sessionId,
+                    $settings,
+                    $objectId,
+                    $from,
+                    $to
+                ));
+            } catch (Throwable $exception) {
+                $lastException = $exception;
+
+                if (! $this->isTemporaryWialonError($exception) || $attempt === $attempts) {
+                    throw $exception;
+                }
+
+                try {
+                    $wialon->cleanupReportResult($sessionId);
+                    $wialon->logoutSession($sessionId);
+                } catch (Throwable) {
+                    // The session is already invalid or has no report result.
+                }
+
+                usleep($attempt * max(100, (int) config(
+                    'geofence_violations.report_retry_delay_ms',
+                    2_000
+                )) * 1_000);
+
+                $sessionId = $wialon->loginByToken(false);
+            }
+        }
+
+        throw $lastException ?? new RuntimeException('Wialon geofence violations report failed without an exception.');
+    }
+
+    /**
+     * Confirm an empty result before treating it as a valid snapshot. Wialon
+     * can occasionally return an empty table while the same report succeeds
+     * immediately afterwards.
+     *
+     * @param  array{resource_id: int, template_id: int, report_template: array<string, mixed>, chunk_size: int, interval_flags: int, timeout: int}  $settings
+     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int, matched_tables: int, table_count: int}
+     */
+    private function fetchParsedReport(
+        WialonService $wialon,
+        WialonReportSessionLock $reportLock,
+        string &$sessionId,
+        array $settings,
+        ProjectWialonGroup $group,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        GeofenceViolationReportParser $parser
+    ): array {
+        try {
+            return $this->fetchParsedSnapshot(
+                $wialon,
+                $reportLock,
+                $sessionId,
+                $settings,
+                $group,
+                $from,
+                $to,
+                $parser
+            );
+        } catch (Throwable $exception) {
+            if (! $this->isTemporaryWialonError($exception)
+                || $from->diffInSeconds($to) <= $this->fallbackChunkSeconds()) {
+                throw $exception;
+            }
+
+            Log::notice('Retrying geofence violations report in overlapping chunks', [
+                'group_id' => $group->wialon_group_id,
+                'from' => $from->toDateTimeString(),
+                'to' => $to->toDateTimeString(),
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $this->fetchParsedReportInChunks(
+                $wialon,
+                $reportLock,
+                $sessionId,
+                $settings,
+                $group,
+                $from,
+                $to,
+                $parser
+            );
+        }
+    }
+
+    /**
+     * @param  array{resource_id: int, template_id: int, report_template: array<string, mixed>, chunk_size: int, interval_flags: int, timeout: int}  $settings
+     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int, matched_tables: int, table_count: int}
+     */
+    private function fetchParsedSnapshot(
+        WialonService $wialon,
+        WialonReportSessionLock $reportLock,
+        string &$sessionId,
+        array $settings,
+        ProjectWialonGroup $group,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        GeofenceViolationReportParser $parser
+    ): array {
+        $attempts = max(1, (int) config('geofence_violations.empty_snapshot_attempts', 2));
+        $parsed = null;
+
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            $report = $this->fetchReportWithRetry(
+                $wialon,
+                $reportLock,
+                $sessionId,
+                $settings,
+                $group->wialon_group_id,
+                $from->timestamp,
+                $to->timestamp
+            );
+            $parsed = $parser->parse($report, $group, $from, $to);
+
+            if ($parsed['source_rows'] > 0 || $attempt === $attempts) {
+                return $parsed;
+            }
+
+            usleep(max(100, (int) config(
+                'geofence_violations.empty_snapshot_retry_delay_ms',
+                2_000
+            )) * 1_000);
+        }
+
+        return $parsed ?? [
+            'records' => [],
+            'source_rows' => 0,
+            'skipped_types' => 0,
+            'malformed_rows' => 0,
+            'matched_tables' => 0,
+            'table_count' => 0,
+        ];
+    }
+
+    /**
+     * Use overlapping report windows so a violation that crosses a chunk
+     * boundary is still returned by Wialon's strict duration filter.
+     *
+     * @param  array{resource_id: int, template_id: int, report_template: array<string, mixed>, chunk_size: int, interval_flags: int, timeout: int}  $settings
+     * @return array{records: array<int, array<string, mixed>>, source_rows: int, skipped_types: int, malformed_rows: int, matched_tables: int, table_count: int}
+     */
+    private function fetchParsedReportInChunks(
+        WialonService $wialon,
+        WialonReportSessionLock $reportLock,
+        string &$sessionId,
+        array $settings,
+        ProjectWialonGroup $group,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        GeofenceViolationReportParser $parser
+    ): array {
+        $chunkSeconds = $this->fallbackChunkSeconds();
+        $overlapSeconds = max(
+            (int) config('geofence_violations.minimum_duration_seconds', 10_800) + 1,
+            (int) config('geofence_violations.fallback_overlap_seconds', 10_801)
+        );
+        $combined = [
+            'records' => [],
+            'source_rows' => 0,
+            'skipped_types' => 0,
+            'malformed_rows' => 0,
+            'matched_tables' => 0,
+            'table_count' => 0,
+        ];
+
+        for ($coreFrom = $from; $coreFrom->lte($to); $coreFrom = $coreFrom->addSeconds($chunkSeconds)) {
+            $coreTo = $coreFrom->addSeconds($chunkSeconds - 1)->min($to);
+            $chunkFrom = $coreFrom->subSeconds($overlapSeconds)->max($from);
+            $chunkTo = $coreTo->addSeconds($overlapSeconds)->min($to);
+            $parsed = $this->fetchParsedSnapshot(
+                $wialon,
+                $reportLock,
+                $sessionId,
+                $settings,
+                $group,
+                $chunkFrom,
+                $chunkTo,
+                $parser
+            );
+
+            foreach (['source_rows', 'skipped_types', 'malformed_rows', 'matched_tables', 'table_count'] as $metric) {
+                $combined[$metric] += $parsed[$metric];
+            }
+
+            array_push($combined['records'], ...$parsed['records']);
+        }
+
+        $combined['records'] = $this->mergeChunkedRecords(
+            $combined['records'],
+            $group,
+            $from,
+            $to
+        );
+
+        return $combined;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $records
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeChunkedRecords(
+        array $records,
+        ProjectWialonGroup $group,
+        CarbonImmutable $from,
+        CarbonImmutable $to
+    ): array {
+        $grouped = collect($records)
+            ->groupBy(fn (array $record): string => filled($record['wialon_unit_id'] ?? null)
+                ? 'id:'.$record['wialon_unit_id']
+                : 'name:'.mb_strtolower(trim((string) ($record['equipment_name'] ?? ''))));
+        $merged = [];
+        $activeTolerance = max(1, (int) config('geofence_violations.active_end_tolerance_seconds', 300));
+
+        foreach ($grouped as $unitRecords) {
+            $sorted = $unitRecords->sortBy('exited_at')->values();
+            $current = null;
+
+            foreach ($sorted as $record) {
+                $recordStart = CarbonImmutable::parse($record['exited_at'], config('app.timezone'));
+                $recordEnd = CarbonImmutable::parse($record['last_confirmed_at'], config('app.timezone'));
+
+                if ($current === null) {
+                    $current = $record;
+                    continue;
+                }
+
+                $currentEnd = CarbonImmutable::parse($current['last_confirmed_at'], config('app.timezone'));
+
+                if ($recordStart->timestamp > $currentEnd->timestamp + 1) {
+                    $merged[] = $this->finalizeChunkedRecord($current, $group, $from, $to, $activeTolerance);
+                    $current = $record;
+                    continue;
+                }
+
+                if ($recordEnd->gt($currentEnd)) {
+                    $current['last_confirmed_at'] = $recordEnd->toDateTimeString();
+                    $current['last_location'] = $record['last_location'] ?? $current['last_location'] ?? null;
+                }
+
+                $currentStart = CarbonImmutable::parse($current['exited_at'], config('app.timezone'));
+                $current['outside_duration_seconds'] = max(
+                    (int) ($current['outside_duration_seconds'] ?? 0),
+                    (int) ($record['outside_duration_seconds'] ?? 0),
+                    $currentStart->diffInSeconds(
+                        CarbonImmutable::parse($current['last_confirmed_at'], config('app.timezone'))
+                    )
+                );
+            }
+
+            if ($current !== null) {
+                $merged[] = $this->finalizeChunkedRecord($current, $group, $from, $to, $activeTolerance);
+            }
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param  array<string, mixed>  $record
+     * @return array<string, mixed>
+     */
+    private function finalizeChunkedRecord(
+        array $record,
+        ProjectWialonGroup $group,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        int $activeTolerance
+    ): array {
+        $exitedAt = CarbonImmutable::parse($record['exited_at'], config('app.timezone'));
+        $lastConfirmedAt = CarbonImmutable::parse($record['last_confirmed_at'], config('app.timezone'));
+        $isActive = abs($to->timestamp - $lastConfirmedAt->timestamp) <= $activeTolerance;
+        $unitKey = filled($record['wialon_unit_id'] ?? null)
+            ? (string) $record['wialon_unit_id']
+            : mb_strtolower(trim((string) ($record['equipment_name'] ?? '')));
+
+        $record['period_key'] = sha1(implode('|', [
+            GeofenceViolationReportRow::REPORT_NAME,
+            $group->wialon_group_id,
+            $unitKey,
+            $exitedAt->timestamp,
+        ]));
+        $record['ended_at'] = $isActive ? null : $lastConfirmedAt->toDateTimeString();
+        $record['is_active'] = $isActive;
+        $record['report_period_from'] = $from->toDateTimeString();
+        $record['report_period_to'] = $to->toDateTimeString();
+        $record['source_payload']['chunked_fetch'] = true;
+
+        return $record;
+    }
+
+    private function fallbackChunkSeconds(): int
+    {
+        return max(1, (int) config('geofence_violations.fallback_chunk_hours', 24)) * 3_600;
+    }
+
+    private function isTemporaryWialonError(Throwable $exception): bool
+    {
+        $message = mb_strtolower($exception->getMessage());
+
+        return str_contains($message, 'timeout')
+            || str_contains($message, 'timed out')
+            || str_contains($message, 'curl error 28')
+            || str_contains($message, 'http error')
+            || str_contains($message, 'wialon api error 1 ')
+            || str_contains($message, 'wialon api error 2 ')
+            || str_contains($message, 'wialon api error 4 ')
+            || str_contains($message, 'wialon api error 5 ')
+            || str_contains($message, 'wialon api error 8 ')
+            || str_contains($message, 'wialon api error 1003')
+            || str_contains($message, 'wialon api error 1004');
     }
 
     /**
@@ -345,6 +692,42 @@ class SyncGeofenceViolationReport extends Command
             'interval_flags' => (int) config('geofence_violations.interval_flags', 0),
             'timeout' => max(5, (int) config('geofence_violations.timeout', 60)),
         ];
+    }
+
+    /**
+     * Execute a transient full-detail copy. The saved Wialon template and its
+     * duration filter remain unchanged.
+     *
+     * @param  array<string, mixed>  $template
+     * @return array<string, mixed>
+     */
+    private function fullDetailReportTemplate(array $template): array
+    {
+        $matched = false;
+
+        if (! is_array($template['tbl'] ?? null)) {
+            throw new RuntimeException(
+                'REPORT_SCHEMA_MISMATCH: The report template does not contain tables.'
+            );
+        }
+
+        foreach ($template['tbl'] as &$table) {
+            if (($table['n'] ?? null) !== 'unit_group_zones_visit') {
+                continue;
+            }
+
+            $table['f'] = (((int) ($table['f'] ?? 0)) & ~0x10) | 0x800;
+            $matched = true;
+        }
+        unset($table);
+
+        if (! $matched) {
+            throw new RuntimeException(
+                'REPORT_SCHEMA_MISMATCH: The expected unit_group_zones_visit report table is missing from the template.'
+            );
+        }
+
+        return $template;
     }
 
     /**
@@ -421,7 +804,7 @@ class SyncGeofenceViolationReport extends Command
 
     private function errorCode(Throwable $exception): string
     {
-        foreach (['REPORT_SCHEMA_MISMATCH', 'MALFORMED_REPORT_ROWS', 'NON_CONTINUOUS_INTERVALS'] as $code) {
+        foreach (['REPORT_SCHEMA_MISMATCH', 'MALFORMED_REPORT_ROWS', 'INVALID_REPORT_ROWS'] as $code) {
             if (str_starts_with($exception->getMessage(), $code.':')) {
                 return $code;
             }

@@ -73,6 +73,127 @@ class DashboardAccessTest extends TestCase
         }
     }
 
+    public function test_efficiency_card_shows_primary_total_then_supplemental_counts_without_percentages(): void
+    {
+        $this->seed(DemoSeeder::class);
+        $project = $this->createPreparedEfficiencyRow();
+        $admin = User::where('email', 'admin@example.com')->firstOrFail();
+        $html = $this->actingAs($admin)
+            ->get('/dashboard?tab=efficiency&project_id='.$project->id.'&date_from=2026-07-19&date_to=2026-07-19')
+            ->assertOk()
+            ->getContent();
+        $chart = strpos($html, 'id="projectWorkCategoriesNwc"');
+        $start = $chart === false ? false : strrpos(substr($html, 0, $chart), '<section');
+        $end = $chart === false ? false : strpos($html, '</section>', $chart);
+        $this->assertNotFalse($chart);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $card = substr($html, $start, $end - $start + strlen('</section>'));
+
+        $this->assertStringNotContainsString('Faiz', $card);
+        $this->assertStringNotContainsString('%</td>', $card);
+        $this->assertStringContainsString('data-drilldown-view="projects"', $card);
+        $this->assertStringContainsString('data-drilldown-mode="efficiency_projects"', $card);
+
+        $positions = array_map(
+            fn (string $label): int|false => strpos($card, $label),
+            [
+                '0 - 1 saat arası işləyən',
+                '1 - 7 saat arası işləyən',
+                '7 - 10 saat arası işləyən',
+                'Sırf gecə növbəsi işləyən',
+                'İşləməyən / Məlumatı olmayan',
+                'Cəmi',
+                'Həm gündüz həm gecə növbəsi işləyən (Overtime)',
+                '10 saatdan artıq işləyən',
+            ]
+        );
+        $this->assertNotContains(false, $positions);
+        $this->assertSame($positions, collect($positions)->sort()->values()->all());
+    }
+
+    public function test_project_comparison_is_expanded_on_initial_page_load(): void
+    {
+        $this->seed(DemoSeeder::class);
+        $admin = User::where('email', 'admin@example.com')->firstOrFail();
+        $type = EquipmentType::query()->firstOrCreate(['name' => 'Excavator']);
+
+        foreach (range(1, 11) as $index) {
+            $project = Project::query()->create([
+                'name' => sprintf('Expanded project %02d', $index),
+                'code' => sprintf('EXP-%02d', $index),
+                'active' => true,
+            ]);
+            $group = ProjectWialonGroup::query()->create([
+                'project_id' => $project->id,
+                'wialon_group_id' => '6099'.str_pad((string) $index, 4, '0', STR_PAD_LEFT),
+                'name' => $project->name.' - NWC',
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'is_active' => true,
+            ]);
+
+            Equipment::query()->create([
+                'name' => sprintf('Expanded unit %02d', $index),
+                'wialon_unit_id' => 'expanded-'.$index,
+                'equipment_type_id' => $type->id,
+                'project_id' => $project->id,
+                'project_wialon_group_id' => $group->id,
+                'matched_wialon_group_id' => $group->wialon_group_id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'active' => true,
+            ]);
+        }
+
+        Cache::flush();
+        $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
+
+        $this->assertStringContainsString('data-expandable="project-comparison"', $html);
+        $this->assertStringContainsString('data-expanded="1"', $html);
+        $this->assertStringContainsString('class="dashboard-scroll-table is-expanded"', $html);
+        $this->assertStringContainsString('class="expandable-extra"', $html);
+        $this->assertStringNotContainsString('class="expandable-extra d-none"', $html);
+        $this->assertStringContainsString('aria-controls="dashboardExpandableProjectComparison"', $html);
+        $this->assertStringContainsString('>Gizlət</button>', $html);
+    }
+
+    public function test_project_comparison_uses_two_level_drilldown_without_ownership_override(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $project = Project::query()->create(['name' => 'Two-level drilldown project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601709999',
+            'name' => 'Two-level drilldown group',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => true,
+        ]);
+        $type = EquipmentType::query()->create(['name' => 'Two-level drilldown type']);
+        Equipment::query()->create([
+            'name' => 'Two-level drilldown unit',
+            'wialon_unit_id' => '709999',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'matched_wialon_group_id' => $group->wialon_group_id,
+            'active' => true,
+        ]);
+
+        $admin = User::where('email', 'admin@example.com')->firstOrFail();
+        $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
+
+        $this->assertStringContainsString('data-drilldown-view="equipment_types"', $html);
+        $this->assertStringContainsString('data-drilldown-mode="project_types"', $html);
+        $this->assertStringContainsString('id="dashboardDrilldownBack"', $html);
+        $this->assertStringContainsString('dashboard-project-type-number', $html);
+        $this->assertStringContainsString('dashboard-project-type-total', $html);
+        $this->assertStringContainsString('id="dashboardDrilldownColgroup"', $html);
+        $this->assertMatchesRegularExpression(
+            '/data-drilldown-project-id="[^"]+"\s+data-drilldown-ownership-scope="project_groups"\s+data-drilldown-view="equipment_types"/',
+            $html
+        );
+    }
+
     public function test_dashboard_reads_prepared_data_without_live_wialon_reports(): void
     {
         config(['fleet.wialon.live_dashboard_reports' => true]);

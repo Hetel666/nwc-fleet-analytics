@@ -448,6 +448,71 @@ class WialonService
         return $this->findReportTemplateByName($resourceId, $templateName)['id'] ?? null;
     }
 
+    public function getReportTemplateData(
+        int|string $resourceId,
+        int|string $templateId,
+        ?string $sid = null
+    ): array {
+        $templates = $this->request('report/get_report_data', [
+            'itemId' => (int) $resourceId,
+            'col' => [(int) $templateId],
+            'flags' => 0,
+        ], $sid ?? $this->getSessionId());
+
+        foreach ($templates as $template) {
+            if (is_array($template) && (int) ($template['id'] ?? 0) === (int) $templateId) {
+                return $template;
+            }
+        }
+
+        throw new RuntimeException("Wialon report template {$templateId} data was not returned.");
+    }
+
+    public function executeReportTemplate(
+        int|string $resourceId,
+        array $reportTemplate,
+        int|string $objectId,
+        int $from,
+        int $to,
+        int $intervalFlags = 0,
+        ?string $sid = null,
+        bool $remoteExec = false,
+        ?int $requestTimeout = null
+    ): array {
+        $previousTimeout = $this->requestTimeoutOverride;
+        $previousDeadline = $this->requestDeadlineAt;
+        $this->requestTimeoutOverride = $requestTimeout;
+        $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
+
+        try {
+            $payload = [
+                'reportResourceId' => (int) $resourceId,
+                'reportTemplateId' => 0,
+                'reportTemplate' => $reportTemplate,
+                'reportObjectId' => (int) $objectId,
+                'reportObjectSecId' => 0,
+                'interval' => [
+                    'from' => $from,
+                    'to' => $to,
+                    'flags' => $intervalFlags,
+                ],
+            ];
+
+            if ($remoteExec) {
+                $payload['remoteExec'] = 1;
+                $payload['reportObjectIdList'] = [];
+            }
+
+            $sessionId = $sid ?? $this->getSessionId();
+            $result = $this->request('report/exec_report', $payload, $sessionId);
+
+            return $remoteExec ? $this->waitForRemoteReportResult($sessionId) : $result;
+        } finally {
+            $this->requestTimeoutOverride = $previousTimeout;
+            $this->requestDeadlineAt = $previousDeadline;
+        }
+    }
+
     public function executeReport(
         int|string $resourceId,
         int|string $templateId,

@@ -18,13 +18,16 @@ class FleetEfficiencyServiceTest extends TestCase
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+        $bulldozer = EquipmentType::query()->create(['name' => 'Bulldozer']);
         $pickup = EquipmentType::query()->create(['name' => 'Pickup']);
 
         $allowed = $this->equipment('Excavator 01', $excavator, $project);
+        $allowedBulldozer = $this->equipment('Bulldozer 01', $bulldozer, $project);
         $excluded = $this->equipment('Pickup 01', $pickup, $project);
 
         $this->stat($allowed, '2026-07-01', 5);
         $this->stat($allowed, '2026-07-02', 0.5);
+        $this->stat($allowedBulldozer, '2026-07-01', 8);
         $this->stat($excluded, '2026-07-01', 8);
 
         $rows = app(FleetEfficiencyService::class)->projectRowsByOwnership([
@@ -37,8 +40,8 @@ class FleetEfficiencyServiceTest extends TestCase
 
         $this->assertSame(1, $summary['less_than_1_hour']);
         $this->assertSame(1, $summary['less_than_7_hours']);
-        $this->assertSame(0, $summary['between_7_and_10_hours']);
-        $this->assertSame(2, $summary['total']);
+        $this->assertSame(1, $summary['between_7_and_10_hours']);
+        $this->assertSame(4, $summary['total']);
     }
 
     public function test_it_counts_range_as_daily_rows_and_tracks_no_data_per_day(): void
@@ -76,12 +79,13 @@ class FleetEfficiencyServiceTest extends TestCase
             'to' => '2026-07-01',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(1, $summary['between_7_and_10_hours']);
+        $this->assertSame(1, $summary['less_than_7_hours']);
+        $this->assertSame(0, $summary['between_7_and_10_hours']);
         $this->assertSame(1, $summary['overtime']);
         $this->assertSame(1, $summary['total']);
     }
 
-    public function test_work_status_uses_total_hours_while_overtime_stays_independent(): void
+    public function test_primary_status_uses_daytime_hours_while_total_over_ten_stays_independent(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Loader']);
@@ -99,7 +103,7 @@ class FleetEfficiencyServiceTest extends TestCase
             'to' => '2026-07-01',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(1, $summary['between_7_and_10_hours']);
+        $this->assertSame(2, $summary['between_7_and_10_hours']);
         $this->assertSame(2, $summary['over_10_hours']);
         $this->assertSame(1, $summary['overtime']);
         $this->assertSame(3, $summary['total']);
@@ -151,7 +155,7 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame('Positive overtime', $rows[0][2]);
     }
 
-    public function test_total_work_category_requires_total_data_but_day_status_remains_filterable(): void
+    public function test_primary_category_requires_total_data_and_incomplete_rows_remain_no_data(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Excavator']);
@@ -182,13 +186,20 @@ class FleetEfficiencyServiceTest extends TestCase
             'day_status' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_7,
             'per_page' => 20,
         ]);
+        $noData = $service->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => FleetEfficiencyService::STATUS_NO_DATA,
+            'per_page' => 20,
+        ]);
 
         $this->assertSame(0, $lessThanSeven->total());
-        $this->assertSame(1, $daytimeLessThanSeven->total());
-        $this->assertSame('Daytime only excavator', $daytimeLessThanSeven->items()[0]['name']);
-        $this->assertSame(3.5, $daytimeLessThanSeven->items()[0]['daytime_hours']);
-        $this->assertFalse($daytimeLessThanSeven->items()[0]['data_available']);
-        $this->assertNull($daytimeLessThanSeven->items()[0]['has_overtime']);
+        $this->assertSame(0, $daytimeLessThanSeven->total());
+        $this->assertSame(1, $noData->total());
+        $this->assertSame('Daytime only excavator', $noData->items()[0]['name']);
+        $this->assertSame(3.5, $noData->items()[0]['daytime_hours']);
+        $this->assertFalse($noData->items()[0]['data_available']);
+        $this->assertNull($noData->items()[0]['has_overtime']);
     }
 
     public function test_missing_data_is_separate_from_less_than_one_hour_and_can_be_filtered(): void
@@ -233,6 +244,96 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame('-', $missingRows[0][8]);
         $this->assertSame('-', $missingRows[0][9]);
         $this->assertSame('Məlumat yoxdur', $missingRows[0][12]);
+    }
+
+    public function test_efficiency_boundaries_and_supplemental_indicators_are_counted_separately(): void
+    {
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+
+        foreach ([
+            ['Zero', 0.0, 0.0],
+            ['Overtime only', 0.0, 9.11],
+            ['Under one', 0.99, 0.0],
+            ['Exactly one', 1.0, 0.0],
+            ['Under seven', 6.99, 0.0],
+            ['Exactly seven', 7.0, 0.0],
+            ['Exactly ten with overtime', 10.0, 0.01],
+        ] as [$name, $daytime, $overtime]) {
+            $equipment = $this->equipment($name, $type, $project);
+            $this->stat($equipment, '2026-07-01', $daytime, $overtime);
+        }
+
+        $summary = app(FleetEfficiencyService::class)->summaryForOwnership([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $summary['less_than_1_hour']);
+        $this->assertSame(2, $summary['less_than_7_hours']);
+        $this->assertSame(2, $summary['between_7_and_10_hours']);
+        $this->assertSame(1, $summary['night_shift_only']);
+        $this->assertSame(7, $summary['total']);
+        $this->assertSame(1, $summary['over_10_hours']);
+        $this->assertSame(2, $summary['overtime']);
+        $this->assertSame(1, $summary['no_data']);
+
+        $zeroRows = app(FleetEfficiencyService::class)->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => 'no_data',
+            'search' => 'Zero',
+        ]);
+        $underOneRows = app(FleetEfficiencyService::class)->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => 'less_than_1_hour',
+        ]);
+        $nightShiftOnlyRows = app(FleetEfficiencyService::class)->paginate([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => 'night_shift_only',
+        ]);
+
+        $this->assertSame(1, $zeroRows->total());
+        $this->assertSame('Zero', $zeroRows->items()[0]['name']);
+        $this->assertSame(
+            ['Under one'],
+            collect($underOneRows->items())->pluck('name')->sort()->values()->all()
+        );
+        $this->assertSame(1, $underOneRows->total());
+        $this->assertSame(1, $nightShiftOnlyRows->total());
+        $this->assertSame('Overtime only', $nightShiftOnlyRows->items()[0]['name']);
+    }
+
+    public function test_project_drilldown_returns_ownership_counts_for_selected_status(): void
+    {
+        $projectA = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $projectB = Project::query()->create(['name' => 'Project B', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Road Roller']);
+
+        $nwc = $this->equipment('NWC under one', $type, $projectA, Equipment::OWNERSHIP_NWC);
+        $icare = $this->equipment('ICARE under one', $type, $projectA, Equipment::OWNERSHIP_ICARE);
+        $other = $this->equipment('Other status', $type, $projectB, Equipment::OWNERSHIP_NWC);
+        $this->stat($nwc, '2026-07-01', 0.5);
+        $this->stat($icare, '2026-07-01', 0.5);
+        $this->stat($other, '2026-07-01', 4);
+
+        $projects = app(FleetEfficiencyService::class)->paginateProjects([
+            'from' => '2026-07-01',
+            'to' => '2026-07-01',
+            'work_category' => 'less_than_1_hour',
+            'per_page' => 20,
+        ]);
+
+        $this->assertSame(1, $projects->total());
+        $this->assertSame([
+            'project_id' => $projectA->id,
+            'project' => 'Project A',
+            'nwc_count' => 1,
+            'icare_count' => 1,
+            'count' => 2,
+        ], $projects->items()[0]);
     }
 
     public function test_extended_filters_apply_to_efficiency_modal_rows(): void

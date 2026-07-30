@@ -74,8 +74,48 @@ class GeofenceViolationReportImporterTest extends TestCase
             ],
         ]);
 
-        $this->assertSame(['imported' => 0, 'rejected' => 3], $result);
+        $this->assertSame(['imported' => 0, 'rejected' => 2], $result);
         $this->assertDatabaseCount('geofence_violation_report_rows', 0);
+    }
+
+    public function test_threshold_is_strict_and_independent_periods_are_not_summed(): void
+    {
+        $equipment = $this->equipment();
+        $importer = app(GeofenceViolationReportImporter::class);
+
+        $result = $importer->import([
+            [
+                'wialon_unit_id' => $equipment->wialon_unit_id,
+                'exited_at' => '2026-07-27 08:00:00',
+                'last_confirmed_at' => '2026-07-27 11:00:00',
+                'outside_duration_seconds' => 10_800,
+            ],
+            [
+                'wialon_unit_id' => $equipment->wialon_unit_id,
+                'exited_at' => '2026-07-27 12:00:00',
+                'last_confirmed_at' => '2026-07-27 15:00:01',
+                'outside_duration_seconds' => 10_801,
+            ],
+            [
+                'wialon_unit_id' => $equipment->wialon_unit_id,
+                'exited_at' => '2026-07-27 18:00:00',
+                'last_confirmed_at' => '2026-07-27 23:00:00',
+                'outside_duration_seconds' => 14_400,
+            ],
+        ]);
+
+        $this->assertSame(['imported' => 2, 'rejected' => 0], $result);
+        $this->assertDatabaseCount('geofence_violation_report_rows', 2);
+        $this->assertDatabaseHas('geofence_violation_report_rows', [
+            'equipment_id' => $equipment->id,
+            'exited_at' => '2026-07-27 12:00:00',
+            'outside_duration_seconds' => 10_801,
+        ]);
+        $this->assertDatabaseHas('geofence_violation_report_rows', [
+            'equipment_id' => $equipment->id,
+            'exited_at' => '2026-07-27 18:00:00',
+            'outside_duration_seconds' => 14_400,
+        ]);
     }
 
     public function test_console_import_rejects_documents_from_another_report(): void

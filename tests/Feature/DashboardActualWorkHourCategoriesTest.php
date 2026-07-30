@@ -56,12 +56,12 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'no_data' => 2,
             ],
             Equipment::OWNERSHIP_ICARE => [
-                'less_than_1_hour' => 2,
+                'less_than_1_hour' => 1,
                 'less_than_7_hours' => 0,
                 'between_7_and_10_hours' => 2,
                 'over_10_hours' => 2,
                 'overtime' => 0,
-                'no_data' => 0,
+                'no_data' => 1,
             ],
         ], $result);
     }
@@ -412,14 +412,14 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ]);
 
         $this->assertSame([
-            'less_than_1_hour' => 2,
+            'less_than_1_hour' => 1,
             'less_than_7_hours' => 1,
             'between_7_and_10_hours' => 2,
             'over_10_hours' => 1,
             'overtime' => 1,
-            'no_data' => 1,
+            'no_data' => 2,
             'total' => 7,
-            'missing_data' => 1,
+            'missing_data' => 2,
         ], array_intersect_key($result[Equipment::OWNERSHIP_NWC][0], array_flip([
             'less_than_1_hour',
             'less_than_7_hours',
@@ -494,8 +494,8 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
         ], 'actual-work-hours-nwc');
         $summaryRows = $export['sections'][0]['rows'];
 
-        $this->assertSame([0, 0, 0, 1, 1, 1, 2], array_column($summaryRows, 1));
-        $this->assertSame(['0.0%', '0.0%', '0.0%', '50.0%', '50.0%', '50.0%', '100.0%'], array_column($summaryRows, 2));
+        $this->assertSame([0, 0, 1, 0, 1, 2, 1, 1], array_column($summaryRows, 1));
+        $this->assertSame(['Status', 'Say'], $export['sections'][0]['columns']);
         $this->assertCount(2, $export['sections'][1]['rows']);
     }
 

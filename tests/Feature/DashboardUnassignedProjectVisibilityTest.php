@@ -19,7 +19,7 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_layihesiz_is_visible_only_in_share_widgets(): void
+    public function test_layihesiz_is_visible_in_operational_and_share_widgets(): void
     {
         config(['fleet.dashboard.cache_minutes' => 0]);
 
@@ -40,8 +40,8 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
         $dashboard = app(DashboardService::class)->getDashboard($filters);
         $ownershipShare = collect($dashboard['overview']['ownership_share'])->keyBy('label');
 
-        $this->assertSame(5.0, $dashboard['overview']['total_hours']);
-        $this->assertSame(1, $dashboard['overview']['equipment_count']);
+        $this->assertSame(25.0, $dashboard['overview']['total_hours']);
+        $this->assertSame(2, $dashboard['overview']['equipment_count']);
         $this->assertSame(2, $ownershipShare[Equipment::OWNERSHIP_NWC]['count']);
         $this->assertSame(2, collect($dashboard['equipmentTypesByOwnership'][Equipment::OWNERSHIP_NWC])->firstWhere('name', 'Excavator')['total']);
         $this->assertSame(1.0, collect($dashboard['projectOwnershipComparison'])->firstWhere('name', $project->name)[Equipment::OWNERSHIP_NWC]);
@@ -53,10 +53,13 @@ class DashboardUnassignedProjectVisibilityTest extends TestCase
             ->where('ownership', Equipment::OWNERSHIP_NWC)
             ->first();
 
-        $this->assertSame(1, $excavatorAverage['units_count']);
-        $this->assertSame(5.0, $excavatorAverage['total_value']);
+        $this->assertSame(2, $excavatorAverage['units_count']);
+        $this->assertSame(25.0, $excavatorAverage['total_value']);
         $this->assertSame(1, app(FleetEfficiencyService::class)->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC)[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
-        $this->assertSame(['Project unit'], array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name'));
+        $this->assertSame(
+            ['Unassigned unit', 'Project unit'],
+            array_column(app(TopWorkingUnitsService::class)->most($filters, 20), 'unit_name')
+        );
     }
 
     public function test_repair_project_is_visible_in_all_dashboard_widgets_and_exports(): void

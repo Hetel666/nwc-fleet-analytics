@@ -187,14 +187,21 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertOk()
             ->assertSee('data-widget-key="geofence-analysis"', false)
             ->assertSee('data-widget-key="geofence-violations-report"', false)
+            ->assertDontSee('data-widget-key="current-live"', false)
+            ->assertDontSee('Cari vəziyyət')
+            ->assertSeeInOrder([
+                'col-12 col-xl-6 dashboard-widget geofence-paired-widget',
+                'data-widget-key="geofence-analysis"',
+                'col-12 col-xl-6 dashboard-widget geofence-paired-widget',
+                'data-widget-key="geofence-violations-report"',
+            ], false)
+            ->assertDontSee('foreign-geofence-kpi-grid', false)
+            ->assertDontSee('foreign-geofence-kpi-label', false)
             ->assertSee('data-geofence-violations-list-link', false)
             ->assertSee('data-geofence-violations-drilldown', false)
+            ->assertDontSee('Ətraflı baxış')
             ->assertSee(route('dashboard.geofence-violations.drilldown'))
-            ->assertSee(route('geofence-violations.index', [
-                'date_from' => '2026-07-27',
-                'date_to' => '2026-07-27',
-            ]))
-            ->assertSee('Geozonadan çıxma halları')
+            ->assertSee('Geofence Transferləri')
             ->assertSee('Mənbə: Geofence Pozuntuları api')
             ->assertViewHas('geofenceViolationDashboardWidget', function (array $widget) use ($project): bool {
                 return data_get($widget, 'kpis.total_violations') === 1

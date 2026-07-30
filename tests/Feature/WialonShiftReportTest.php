@@ -23,6 +23,7 @@ class WialonShiftReportTest extends TestCase
     public function test_daytime_status_boundaries_use_shift_hours_only(): void
     {
         $service = app(FleetEfficiencyService::class);
+        $parser = app(WialonShiftReportParser::class);
 
         $this->assertNull($service->daytimeStatusForHours(null));
         $this->assertSame('less_than_1_hour', $service->daytimeStatusForHours(0));
@@ -38,6 +39,10 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame('between_7_and_10_hours', $service->efficiencyStatusForHours(10.0, 10.0));
         $this->assertSame('between_7_and_10_hours', $service->efficiencyStatusForHours(10.0, 12.0));
         $this->assertSame('less_than_7_hours', $service->efficiencyStatusForHours(6.0, 11.0));
+        $this->assertSame('no_data', $service->efficiencyStatusForHours(0.0, 0.0));
+        $this->assertSame('night_shift_only', $service->efficiencyStatusForHours(0.0, 9.11));
+        $this->assertSame('no_data', $parser->daytimeStatus(0));
+        $this->assertSame('less_than_1_hour', $parser->daytimeStatus(0.5));
     }
 
     public function test_parser_does_not_calculate_shift_hours_from_intervals(): void
@@ -246,7 +251,7 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame([], $parsed['records']);
     }
 
-    public function test_shift_values_keep_daytime_status_and_use_total_hours_for_work_categories(): void
+    public function test_shift_values_keep_daytime_categories_and_total_over_ten_indicator_independent(): void
     {
         $project = Project::query()->create(['name' => 'Shift Project', 'active' => true]);
         $group = ProjectWialonGroup::query()->create([
@@ -259,7 +264,7 @@ class WialonShiftReportTest extends TestCase
         $cases = [
             ['Unit daytime 9 overtime 4', '7001', 9.0, 4.0, FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10, true],
             ['Unit daytime 3 overtime 5', '7002', 3.0, 5.0, FleetEfficiencyService::DAY_STATUS_LESS_THAN_7, true],
-            ['Unit daytime 0 overtime 4', '7003', 0.0, 4.0, FleetEfficiencyService::DAY_STATUS_LESS_THAN_1, true],
+            ['Unit daytime 0 overtime 4', '7003', 0.0, 4.0, FleetEfficiencyService::STATUS_NIGHT_SHIFT_ONLY, true],
             ['Unit daytime 8 overtime 0', '7004', 8.0, 0.0, FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10, false],
             ['Unit daytime 6 overtime 0', '7005', 6.0, 0.0, FleetEfficiencyService::DAY_STATUS_LESS_THAN_7, false],
             ['Unit daytime 10.5 overtime 0', '7006', 10.5, 0.0, FleetEfficiencyService::DAY_STATUS_OVER_10, false],
@@ -308,9 +313,11 @@ class WialonShiftReportTest extends TestCase
 
         $this->assertSame(0, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_1]);
         $this->assertSame(2, $summary[FleetEfficiencyService::DAY_STATUS_LESS_THAN_7]);
-        $this->assertSame(2, $summary[FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10]);
+        $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10]);
+        $this->assertSame(1, $summary[FleetEfficiencyService::STATUS_NIGHT_SHIFT_ONLY]);
         $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_OVER_10]);
         $this->assertSame(4, $summary[FleetEfficiencyService::STATUS_OVERTIME]);
+        $this->assertSame(0, $summary[FleetEfficiencyService::STATUS_NO_DATA]);
         $this->assertSame(7, $summary['total']);
 
         $overtimeRows = $efficiency->paginate([
@@ -324,6 +331,18 @@ class WialonShiftReportTest extends TestCase
 
         $this->assertSame(4, $overtimeRows->total());
 
+        $nightShiftOnlyRows = $efficiency->paginate([
+            'from' => '2026-07-20',
+            'to' => '2026-07-20',
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'work_category' => FleetEfficiencyService::STATUS_NIGHT_SHIFT_ONLY,
+            'per_page' => 20,
+        ]);
+
+        $this->assertSame(1, $nightShiftOnlyRows->total());
+        $this->assertSame('Unit daytime 0 overtime 4', $nightShiftOnlyRows->items()[0]['name']);
+
         $dayRows = $efficiency->paginate([
             'from' => '2026-07-20',
             'to' => '2026-07-20',
@@ -333,9 +352,9 @@ class WialonShiftReportTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(2, $dayRows->total());
+        $this->assertSame(3, $dayRows->total());
         $this->assertEqualsCanonicalizing(
-            ['Unit daytime 3 overtime 5', 'Unit daytime 8 overtime 0'],
+            ['Unit daytime 9 overtime 4', 'Unit daytime 8 overtime 0', 'Unit daytime 10 overtime 2'],
             collect($dayRows->items())->pluck('name')->all()
         );
 
@@ -396,7 +415,7 @@ class WialonShiftReportTest extends TestCase
         $bulldozer = EquipmentType::query()->create(['name' => 'Bulldozer']);
         $target = $this->equipment('Unit A', '6001', $backhoe, $project);
         $silent = $this->equipment('Silent Unit', '6002', $backhoe, $project);
-        $this->equipment('Bulldozer Unit', '6003', $bulldozer, $project);
+        $bulldozerUnit = $this->equipment('Bulldozer Unit', '6003', $bulldozer, $project);
 
         $records = [[
             'wialon_unit_id' => '6001',
@@ -413,7 +432,7 @@ class WialonShiftReportTest extends TestCase
         $sync->syncGroup($group, CarbonImmutable::parse('2026-07-19'), CarbonImmutable::parse('2026-07-19'), $records, ['resource_id' => 1, 'template_id' => 2]);
         $sync->syncGroup($group, CarbonImmutable::parse('2026-07-19'), CarbonImmutable::parse('2026-07-19'), $records, ['resource_id' => 1, 'template_id' => 2]);
 
-        $this->assertSame(2, EquipmentDailyStat::query()->count());
+        $this->assertSame(3, EquipmentDailyStat::query()->count());
 
         $targetStat = EquipmentDailyStat::query()->where('equipment_id', $target->id)->firstOrFail();
         $this->assertSame('less_than_7_hours', $targetStat->day_status);
@@ -424,6 +443,10 @@ class WialonShiftReportTest extends TestCase
         $this->assertNull($silentStat->daytime_hours);
         $this->assertNull($silentStat->overtime_hours);
         $this->assertFalse((bool) $silentStat->data_available);
+
+        $bulldozerStat = EquipmentDailyStat::query()->where('equipment_id', $bulldozerUnit->id)->firstOrFail();
+        $this->assertNull($bulldozerStat->daytime_hours);
+        $this->assertFalse((bool) $bulldozerStat->data_available);
     }
 
     private function equipment(string $name, string $wialonId, EquipmentType $type, Project $project): Equipment

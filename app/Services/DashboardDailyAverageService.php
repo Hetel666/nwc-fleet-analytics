@@ -107,7 +107,11 @@ class DashboardDailyAverageService
                 }
 
                 $unitsCount = $units->count();
-                $average = $unitsCount > 0 ? round($total / $unitsCount / $daysCount, 2) : null;
+                $validUnitDays = $units->sum(
+                    fn (Equipment $unit): int => (int) ($aggregates->get($unit->id)['data_days'] ?? 0)
+                );
+                $missingUnitDays = max(0, ($unitsCount * $daysCount) - $validUnitDays);
+                $average = $validUnitDays > 0 ? round($total / $validUnitDays, 2) : null;
 
                 $rows->push([
                     'vehicle_type' => FleetVehicleType::label($typeCode),
@@ -118,6 +122,8 @@ class DashboardDailyAverageService
                     'total_value' => round($total, 2),
                     'units_count' => $unitsCount,
                     'days_count' => $daysCount,
+                    'valid_unit_days' => $validUnitDays,
+                    'missing_unit_days' => $missingUnitDays,
                     'average_per_unit_per_day' => $average,
                     'units_without_data' => max(0, $unitsCount - count($unitsWithData)),
                     'has_units' => $unitsCount > 0,
@@ -581,7 +587,9 @@ class DashboardDailyAverageService
 
     private function metricAvailableSql(string $metric): string
     {
-        $valid = "(stats.id is not null and (stats.calculation_status is null or stats.calculation_status in ('success', 'ok', 'published')))";
+        $valid = "(stats.id is not null"
+            ." and (stats.calculation_status is null or stats.calculation_status in ('success', 'ok', 'published'))"
+            .' and (stats.data_available is null or stats.data_available = 1))';
 
         if ($metric === 'mileage') {
             return $valid.' and stats.distance_km >= 0';
@@ -690,7 +698,9 @@ class DashboardDailyAverageService
                         'date' => $date,
                         'total_value' => $this->formatMetricValue((float) $total, $metric),
                         'units_count' => $unitsCount,
-                        'average_value' => $unitsCount > 0 ? $this->formatMetricValue((float) $total / $unitsCount, $metric) : __('app.no_data'),
+                        'average_value' => $dataDays > 0
+                            ? $this->formatMetricValue((float) $total / $dataDays, $metric)
+                            : __('app.no_data'),
                         'data_days' => $dataDays,
                         'missing_days' => $missingDays,
                     ];
@@ -715,7 +725,9 @@ class DashboardDailyAverageService
                         'ownership' => $first['ownership'] ?? '—',
                         'vehicle_type' => $first['vehicle_type'] ?? '—',
                         'total_value' => $this->formatMetricValue((float) $total, $metric),
-                        'average_value' => $this->formatMetricValue((float) $total / max(1, $daysCount), $metric),
+                        'average_value' => $dataDays > 0
+                            ? $this->formatMetricValue((float) $total / $dataDays, $metric)
+                            : __('app.no_data'),
                         'data_days' => $dataDays,
                         'missing_days' => $missingDays,
                         'wialon_id' => $first['wialon_id'] ?? '',
@@ -884,6 +896,10 @@ class DashboardDailyAverageService
         }
 
         if (! $this->isValidCalculationStatus($stat->calculation_status)) {
+            return false;
+        }
+
+        if ($stat->data_available === false) {
             return false;
         }
 
@@ -1077,6 +1093,8 @@ class DashboardDailyAverageService
             'total_value' => $this->formatMetricValue((float) $row['total_value'], $metric),
             'units_count' => (int) $row['units_count'],
             'days_count' => (int) $row['days_count'],
+            'valid_unit_days' => (int) $row['valid_unit_days'],
+            'missing_unit_days' => (int) $row['missing_unit_days'],
             'average_value' => $this->formatNullableMetric($row['average_per_unit_per_day'], $metric),
             'units_without_data' => (int) $row['units_without_data'],
         ];

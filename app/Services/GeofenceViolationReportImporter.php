@@ -35,7 +35,7 @@ class GeofenceViolationReportImporter
 
     /**
      * Atomically replaces one project-group snapshot only after every accepted
-     * source row has passed the continuous-period validation.
+     * source row has passed structural validation.
      *
      * @param  array<int, array<string, mixed>>  $rows
      * @return array{imported: int, rejected: int}
@@ -101,6 +101,10 @@ class GeofenceViolationReportImporter
         $rejected = 0;
 
         foreach ($rows as $row) {
+            if ($this->isAtOrBelowMinimumDuration($row)) {
+                continue;
+            }
+
             $normalized = $this->normalize($row, $reportGeneratedAt, $expectedGroup);
 
             if ($normalized === null) {
@@ -176,13 +180,7 @@ class GeofenceViolationReportImporter
             }
         }
 
-        $continuousSpanSeconds = $lastConfirmedAt->timestamp - $exitedAt->timestamp;
-        $durationToleranceSeconds = max(0, (int) config(
-            'geofence_violations.duration_tolerance_seconds',
-            5
-        ));
-
-        if (abs($continuousSpanSeconds - (int) $durationSeconds) > $durationToleranceSeconds) {
+        if ((int) $durationSeconds <= (int) config('geofence_violations.minimum_duration_seconds', 10_800)) {
             return null;
         }
 
@@ -225,6 +223,24 @@ class GeofenceViolationReportImporter
             'report_generated_at' => $reportGeneratedAt,
             'source_payload' => $row['source_payload'] ?? $row,
         ];
+    }
+
+    /**
+     * Wialon applies the business threshold before returning report rows. This
+     * defensive check silently excludes stale rows that do not satisfy it.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private function isAtOrBelowMinimumDuration(array $row): bool
+    {
+        $duration = filter_var(
+            $row['outside_duration_seconds'] ?? null,
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 0]]
+        );
+
+        return $duration !== false
+            && (int) $duration <= (int) config('geofence_violations.minimum_duration_seconds', 10_800);
     }
 
     /**

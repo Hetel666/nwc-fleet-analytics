@@ -71,6 +71,6 @@ class Project extends Model
      */
     public static function dashboardOperationalExcludedNames(): array
     {
-        return [...self::DASHBOARD_UNASSIGNED_NAMES, ...self::DASHBOARD_SHARE_ONLY_NAMES];
+        return self::DASHBOARD_SHARE_ONLY_NAMES;
     }
 }
