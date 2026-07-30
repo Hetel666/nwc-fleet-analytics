@@ -24,11 +24,15 @@ class DarkThemeRenderingTest extends TestCase
         $source = file_get_contents(resource_path('views/dashboard/index.blade.php'));
 
         $this->assertStringContainsString('const dashboardChartTheme = () =>', $source);
+        $this->assertStringContainsString('const configureDashboardChartTheme = () =>', $source);
+        $this->assertStringContainsString('Object.values(Chart.instances || {}).forEach(chart => chart.destroy());', $source);
         $this->assertStringContainsString('window.addEventListener(\'fleet:theme-change\'', $source);
         $this->assertStringContainsString('ctx.fillStyle = dashboardChartTheme().text;', $source);
         $this->assertStringContainsString('borderColor: dashboardChartTheme().border', $source);
         $this->assertStringContainsString('background: var(--fleet-card);', $source);
         $this->assertStringContainsString('background: var(--fleet-card-soft);', $source);
+        $this->assertStringNotContainsString('const applyDashboardChartTheme = chart =>', $source);
+        $this->assertStringNotContainsString('registerDashboardChart(new Chart', $source);
         $this->assertStringNotContainsString("ctx.fillStyle = '#0f1f3a';", $source);
         $this->assertStringNotContainsString('.geofence-report-donut::after {'."\n".'        content: "";'."\n".'        position: absolute;'."\n".'        inset: 22%;'."\n".'        border-radius: 50%;'."\n".'        background: #fff;', $source);
     }

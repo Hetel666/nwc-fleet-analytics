@@ -2728,43 +2728,15 @@ const dashboardChartTheme = () => {
         border: styles.getPropertyValue('--fleet-chart-border').trim() || '#ffffff',
     };
 };
-const applyDashboardChartTheme = chart => {
-    if (!chart) {
-        return chart;
-    }
-
-    const theme = dashboardChartTheme();
-    chart.options.color = theme.text;
-    chart.options.plugins = chart.options.plugins || {};
-    chart.options.plugins.legend = chart.options.plugins.legend || {};
-    chart.options.plugins.legend.labels = chart.options.plugins.legend.labels || {};
-    chart.options.plugins.legend.labels.color = theme.text;
-
-    Object.values(chart.options.scales || {}).forEach(scale => {
-        scale.ticks = scale.ticks || {};
-        scale.grid = scale.grid || {};
-        scale.border = scale.border || {};
-        scale.ticks.color = theme.text;
-        scale.grid.color = theme.grid;
-        scale.border.color = theme.grid;
-    });
-
-    if (chart.config.type === 'doughnut') {
-        chart.data.datasets.forEach(dataset => {
-            dataset.borderColor = theme.border;
-        });
-    }
-
-    chart.update('none');
-
-    return chart;
-};
-const registerDashboardChart = chart => applyDashboardChartTheme(chart);
-const refreshDashboardChartTheme = () => {
+const configureDashboardChartTheme = () => {
     const theme = dashboardChartTheme();
     Chart.defaults.color = theme.text;
     Chart.defaults.borderColor = theme.grid;
-    Object.values(Chart.instances || {}).forEach(applyDashboardChartTheme);
+};
+const refreshDashboardChartTheme = () => {
+    Object.values(Chart.instances || {}).forEach(chart => chart.destroy());
+    configureDashboardChartTheme();
+    initializeDashboardCharts();
 };
 window.addEventListener('fleet:theme-change', refreshDashboardChartTheme);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -2907,12 +2879,12 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
         },
     };
 
-    return registerDashboardChart(new Chart(canvas, {
+    return new Chart(canvas, {
         type: 'doughnut',
         data: { labels: chartLabels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: dashboardChartTheme().border, hoverOffset: settings.hoverOffset ?? 0 }] },
         options,
         plugins: settings.showCenterTotal ? [centerTotalPlugin] : [],
-    }));
+    });
 };
 
 const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues, unit = '') => {
@@ -2924,7 +2896,7 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
 
     const shortLabels = chartLabels.map(truncateLabel);
 
-    return registerDashboardChart(new Chart(canvas, {
+    return new Chart(canvas, {
         type: 'bar',
         data: {
             labels: shortLabels,
@@ -2971,7 +2943,7 @@ const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues,
                 }
             }
         }
-    }));
+    });
 };
 
 
@@ -2988,7 +2960,7 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
         return null;
     }
 
-    return registerDashboardChart(new Chart(canvas, {
+    return new Chart(canvas, {
         type: 'doughnut',
         data: {
             labels: displayLabels,
@@ -3027,7 +2999,7 @@ const createProjectWorkCategoryChart = (id, values, settings = {}) => {
             },
         },
         plugins: [],
-    }));
+    });
 };
 
 const setDashboardLoadingProgress = value => {
@@ -4839,7 +4811,7 @@ const initializeDashboardCharts = () => {
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
     if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
-        registerDashboardChart(new Chart(document.getElementById('utilizationLine'), {
+        new Chart(document.getElementById('utilizationLine'), {
         type: 'line',
         data: {
             labels: utilizationTrend.labels,
@@ -4862,11 +4834,11 @@ const initializeDashboardCharts = () => {
                 }
             }
         }
-        }));
+        });
     }
 };
 
-refreshDashboardChartTheme();
+configureDashboardChartTheme();
 initializeDashboardCharts();
 
 </script>
