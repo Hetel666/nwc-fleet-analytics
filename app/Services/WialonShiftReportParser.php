@@ -121,7 +121,7 @@ class WialonShiftReportParser
             $overtimeHours = $groupedShift['shift'] === 'overtime_hours' ? $groupedShift['hours'] : null;
             $totalHours = $groupedShift['hours'];
             $reason = 'grouped_shift_row';
-        } elseif (($tableShift = $this->tableShiftHours($report, $headers, $cells)) !== null) {
+        } elseif (($tableShift = $this->tableShiftHours($row, $report, $headers, $cells)) !== null) {
             $daytimeHours = $tableShift['shift'] === 'daytime_hours' ? $tableShift['hours'] : null;
             $overtimeHours = $tableShift['shift'] === 'overtime_hours' ? $tableShift['hours'] : null;
             $totalHours = $tableShift['hours'];
@@ -231,6 +231,12 @@ class WialonShiftReportParser
     public function parseTimestamp(mixed $value, ?CarbonInterface $date = null): ?CarbonInterface
     {
         if (is_array($value)) {
+            $numeric = $value['v'] ?? null;
+
+            if (is_numeric($numeric) && (int) $numeric > 1000000000) {
+                return CarbonImmutable::createFromTimestamp((int) $numeric, $this->timezone());
+            }
+
             $text = $this->normalizeCellValue($value['t'] ?? null);
 
             if ($text !== '') {
@@ -239,12 +245,6 @@ class WialonShiftReportParser
                 if ($parsed !== null) {
                     return $parsed;
                 }
-            }
-
-            $numeric = $value['v'] ?? null;
-
-            if (is_numeric($numeric) && (int) $numeric > 1000000000) {
-                return CarbonImmutable::createFromTimestamp((int) $numeric, $this->timezone());
             }
 
             $value = $value['t'] ?? $numeric;
@@ -505,9 +505,9 @@ class WialonShiftReportParser
     /**
      * @return array{shift: 'daytime_hours'|'overtime_hours', hours: float|null}|null
      */
-    private function tableShiftHours(array $report, array $headers, array $cells): ?array
+    private function tableShiftHours(array $row, array $report, array $headers, array $cells): ?array
     {
-        $shift = $this->tableShiftField($report);
+        $shift = $this->tableShiftField($report, $row, $headers, $cells);
 
         if ($shift === null) {
             return null;
@@ -525,25 +525,27 @@ class WialonShiftReportParser
         ];
     }
 
-    private function tableShiftField(array $report): ?string
+    private function tableShiftField(array $report, ?array $row = null, array $headers = [], array $cells = []): ?string
     {
         $tableName = $this->normalizeHeader((string) ($report['_current_table'] ?? ''));
+        $tableShift = null;
 
         if (str_contains($tableName, 'daytime') || str_contains($tableName, 'gunduz')) {
-            return 'daytime_hours';
-        }
-
-        if (str_contains($tableName, 'overtime') || str_contains($tableName, 'gece')) {
-            return 'overtime_hours';
-        }
-
-        if ((int) ($report['_current_table_count'] ?? 0) === 2) {
-            return ((int) ($report['_current_table_position'] ?? -1)) === 0
+            $tableShift = 'daytime_hours';
+        } elseif (str_contains($tableName, 'overtime') || str_contains($tableName, 'gece')) {
+            $tableShift = 'overtime_hours';
+        } elseif ((int) ($report['_current_table_count'] ?? 0) === 2) {
+            $tableShift = ((int) ($report['_current_table_position'] ?? -1)) === 0
                 ? 'daytime_hours'
                 : 'overtime_hours';
         }
 
-        return null;
+        if ($tableShift === null) {
+            return null;
+        }
+
+        return ($row === null ? null : $this->shiftFieldFromLocalInterval($row, $headers, $cells, $report))
+            ?? $tableShift;
     }
 
     private function groupedShiftDate(array $row, array $headers, array $cells): ?CarbonInterface
@@ -563,7 +565,7 @@ class WialonShiftReportParser
 
     private function tableShiftDate(array $row, array $headers, array $cells, array $report): ?CarbonInterface
     {
-        if ($this->tableShiftField($report) !== 'overtime_hours') {
+        if ($this->tableShiftField($report, $row, $headers, $cells) === null) {
             return null;
         }
 
@@ -580,6 +582,55 @@ class WialonShiftReportParser
         $beginning = $beginning->timezone($this->timezone());
 
         return $beginning->startOfDay();
+    }
+
+    private function shiftFieldFromLocalInterval(array $row, array $headers, array $cells, array $report): ?string
+    {
+        $beginningIndex = $this->columnIndex($headers, ['beginning', 'start', 'from']);
+        $endIndex = $this->columnIndex($headers, ['end', 'finish', 'to']);
+
+        if ($beginningIndex === null) {
+            return null;
+        }
+
+        $dateContext = ($report['from'] ?? null) instanceof CarbonInterface
+            ? $report['from']->timezone($this->timezone())->startOfDay()
+            : null;
+        $beginning = $this->parseTimestamp($cells[$beginningIndex] ?? null, $dateContext)?->timezone($this->timezone());
+        $end = $endIndex === null ? null : $this->parseTimestamp($cells[$endIndex] ?? null, $dateContext)?->timezone($this->timezone());
+
+        if ($beginning === null) {
+            return null;
+        }
+
+        $dayStart = $this->secondsOfDay((string) config('fleet_efficiency.day_shift.start', '08:00:00'));
+        $dayEnd = $this->secondsOfDay((string) config('fleet_efficiency.day_shift.end', '17:59:59'));
+        $beginningSeconds = $this->carbonSecondsOfDay($beginning);
+        $endSeconds = $end === null ? $beginningSeconds : $this->carbonSecondsOfDay($end);
+
+        if ($beginningSeconds >= $dayStart && $endSeconds <= $dayEnd) {
+            return 'daytime_hours';
+        }
+
+        if ($beginningSeconds > $dayEnd || $endSeconds < $dayStart) {
+            return 'overtime_hours';
+        }
+
+        return null;
+    }
+
+    private function secondsOfDay(string $time): int
+    {
+        if (! preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/', trim($time), $matches)) {
+            return 0;
+        }
+
+        return ((int) $matches[1] * 3600) + ((int) $matches[2] * 60) + (int) ($matches[3] ?? 0);
+    }
+
+    private function carbonSecondsOfDay(CarbonInterface $time): int
+    {
+        return ((int) $time->format('H') * 3600) + ((int) $time->format('i') * 60) + (int) $time->format('s');
     }
 
     private function groupedShiftLabel(array $row, array $headers, array $cells): string
