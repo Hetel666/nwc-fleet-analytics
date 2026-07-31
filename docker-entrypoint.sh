@@ -29,5 +29,9 @@ php artisan route:cache
 php artisan view:cache
 chown -R www-data:www-data storage bootstrap/cache
 
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 php-fpm -D
 exec nginx -g "daemon off;"
