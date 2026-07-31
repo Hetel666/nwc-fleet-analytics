@@ -83,7 +83,7 @@ final class DaytimeEfficiencySyncService
         });
 
         $unmatched = collect($parsed['records'])
-            ->reject(fn (array $record): bool => in_array($record['_match_key'], $matchedKeys, true))
+            ->reject(fn (array $record): bool => in_array($this->recordMatchKey($record), $matchedKeys, true))
             ->values();
 
         if ($unmatched->isNotEmpty() || $parsed['duplicates'] !== [] || $parsed['malformed_rows'] > 0) {
@@ -118,7 +118,7 @@ final class DaytimeEfficiencySyncService
         foreach ($records as $record) {
             $id = trim((string) ($record['wialon_unit_id'] ?? ''));
             $name = $this->normalizeName((string) ($record['unit_name'] ?? ''));
-            $key = $id !== '' ? 'id:'.$id : 'name:'.$name;
+            $key = $this->recordMatchKey($record);
             $record['_match_key'] = $key;
 
             if ($id !== '') {
@@ -131,6 +131,15 @@ final class DaytimeEfficiencySyncService
         }
 
         return $map;
+    }
+
+    /** @param array<string, mixed> $record */
+    private function recordMatchKey(array $record): string
+    {
+        $id = trim((string) ($record['wialon_unit_id'] ?? ''));
+        $name = $this->normalizeName((string) ($record['unit_name'] ?? ''));
+
+        return $id !== '' ? 'id:'.$id : 'name:'.$name;
     }
 
     private function findRecord(array $map, Equipment $equipment): ?array
