@@ -7,12 +7,26 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\TopWorkingUnitsService;
+use App\Support\FleetVehicleType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class TopWorkingUnitsServiceTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_top_working_vehicle_types_match_the_business_whitelist(): void
+    {
+        $this->assertSame([
+            FleetVehicleType::DUMP_TRUCK,
+            FleetVehicleType::BULLDOZER,
+            FleetVehicleType::EXCAVATOR,
+            FleetVehicleType::ROAD_GRADER,
+            FleetVehicleType::LOADER,
+            FleetVehicleType::BACKHOE_LOADER,
+            FleetVehicleType::ROAD_ROLLER,
+        ], FleetVehicleType::TOP_WORKING_TYPES);
+    }
 
     public function test_it_returns_top_twenty_period_rows_and_excludes_disallowed_types(): void
     {
@@ -35,8 +49,9 @@ class TopWorkingUnitsServiceTest extends TestCase
             'to' => '2026-07-02',
         ], 20);
 
-        $this->assertCount(1, $rows);
-        $this->assertSame([8.0], array_column($rows, 'hours'));
+        $this->assertCount(2, $rows);
+        $this->assertSame([1.0, 8.0], array_column($rows, 'hours'));
+        $this->assertSame(['Dump Truck', 'Excavator'], array_column($rows, 'type'));
     }
 
     public function test_it_limits_top_working_rows_in_sql_order(): void

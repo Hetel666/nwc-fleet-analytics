@@ -43,5 +43,5 @@
             @endforelse
         </tbody>
     </table>
-    <div class="small text-secondary px-2 py-2">Hesablama yalnız Bulldozer, Excavator, Loader, Backhoe Loader, Road Grader və Road Roller üzrə aparılır.</div>
+    <div class="small text-secondary px-2 py-2">Hesablama yalnız Dump Truck, Bulldozer, Excavator, Loader, Backhoe Loader, Road Grader və Road Roller üzrə aparılır.</div>
 </div>

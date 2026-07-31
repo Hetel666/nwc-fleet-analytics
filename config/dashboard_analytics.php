@@ -242,7 +242,7 @@ return [
             'wialon_report' => 'Engine hours: NWC vs İCARƏ (Api)',
             'local_source' => 'engine_hours_report_unit_days',
             'service' => 'TopWorkingUnitsService',
-            'binding' => 'parse_status=ok, engine_hours >= 0, icazəli texnika növləri, ASC sort.',
+            'binding' => 'parse_status=ok, engine_hours >= 0; yalnız Dump Truck, Bulldozer, Excavator, Loader, Backhoe Loader, Road Grader və Road Roller; ASC sort.',
             'report_rows' => [
                 'Unit name -> equipment_id',
                 'Engine hours -> engine_hours',
@@ -260,7 +260,7 @@ return [
             'wialon_report' => 'Engine hours: NWC vs İCARƏ (Api)',
             'local_source' => 'engine_hours_report_unit_days',
             'service' => 'TopWorkingUnitsService',
-            'binding' => 'parse_status=ok, engine_hours >= 0, icazəli texnika növləri, DESC sort.',
+            'binding' => 'parse_status=ok, engine_hours >= 0; yalnız Dump Truck, Bulldozer, Excavator, Loader, Backhoe Loader, Road Grader və Road Roller; DESC sort.',
             'report_rows' => [
                 'Unit name -> equipment_id',
                 'Engine hours -> engine_hours',
