@@ -31,7 +31,6 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             'dashboard_section' => ['required', Rule::in([
                 HistoricalRecalculation::SECTION_DAILY_AVERAGES,
                 HistoricalRecalculation::SECTION_EFFICIENCY,
-                HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
                 HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
                 HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,

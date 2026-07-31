@@ -42,7 +42,6 @@ class DashboardService
         private DashboardDailyAverageService $dailyAverages,
         private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
-        private DaytimeEfficiencyDashboardService $daytimeEfficiency,
         private DashboardPerformanceProfiler $performance,
         private DashboardDateRangePolicy $dateRangePolicy,
     ) {}
@@ -549,7 +548,6 @@ class DashboardService
             'efficiency' => [
                 'overview',
                 'projectActualWorkHourCategoriesByOwnership',
-                'daytimeEfficiency',
                 'dailyAverageDashboards',
                 'leastWorking',
                 'mostWorking',
@@ -666,7 +664,6 @@ class DashboardService
             'mostWorking' => fn (): array => $this->getMostWorking($filters),
             'projects' => fn (): array => $this->getProjectDistribution($filters),
             'projectActualWorkHourCategoriesByOwnership' => fn (): array => $this->getProjectActualWorkHourCategoriesByOwnership($filters),
-            'daytimeEfficiency' => fn (): array => $this->daytimeEfficiency->dashboardSummaries($filters),
             'projectOwnershipComparison' => fn (): array => $this->getProjectOwnershipComparison($filters),
             'geofenceViolations' => fn (): array => $this->geofenceViolations->summary($filters),
             'utilizationTrend' => fn (): array => $this->getUtilizationTrend($filters),

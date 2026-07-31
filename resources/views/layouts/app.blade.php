@@ -447,11 +447,6 @@
                     <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}">
                         <i data-lucide="layout-dashboard"></i><span>{{ __('app.dashboard') }}</span>
                     </a>
-                    @if (config('daytime_efficiency.enabled', true))
-                        <a class="nav-link {{ request()->routeIs('daytime-efficiency.*') ? 'active' : '' }}" href="{{ route('daytime-efficiency.index') }}">
-                            <i data-lucide="sun"></i><span>Effektivlik gündüz</span>
-                        </a>
-                    @endif
                     @if (auth()->user()?->isAdmin())
                         <a class="nav-link {{ request()->routeIs('admin.dashboard-analytics.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-analytics.index') }}">
                             <i data-lucide="database"></i><span>Dashboard mənbələri</span>

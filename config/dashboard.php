@@ -70,13 +70,6 @@ return [
             'column_class' => 'col-12 col-xl-6',
             'active' => true,
         ],
-        'daytime-efficiency' => [
-            'label_key' => 'app.dashboard_tab_efficiency',
-            'default_order' => 65,
-            'default_width' => 12,
-            'column_class' => 'col-12',
-            'active' => true,
-        ],
         'average-engine-hours' => [
             'label_key' => 'app.avg_engine_hours',
             'default_order' => 70,
