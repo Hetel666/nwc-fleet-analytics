@@ -308,6 +308,57 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame(3.12, $row['total_hours']);
     }
 
+    public function test_parser_uses_row_unix_timestamps_when_group_report_cell_text_is_utc(): void
+    {
+        $headers = ['Grouping', 'Custom column', 'Custom column', 'Engine hours', 'Equipment Type', 'Vendor', 'Year', 'Idling', 'Mileage (adjusted)', 'Beginning', 'End'];
+
+        $parsed = app(WialonShiftReportParser::class)->parse([
+            'from' => CarbonImmutable::parse('2026-07-29 00:00:00', 'Asia/Baku'),
+            'to' => CarbonImmutable::parse('2026-07-29 23:59:59', 'Asia/Baku'),
+            'tables' => [
+                [
+                    'index' => 0,
+                    'table' => [
+                        'name' => 'unit_group_engine_hours',
+                        'label' => 'Engine hours daytime',
+                        'header' => $headers,
+                        'rows' => 1,
+                    ],
+                    'rows' => [[
+                        'uid' => '600261257',
+                        't1' => CarbonImmutable::parse('2026-07-29 12:20:33', 'Asia/Baku')->timestamp,
+                        't2' => CarbonImmutable::parse('2026-07-29 17:36:02', 'Asia/Baku')->timestamp,
+                        'c' => ['10-AD-725', 'B160', 'LIUGONG', '0.85', 'Bulldozer', 'NWC', '2023', '0.52', '2.28 km', '2026-07-29 08:20:33', '2026-07-29 13:36:02'],
+                    ]],
+                ],
+                [
+                    'index' => 1,
+                    'table' => [
+                        'name' => 'unit_group_engine_hours',
+                        'label' => 'Engine hours overtime',
+                        'header' => $headers,
+                        'rows' => 1,
+                    ],
+                    'rows' => [[
+                        'uid' => '600261257',
+                        't1' => CarbonImmutable::parse('2026-07-29 08:18:06', 'Asia/Baku')->timestamp,
+                        't2' => CarbonImmutable::parse('2026-07-29 11:57:37', 'Asia/Baku')->timestamp,
+                        'c' => ['10-AD-725', 'B160', 'LIUGONG', '1.26', 'Bulldozer', 'NWC', '2023', '0.18', '1.76 km', '2026-07-29 04:18:06', '2026-07-29 07:57:37'],
+                    ]],
+                ],
+            ],
+        ]);
+
+        $row = collect($parsed['records'])
+            ->where('wialon_unit_id', '600261257')
+            ->firstWhere('statistic_date', '2026-07-29');
+
+        $this->assertSame('10-AD-725', $row['unit_name']);
+        $this->assertSame(2.11, $row['daytime_hours']);
+        $this->assertSame(0.0, $row['overtime_hours']);
+        $this->assertSame(2.11, $row['total_hours']);
+    }
+
     public function test_shift_report_nested_rows_are_loaded_only_to_configured_depth(): void
     {
         config(['fleet.wialon.shift_report_nested_depth' => 1]);

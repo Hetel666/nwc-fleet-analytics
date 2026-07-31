@@ -221,7 +221,7 @@ class WialonService
 
     public function getReportData(string $resourceId, string $templateId, int $from, int $to, array $objects = []): array
     {
-        return $this->request('report/exec_report', [
+        return $this->request('report/exec_report', $this->reportExecutionPayload([
             'reportResourceId' => (int) $resourceId,
             'reportTemplateId' => (int) $templateId,
             'reportObjectId' => $objects[0] ?? 0,
@@ -231,7 +231,7 @@ class WialonService
                 'to' => $to,
                 'flags' => 0,
             ],
-        ]);
+        ]));
     }
 
     public function getReportRows(
@@ -255,7 +255,7 @@ class WialonService
         $sid = $this->getSessionId();
         $this->cleanupReportResult($sid);
 
-        $payload = [
+        $payload = $this->reportExecutionPayload([
             'reportResourceId' => (int) $resourceId,
             'reportTemplateId' => (int) $templateId,
             'reportTemplate' => null,
@@ -266,7 +266,7 @@ class WialonService
                 'to' => $to,
                 'flags' => $intervalFlags,
             ],
-        ];
+        ]);
 
         if ($remoteExec) {
             $payload['remoteExec'] = 1;
@@ -327,7 +327,7 @@ class WialonService
         $sid = $this->getSessionId();
         $this->cleanupReportResult($sid);
 
-        $payload = [
+        $payload = $this->reportExecutionPayload([
             'reportResourceId' => (int) $resourceId,
             'reportTemplateId' => (int) $templateId,
             'reportTemplate' => null,
@@ -338,7 +338,7 @@ class WialonService
                 'to' => $to,
                 'flags' => $intervalFlags,
             ],
-        ];
+        ]);
 
         if ($remoteExec) {
             $payload['remoteExec'] = 1;
@@ -485,7 +485,7 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-            $payload = [
+            $payload = $this->reportExecutionPayload([
                 'reportResourceId' => (int) $resourceId,
                 'reportTemplateId' => 0,
                 'reportTemplate' => $reportTemplate,
@@ -496,7 +496,7 @@ class WialonService
                     'to' => $to,
                     'flags' => $intervalFlags,
                 ],
-            ];
+            ]);
 
             if ($remoteExec) {
                 $payload['remoteExec'] = 1;
@@ -530,7 +530,7 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-        $payload = [
+        $payload = $this->reportExecutionPayload([
             'reportResourceId' => (int) $resourceId,
             'reportTemplateId' => (int) $templateId,
             'reportTemplate' => null,
@@ -541,7 +541,7 @@ class WialonService
                 'to' => $to,
                 'flags' => $intervalFlags,
             ],
-        ];
+        ]);
 
         if ($remoteExec) {
             $payload['remoteExec'] = 1;
@@ -960,6 +960,26 @@ class WialonService
         }
 
         return $data;
+    }
+
+    /**
+     * Wialon evaluates report table time limitations in the timezone supplied
+     * to exec_report. Keep this explicit so API reports match the web UI.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function reportExecutionPayload(array $payload): array
+    {
+        $payload['tzOffset'] = (int) config('fleet.wialon.report_timezone_offset', 134232128);
+
+        $language = trim((string) config('fleet.wialon.report_language', 'ru'));
+
+        if ($language !== '') {
+            $payload['lang'] = $language;
+        }
+
+        return $payload;
     }
 
     private function ensureRequestDeadlineNotExceeded(string $message): void

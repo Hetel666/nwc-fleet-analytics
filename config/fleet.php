@@ -8,6 +8,8 @@ return [
         'token' => env('WIALON_TOKEN'),
         'timeout' => (int) env('WIALON_TIMEOUT', 30),
         'session_cache_minutes' => (int) env('WIALON_CACHE_SESSION_MINUTES', 30),
+        'report_timezone_offset' => (int) env('WIALON_REPORT_TIMEZONE_OFFSET', 134232128),
+        'report_language' => env('WIALON_REPORT_LANGUAGE', 'ru'),
         'report_status_attempts' => (int) env('WIALON_REPORT_STATUS_ATTEMPTS', 300),
         'report_status_delay_ms' => (int) env('WIALON_REPORT_STATUS_DELAY_MS', 1000),
         'report_rows_attempts' => (int) env('WIALON_REPORT_ROWS_ATTEMPTS', 6),

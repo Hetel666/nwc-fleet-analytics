@@ -573,7 +573,7 @@ class WialonShiftReportParser
         $dateContext = ($report['from'] ?? null) instanceof CarbonInterface
             ? $report['from']->timezone($this->timezone())->startOfDay()
             : null;
-        $beginning = $beginningIndex === null ? null : $this->parseTimestamp($cells[$beginningIndex] ?? null, $dateContext);
+        $beginning = $this->rowIntervalTimestamp($row, 't1', $cells, $beginningIndex, $dateContext);
 
         if ($beginning === null) {
             return null;
@@ -596,8 +596,8 @@ class WialonShiftReportParser
         $dateContext = ($report['from'] ?? null) instanceof CarbonInterface
             ? $report['from']->timezone($this->timezone())->startOfDay()
             : null;
-        $beginning = $this->parseTimestamp($cells[$beginningIndex] ?? null, $dateContext)?->timezone($this->timezone());
-        $end = $endIndex === null ? null : $this->parseTimestamp($cells[$endIndex] ?? null, $dateContext)?->timezone($this->timezone());
+        $beginning = $this->rowIntervalTimestamp($row, 't1', $cells, $beginningIndex, $dateContext)?->timezone($this->timezone());
+        $end = $this->rowIntervalTimestamp($row, 't2', $cells, $endIndex, $dateContext)?->timezone($this->timezone());
 
         if ($beginning === null) {
             return null;
@@ -617,6 +617,24 @@ class WialonShiftReportParser
         }
 
         return null;
+    }
+
+    private function rowIntervalTimestamp(
+        array $row,
+        string $rowKey,
+        array $cells,
+        ?int $cellIndex,
+        ?CarbonInterface $dateContext
+    ): ?CarbonInterface {
+        $rowTimestamp = $row[$rowKey] ?? null;
+
+        if (is_numeric($rowTimestamp) && (int) $rowTimestamp > 1000000000) {
+            return CarbonImmutable::createFromTimestamp((int) $rowTimestamp, $this->timezone());
+        }
+
+        return $cellIndex === null
+            ? null
+            : $this->parseTimestamp($cells[$cellIndex] ?? null, $dateContext);
     }
 
     private function secondsOfDay(string $time): int
