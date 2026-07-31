@@ -103,11 +103,13 @@ class AutoSyncFleetData extends Command
         $dailySuccess = true;
         $top20Success = true;
         $shiftSuccess = true;
+        $daytimeEfficiencySuccess = true;
         $geozonSuccess = true;
         $geofenceViolationsSuccess = true;
         $dailyMessages = [];
         $top20Messages = [];
         $shiftMessages = [];
+        $daytimeEfficiencyMessages = [];
         $geozonMessages = [];
         $geofenceViolationsMessages = [];
         $top20Limit = max(1, min(50, (int) $this->setting('auto_sync_top20_batch_limit', 10)));
@@ -139,16 +141,22 @@ class AutoSyncFleetData extends Command
                     $date
                 )
                 : ['ok' => false, 'output' => 'Shift planning failed.'];
+            $daytimeEfficiencyOk = $this->runArtisanCommand('fleet:sync-daytime-efficiency', [
+                '--date' => $date,
+                '--force' => true,
+            ]);
 
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
             $top20Success = $top20Success && $top20Ok['ok'];
             $geozonSuccess = $geozonSuccess && $geozonOk['ok'];
             $shiftSuccess = $shiftSuccess && $shiftPlanOk['ok'] && $shiftRunOk['ok'];
+            $daytimeEfficiencySuccess = $daytimeEfficiencySuccess && $daytimeEfficiencyOk['ok'];
 
             $dailyMessages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
             $top20Messages[] = $date.': '.trim($top20Ok['output']);
             $geozonMessages[] = $date.': '.trim($geozonOk['output']);
             $shiftMessages[] = $date.': '.trim($shiftPlanOk['output'].' '.$shiftRunOk['output']);
+            $daytimeEfficiencyMessages[] = $date.': '.trim($daytimeEfficiencyOk['output']);
         }
 
         $geofenceViolationsOk = $this->runArtisanCommand('fleet:sync-geofence-violations-report', [
@@ -169,6 +177,7 @@ class AutoSyncFleetData extends Command
             implode(' | ', array_filter($geofenceViolationsMessages))
         );
         $this->storeTaskResult('shift', $shiftSuccess, implode(' | ', array_filter($shiftMessages)));
+        $this->storeTaskResult('daytime_efficiency', $daytimeEfficiencySuccess, implode(' | ', array_filter($daytimeEfficiencyMessages)));
 
         Setting::updateOrCreate(
             ['key' => 'auto_sync_daily_last_run_date'],
@@ -179,6 +188,7 @@ class AutoSyncFleetData extends Command
             && $top20Success
             && $geozonSuccess
             && $geofenceViolationsSuccess
+            && $daytimeEfficiencySuccess
             && $shiftSuccess;
     }
 

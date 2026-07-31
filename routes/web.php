@@ -9,6 +9,9 @@ use App\Http\Controllers\DashboardExportController;
 use App\Http\Controllers\DashboardLayoutController;
 use App\Http\Controllers\DashboardOwnershipExportController;
 use App\Http\Controllers\DashboardTopWorkingUnitsExportController;
+use App\Http\Controllers\DaytimeEfficiencyApiController;
+use App\Http\Controllers\DaytimeEfficiencyDashboardController;
+use App\Http\Controllers\DaytimeEfficiencyExportController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\EquipmentTypeController;
 use App\Http\Controllers\GeofenceController;
@@ -35,6 +38,12 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/daytime-efficiency', DaytimeEfficiencyDashboardController::class)
+        ->name('daytime-efficiency.index');
+    Route::get('/daytime-efficiency/export', DaytimeEfficiencyExportController::class)
+        ->name('daytime-efficiency.export');
+    Route::get('/api/dashboard/daytime-efficiency', DaytimeEfficiencyApiController::class)
+        ->name('daytime-efficiency.api');
     Route::get('/geofence-violations', GeofenceViolationsDashboardController::class)
         ->name('geofence-violations.index');
     Route::get('/dashboard/geofence-violations/drilldown', GeofenceViolationsDrilldownController::class)

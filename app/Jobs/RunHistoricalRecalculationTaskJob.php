@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\DaytimeEfficiencyFact;
 use App\Models\GeofenceViolationSyncItem;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
@@ -153,6 +154,21 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
                 ->where('report_date', $date)
                 ->where('wialon_group_id', $group->wialon_group_id)
                 ->value('rows_saved');
+        }
+
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY) {
+            $this->runArtisanOrFail('fleet:sync-daytime-efficiency', array_filter([
+                '--date' => $date,
+                '--project' => $task->project_id,
+                '--ownership' => $task->ownership_type,
+                '--force' => (bool) $run->force,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+
+            return DaytimeEfficiencyFact::query()
+                ->where('fact_date', $date)
+                ->where('project_id', $task->project_id)
+                ->where('ownership_type', $task->ownership_type)
+                ->count();
         }
 
         if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {

@@ -9,24 +9,37 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class HistoricalRecalculation extends Model
 {
     public const STATUS_PENDING = 'pending';
+
     public const STATUS_RUNNING = 'running';
+
     public const STATUS_COMPLETED = 'completed';
+
     public const STATUS_COMPLETED_WITH_ERRORS = 'completed_with_errors';
+
     public const STATUS_FAILED = 'failed';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const OPERATION_FETCH = 'fetch';
+
     public const OPERATION_RECALCULATE = 'recalculate';
+
     public const OPERATION_FETCH_AND_RECALCULATE = 'fetch_and_recalculate';
 
     public const SECTION_DAILY_AVERAGES = 'daily_averages';
+
     public const SECTION_EFFICIENCY = 'efficiency';
+
+    public const SECTION_DAYTIME_EFFICIENCY = 'daytime_efficiency';
+
     public const SECTION_TOP_WORKING_UNITS = 'top_working_units';
+
     public const SECTION_GEOFENCE_OUTSIDE = 'geofence_outside';
 
     public const SECTION_GEOFENCE_VIOLATIONS = 'geofence_violations';
 
     public const SCOPE_ALL_PROJECTS = 'all_projects';
+
     public const SCOPE_SELECTED_PROJECTS = 'selected_projects';
 
     protected $fillable = [

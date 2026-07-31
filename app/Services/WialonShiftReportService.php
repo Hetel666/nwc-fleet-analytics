@@ -50,6 +50,49 @@ class WialonShiftReportService
     }
 
     /**
+     * Execute one configured shift source without loading or combining the
+     * other source. The daytime dashboard relies on the Wialon daytime table
+     * exactly as returned by its own template.
+     *
+     * @return array<string, mixed>
+     */
+    public function executeSourceForGroup(
+        string $source,
+        ProjectWialonGroup|int|string $group,
+        CarbonInterface $from,
+        CarbonInterface $to
+    ): array {
+        return $this->executeSourceForGroupWithSession(
+            $source,
+            $group,
+            $from,
+            $to,
+            $this->wialon->getSessionId()
+        );
+    }
+
+    /** @return array<string, mixed> */
+    public function executeSourceForGroupWithSession(
+        string $source,
+        ProjectWialonGroup|int|string $group,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        string $sid
+    ): array {
+        $groupId = $group instanceof ProjectWialonGroup ? $group->wialon_group_id : $group;
+
+        return ($this->reportSessionLock ?? app(WialonReportSessionLock::class))->run(
+            fn (): array => $this->executePreparedReportUnlocked(
+                (string) $groupId,
+                $from,
+                $to,
+                $this->settingsFor($source),
+                $sid
+            )
+        );
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function executeEfficiencyReports(string $groupId, CarbonInterface $from, CarbonInterface $to, string $sid): array
