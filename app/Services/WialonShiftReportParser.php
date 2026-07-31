@@ -30,13 +30,20 @@ class WialonShiftReportParser
             $rows = array_values(array_filter($reportTable['rows'] ?? [], 'is_array'));
             $tableRecords = [];
             $rawTable ??= $this->safeTable($table);
+            $rowReport = [
+                ...$report,
+                '_current_table' => (string) (($table['name'] ?? null) ?: ($table['label'] ?? '')),
+                '_current_table_index' => (int) ($reportTable['index'] ?? $tableIndex),
+                '_current_table_position' => (int) $tableIndex,
+                '_current_table_count' => count($report['tables'] ?? []),
+            ];
 
             foreach ($this->flattenRows($rows, $headers) as $row) {
                 if ($this->isGroupedParentRow($row, $headers)) {
                     continue;
                 }
 
-                $record = $this->parseRow($row, $headers, $report);
+                $record = $this->parseRow($row, $headers, $rowReport);
 
                 if ($record === null) {
                     continue;
@@ -114,6 +121,11 @@ class WialonShiftReportParser
             $overtimeHours = $groupedShift['shift'] === 'overtime_hours' ? $groupedShift['hours'] : null;
             $totalHours = $groupedShift['hours'];
             $reason = 'grouped_shift_row';
+        } elseif (($tableShift = $this->tableShiftHours($report, $headers, $cells)) !== null) {
+            $daytimeHours = $tableShift['shift'] === 'daytime_hours' ? $tableShift['hours'] : null;
+            $overtimeHours = $tableShift['shift'] === 'overtime_hours' ? $tableShift['hours'] : null;
+            $totalHours = $tableShift['hours'];
+            $reason = 'table_shift_row';
         } else {
             return null;
         }
@@ -394,6 +406,12 @@ class WialonShiftReportParser
             return $groupedDate;
         }
 
+        $tableShiftDate = $this->tableShiftDate($row, $headers, $cells, $report);
+
+        if ($tableShiftDate !== null) {
+            return $tableShiftDate;
+        }
+
         $from = $report['from'] ?? null;
         $to = $report['to'] ?? null;
 
@@ -484,6 +502,50 @@ class WialonShiftReportParser
         ];
     }
 
+    /**
+     * @return array{shift: 'daytime_hours'|'overtime_hours', hours: float|null}|null
+     */
+    private function tableShiftHours(array $report, array $headers, array $cells): ?array
+    {
+        $shift = $this->tableShiftField($report);
+
+        if ($shift === null) {
+            return null;
+        }
+
+        $hoursIndex = $this->columnIndex($headers, ['engine hours', 'engine hour', 'worked hours', 'work hours', 'motosaat', 'moto hours', 'is saat', 'saat']);
+
+        if ($hoursIndex === null) {
+            return null;
+        }
+
+        return [
+            'shift' => $shift,
+            'hours' => $this->parseDuration($cells[$hoursIndex] ?? null),
+        ];
+    }
+
+    private function tableShiftField(array $report): ?string
+    {
+        $tableName = $this->normalizeHeader((string) ($report['_current_table'] ?? ''));
+
+        if (str_contains($tableName, 'daytime') || str_contains($tableName, 'gunduz')) {
+            return 'daytime_hours';
+        }
+
+        if (str_contains($tableName, 'overtime') || str_contains($tableName, 'gece')) {
+            return 'overtime_hours';
+        }
+
+        if ((int) ($report['_current_table_count'] ?? 0) === 2) {
+            return ((int) ($report['_current_table_position'] ?? -1)) === 0
+                ? 'daytime_hours'
+                : 'overtime_hours';
+        }
+
+        return null;
+    }
+
     private function groupedShiftDate(array $row, array $headers, array $cells): ?CarbonInterface
     {
         $label = $this->groupedShiftLabel($row, $headers, $cells);
@@ -497,6 +559,29 @@ class WialonShiftReportParser
         }
 
         return $this->parseTimestamp($matches[1])?->timezone($this->timezone())->startOfDay();
+    }
+
+    private function tableShiftDate(array $row, array $headers, array $cells, array $report): ?CarbonInterface
+    {
+        if ($this->tableShiftField($report) !== 'overtime_hours') {
+            return null;
+        }
+
+        $beginningIndex = $this->columnIndex($headers, ['beginning', 'start', 'from']);
+        $dateContext = ($report['from'] ?? null) instanceof CarbonInterface
+            ? $report['from']->timezone($this->timezone())->startOfDay()
+            : null;
+        $beginning = $beginningIndex === null ? null : $this->parseTimestamp($cells[$beginningIndex] ?? null, $dateContext);
+
+        if ($beginning === null) {
+            return null;
+        }
+
+        $beginning = $beginning->timezone($this->timezone());
+
+        return $beginning->hour < 8
+            ? $beginning->subDay()->startOfDay()
+            : $beginning->startOfDay();
     }
 
     private function groupedShiftLabel(array $row, array $headers, array $cells): string
@@ -648,7 +733,7 @@ class WialonShiftReportParser
 
     private function isGroupedShiftRecord(array $record): bool
     {
-        return in_array($record['reason'] ?? '', ['grouped_shift_row', 'grouped_shift_rows'], true);
+        return in_array($record['reason'] ?? '', ['grouped_shift_row', 'grouped_shift_rows', 'table_shift_row', 'table_shift_rows'], true);
     }
 
     private function mergeGroupedShiftRecords(array $existing, array $record): array
@@ -664,9 +749,18 @@ class WialonShiftReportParser
         $existing['total_hours'] = $this->sumKnownShiftHours($existing);
         $existing['wialon_unit_id'] = $existing['wialon_unit_id'] ?: $record['wialon_unit_id'];
         $existing['unit_name'] = $existing['unit_name'] ?: $record['unit_name'];
-        $existing['reason'] = 'grouped_shift_rows';
+        $existing['reason'] = $this->mergedShiftReason($existing, $record);
 
         return $existing;
+    }
+
+    private function mergedShiftReason(array $existing, array $record): string
+    {
+        $reasons = [$existing['reason'] ?? null, $record['reason'] ?? null];
+
+        return collect($reasons)->contains(fn (?string $reason): bool => str_starts_with((string) $reason, 'table_'))
+            ? 'table_shift_rows'
+            : 'grouped_shift_rows';
     }
 
     private function finalizeGroupedShiftRecord(array $record): array

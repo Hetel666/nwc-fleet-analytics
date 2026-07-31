@@ -195,6 +195,59 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame('grouped_shift_rows', $dayOnly['reason']);
     }
 
+    public function test_parser_uses_two_shift_tables_and_keeps_morning_overtime_on_previous_day(): void
+    {
+        $headers = ['Grouping', 'Custom column', 'Custom column', 'Engine hours', 'Equipment Type', 'Vendor', 'Year', 'Idling', 'Mileage (adjusted)', 'Beginning', 'End'];
+
+        $parsed = app(WialonShiftReportParser::class)->parse([
+            'from' => CarbonImmutable::parse('2026-07-29 00:00:00', 'Asia/Baku'),
+            'to' => CarbonImmutable::parse('2026-07-29 23:59:59', 'Asia/Baku'),
+            'tables' => [
+                [
+                    'index' => 0,
+                    'table' => [
+                        'name' => 'unit_group_engine_hours',
+                        'header' => $headers,
+                        'rows' => 1,
+                    ],
+                    'rows' => [[
+                        'uid' => '600720325',
+                        'c' => ['10-AF-171', 'CLG6616E', 'LIUGONG', '0.06', 'Road roller', 'NWC', '2024', '0.00', '0.45 km', '08:21:29', '08:25:37'],
+                    ]],
+                ],
+                [
+                    'index' => 1,
+                    'table' => [
+                        'name' => 'unit_group_engine_hours',
+                        'header' => $headers,
+                        'rows' => 1,
+                    ],
+                    'rows' => [[
+                        'uid' => '600720325',
+                        'c' => ['10-AF-171', 'CLG6616E', 'LIUGONG', '0.44', 'Road roller', 'NWC', '2024', '0.28', '1.63 km', '06:23:38', '06:53:34'],
+                    ]],
+                ],
+            ],
+        ]);
+
+        $currentDay = collect($parsed['records'])
+            ->where('wialon_unit_id', '600720325')
+            ->firstWhere('statistic_date', '2026-07-29');
+
+        $this->assertSame('10-AF-171', $currentDay['unit_name']);
+        $this->assertSame(0.06, $currentDay['daytime_hours']);
+        $this->assertSame(0.0, $currentDay['overtime_hours']);
+        $this->assertSame(0.06, $currentDay['total_hours']);
+
+        $previousDay = collect($parsed['records'])
+            ->where('wialon_unit_id', '600720325')
+            ->firstWhere('statistic_date', '2026-07-28');
+
+        $this->assertSame(0.0, $previousDay['daytime_hours']);
+        $this->assertSame(0.44, $previousDay['overtime_hours']);
+        $this->assertSame(0.44, $previousDay['total_hours']);
+    }
+
     public function test_shift_report_nested_rows_are_loaded_only_to_configured_depth(): void
     {
         config(['fleet.wialon.shift_report_nested_depth' => 1]);
