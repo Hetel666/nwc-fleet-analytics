@@ -48,18 +48,18 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
 
         $this->assertSame([
             Equipment::OWNERSHIP_NWC => [
-                'less_than_1_hour' => 2,
-                'less_than_7_hours' => 2,
-                'between_7_and_10_hours' => 2,
-                'over_10_hours' => 2,
+                'less_than_1_hour' => 1,
+                'less_than_7_hours' => 1,
+                'between_7_and_10_hours' => 1,
+                'over_10_hours' => 1,
                 'overtime' => 0,
-                'no_data' => 2,
+                'no_data' => 1,
             ],
             Equipment::OWNERSHIP_ICARE => [
                 'less_than_1_hour' => 1,
                 'less_than_7_hours' => 0,
-                'between_7_and_10_hours' => 2,
-                'over_10_hours' => 2,
+                'between_7_and_10_hours' => 1,
+                'over_10_hours' => 1,
                 'overtime' => 0,
                 'no_data' => 1,
             ],
@@ -283,7 +283,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
-                'no_data' => 8,
+                'no_data' => 4,
             ],
             Equipment::OWNERSHIP_ICARE => [
                 'less_than_1_hour' => 0,
@@ -291,7 +291,7 @@ class DashboardActualWorkHourCategoriesTest extends TestCase
                 'between_7_and_10_hours' => 0,
                 'over_10_hours' => 0,
                 'overtime' => 0,
-                'no_data' => 4,
+                'no_data' => 2,
             ],
         ], $result);
 

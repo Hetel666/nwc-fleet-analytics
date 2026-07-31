@@ -231,7 +231,11 @@ class FleetEfficiencyService
 
     public function daytimeStatusForHours(?float $hours): ?string
     {
-        return $hours === null ? null : $this->statusForHours($hours);
+        if ($hours === null) {
+            return null;
+        }
+
+        return $hours <= 0 ? self::STATUS_NO_DATA : $this->statusForHours($hours);
     }
 
     public function efficiencyStatusForHours(?float $daytimeHours, ?float $totalHours): ?string
@@ -295,7 +299,10 @@ class FleetEfficiencyService
                 return false;
             }
 
-            if ($category === self::STATUS_OVERTIME && $row['has_overtime'] !== true) {
+            if ($category === self::STATUS_OVERTIME && ! $this->workedBothShifts(
+                $row['daytime_hours'],
+                $row['overtime_hours']
+            )) {
                 return false;
             }
 
@@ -529,7 +536,8 @@ class FleetEfficiencyService
         }
 
         if ($category === self::STATUS_OVERTIME) {
-            $query->where('stats.overtime_hours', '>', 0);
+            $query->where('stats.daytime_hours', '>', 0)
+                ->where('stats.overtime_hours', '>', 0);
         }
 
         if ($primaryStatus) {
@@ -591,7 +599,7 @@ class FleetEfficiencyService
                 ->where('stats.daytime_hours', '=', 0)
                 ->where('stats.overtime_hours', '>', 0),
             self::DAY_STATUS_OVER_10 => $query->whereRaw($availableSql)
-                ->where('stats.daytime_hours', '>', 10),
+                ->whereRaw($this->totalHoursSql().' > 10'),
             default => null,
         };
     }
@@ -686,17 +694,17 @@ class FleetEfficiencyService
         $daytimeHoursSql = 'stats.daytime_hours';
         $selects = [
             'equipment.ownership_type',
-            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' > 0 AND '.$daytimeHoursSql.' < 1 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_1),
-            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' >= 1 AND '.$daytimeHoursSql.' < 7 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_LESS_THAN_7),
-            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' >= 7 AND '.$daytimeHoursSql.' <= 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
-            DB::raw('SUM(CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' = 0 AND stats.overtime_hours > 0 THEN 1 ELSE 0 END) as '.self::STATUS_NIGHT_SHIFT_ONLY),
-            DB::raw('SUM(CASE WHEN '.$availableSql.' AND '.$totalHoursSql.' > 10 THEN 1 ELSE 0 END) as '.self::DAY_STATUS_OVER_10),
-            DB::raw('COUNT(*) as total_rows'),
-            DB::raw('SUM(CASE WHEN '.$noDataStatusSql.' THEN 1 ELSE 0 END) as '.self::STATUS_NO_DATA),
-            DB::raw('SUM(CASE WHEN '.$noDataStatusSql.' THEN 1 ELSE 0 END) as missing_data'),
-            DB::raw('SUM(CASE WHEN stats.overtime_hours IS NOT NULL THEN 1 ELSE 0 END) as overtime_denominator'),
-            DB::raw('SUM(CASE WHEN stats.overtime_hours IS NULL THEN 1 ELSE 0 END) as overtime_unknown'),
-            DB::raw('SUM(CASE WHEN stats.overtime_hours > 0 THEN 1 ELSE 0 END) as '.self::STATUS_OVERTIME),
+            DB::raw('COUNT(DISTINCT CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' > 0 AND '.$daytimeHoursSql.' < 1 THEN equipment.equipment_id END) as '.self::DAY_STATUS_LESS_THAN_1),
+            DB::raw('COUNT(DISTINCT CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' >= 1 AND '.$daytimeHoursSql.' < 7 THEN equipment.equipment_id END) as '.self::DAY_STATUS_LESS_THAN_7),
+            DB::raw('COUNT(DISTINCT CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' >= 7 AND '.$daytimeHoursSql.' <= 10 THEN equipment.equipment_id END) as '.self::DAY_STATUS_BETWEEN_7_AND_10),
+            DB::raw('COUNT(DISTINCT CASE WHEN NOT '.$noDataStatusSql.' AND '.$daytimeHoursSql.' = 0 AND stats.overtime_hours > 0 THEN equipment.equipment_id END) as '.self::STATUS_NIGHT_SHIFT_ONLY),
+            DB::raw('COUNT(DISTINCT CASE WHEN '.$availableSql.' AND '.$totalHoursSql.' > 10 THEN equipment.equipment_id END) as '.self::DAY_STATUS_OVER_10),
+            DB::raw('COUNT(DISTINCT equipment.equipment_id) as total_rows'),
+            DB::raw('COUNT(DISTINCT CASE WHEN '.$noDataStatusSql.' THEN equipment.equipment_id END) as '.self::STATUS_NO_DATA),
+            DB::raw('COUNT(DISTINCT CASE WHEN '.$noDataStatusSql.' THEN equipment.equipment_id END) as missing_data'),
+            DB::raw('COUNT(DISTINCT CASE WHEN stats.overtime_hours IS NOT NULL THEN equipment.equipment_id END) as overtime_denominator'),
+            DB::raw('COUNT(DISTINCT CASE WHEN stats.overtime_hours IS NULL THEN equipment.equipment_id END) as overtime_unknown'),
+            DB::raw('COUNT(DISTINCT CASE WHEN stats.daytime_hours > 0 AND stats.overtime_hours > 0 THEN equipment.equipment_id END) as '.self::STATUS_OVERTIME),
         ];
 
         if ($byProject) {
@@ -1089,6 +1097,14 @@ class FleetEfficiencyService
             self::DAY_STATUS_BETWEEN_7_AND_10,
             self::STATUS_NIGHT_SHIFT_ONLY,
         ];
+    }
+
+    private function workedBothShifts(mixed $daytimeHours, mixed $overtimeHours): bool
+    {
+        return $daytimeHours !== null
+            && $overtimeHours !== null
+            && (float) $daytimeHours > 0
+            && (float) $overtimeHours > 0;
     }
 
     private function matchesRange(mixed $value, mixed $min, mixed $max): bool

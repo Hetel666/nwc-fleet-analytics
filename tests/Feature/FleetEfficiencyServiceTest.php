@@ -14,7 +14,7 @@ class FleetEfficiencyServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_counts_allowed_types_by_unit_day_and_excludes_other_types(): void
+    public function test_it_counts_allowed_types_as_unique_units_and_excludes_other_types(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
@@ -41,10 +41,10 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame(1, $summary['less_than_1_hour']);
         $this->assertSame(1, $summary['less_than_7_hours']);
         $this->assertSame(1, $summary['between_7_and_10_hours']);
-        $this->assertSame(4, $summary['total']);
+        $this->assertSame(2, $summary['total']);
     }
 
-    public function test_it_counts_range_as_daily_rows_and_tracks_no_data_per_day(): void
+    public function test_it_counts_unique_units_across_range_and_tracks_no_data(): void
     {
         $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
         $type = EquipmentType::query()->create(['name' => 'Road Roller']);
@@ -58,12 +58,12 @@ class FleetEfficiencyServiceTest extends TestCase
             'to' => '2026-07-03',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(2, $summary['less_than_7_hours']);
+        $this->assertSame(1, $summary['less_than_7_hours']);
         $this->assertSame(0, $summary['between_7_and_10_hours']);
         $this->assertSame(0, $summary['less_than_1_hour']);
         $this->assertSame(1, $summary['no_data']);
         $this->assertSame(1, $summary['missing_data']);
-        $this->assertSame(3, $summary['total']);
+        $this->assertSame(1, $summary['total']);
     }
 
     public function test_overtime_indicator_is_independent_from_total_work_category(): void
@@ -275,7 +275,7 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame(1, $summary['night_shift_only']);
         $this->assertSame(7, $summary['total']);
         $this->assertSame(1, $summary['over_10_hours']);
-        $this->assertSame(2, $summary['overtime']);
+        $this->assertSame(1, $summary['overtime']);
         $this->assertSame(1, $summary['no_data']);
 
         $zeroRows = app(FleetEfficiencyService::class)->paginate([

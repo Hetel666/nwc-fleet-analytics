@@ -36,6 +36,11 @@ class WialonShiftReportParser
                 '_current_table_index' => (int) ($reportTable['index'] ?? $tableIndex),
                 '_current_table_position' => (int) $tableIndex,
                 '_current_table_count' => count($report['tables'] ?? []),
+                '_forced_shift_field' => match ($reportTable['_source_shift'] ?? null) {
+                    'daytime' => 'daytime_hours',
+                    'overtime' => 'overtime_hours',
+                    default => null,
+                },
             ];
 
             foreach ($this->flattenRows($rows, $headers) as $row) {
@@ -527,6 +532,12 @@ class WialonShiftReportParser
 
     private function tableShiftField(array $report, ?array $row = null, array $headers = [], array $cells = []): ?string
     {
+        $forcedShift = $report['_forced_shift_field'] ?? null;
+
+        if (in_array($forcedShift, ['daytime_hours', 'overtime_hours'], true)) {
+            return $forcedShift;
+        }
+
         $tableName = $this->normalizeHeader((string) ($report['_current_table'] ?? ''));
         $tableShift = null;
 

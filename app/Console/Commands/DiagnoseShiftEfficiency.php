@@ -28,7 +28,9 @@ class DiagnoseShiftEfficiency extends Command
         $settings = [
             'resource_id' => (string) config('fleet.wialon.shift_report_resource_id', ''),
             'template_id' => (string) config('fleet.wialon.shift_report_template_id', ''),
-            'template_name' => (string) config('fleet.wialon.shift_report_template_name', 'Qrup report novbe 24 saat (api)'),
+            'template_name' => (string) config('fleet.wialon.shift_daytime_report_template_name', 'Qrup report daytime (api)')
+                .' + '
+                .(string) config('fleet.wialon.shift_overtime_report_template_name', 'Qrup report overtime (api)'),
         ];
         $rows = $this->rows($from, $to);
         $totals = [

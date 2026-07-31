@@ -282,9 +282,9 @@ class DashboardDrilldownTest extends TestCase
                 'work_category' => 'overtime',
             ]))
             ->assertOk()
-            ->assertJsonPath('summary.total', 2)
+            ->assertJsonPath('summary.total', 1)
             ->assertJsonFragment(['name' => 'Overtime Excavator'])
-            ->assertJsonFragment(['name' => 'Night Only Excavator'])
+            ->assertJsonMissing(['name' => 'Night Only Excavator'])
             ->assertJsonMissing(['name' => 'Normal Excavator']);
 
         $this->actingAs($user)

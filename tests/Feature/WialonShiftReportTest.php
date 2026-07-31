@@ -26,7 +26,7 @@ class WialonShiftReportTest extends TestCase
         $parser = app(WialonShiftReportParser::class);
 
         $this->assertNull($service->daytimeStatusForHours(null));
-        $this->assertSame('less_than_1_hour', $service->daytimeStatusForHours(0));
+        $this->assertSame('no_data', $service->daytimeStatusForHours(0));
         $this->assertSame('less_than_1_hour', $service->daytimeStatusForHours(0.5));
         $this->assertSame('less_than_1_hour', $service->daytimeStatusForHours(0.99));
         $this->assertSame('less_than_7_hours', $service->daytimeStatusForHours(1.0));
@@ -244,6 +244,140 @@ class WialonShiftReportTest extends TestCase
             ->firstWhere('statistic_date', '2026-07-28');
 
         $this->assertNull($previousDay);
+    }
+
+    public function test_parser_combines_independent_daytime_and_overtime_reports_by_unit_and_date(): void
+    {
+        $date = CarbonImmutable::parse('2026-07-29 00:00:00', 'Asia/Baku');
+        $parsed = app(WialonShiftReportParser::class)->parse([
+            'from' => $date,
+            'to' => $date->endOfDay(),
+            'tables' => [
+                [
+                    'index' => 0,
+                    '_source_shift' => 'daytime',
+                    'table' => [
+                        'name' => 'unit_group_engine_hours',
+                        'header' => ['Grouping', 'Engine hours'],
+                        'rows' => 1,
+                    ],
+                    'rows' => [
+                        ['uid' => '7001', 'c' => ['Unit both shifts', '8.00']],
+                    ],
+                ],
+                [
+                    'index' => 1,
+                    '_source_shift' => 'overtime',
+                    'table' => [
+                        'name' => 'unit_group_engine_hours',
+                        'header' => ['Grouping', 'Engine hours'],
+                        'rows' => 2,
+                    ],
+                    'rows' => [
+                        ['uid' => '7001', 'c' => ['Unit both shifts', '3.00']],
+                        ['uid' => '7002', 'c' => ['Unit night only', '12.00']],
+                    ],
+                ],
+            ],
+        ]);
+
+        $records = collect($parsed['records'])->keyBy('wialon_unit_id');
+
+        $this->assertSame(8.0, $records['7001']['daytime_hours']);
+        $this->assertSame(3.0, $records['7001']['overtime_hours']);
+        $this->assertSame(11.0, $records['7001']['total_hours']);
+        $this->assertSame(0.0, $records['7002']['daytime_hours']);
+        $this->assertSame(12.0, $records['7002']['overtime_hours']);
+        $this->assertSame(12.0, $records['7002']['total_hours']);
+    }
+
+    public function test_efficiency_report_sources_are_configured_independently(): void
+    {
+        config([
+            'fleet.wialon.shift_daytime_report_resource_id' => 601701680,
+            'fleet.wialon.shift_daytime_report_template_id' => 21,
+            'fleet.wialon.shift_daytime_report_template_name' => 'Qrup report daytime (api)',
+            'fleet.wialon.shift_overtime_report_resource_id' => 601701680,
+            'fleet.wialon.shift_overtime_report_template_id' => 22,
+            'fleet.wialon.shift_overtime_report_template_name' => 'Qrup report overtime (api)',
+        ]);
+
+        $service = app(WialonShiftReportService::class);
+
+        $this->assertSame(21, $service->settingsFor('daytime')['template_id']);
+        $this->assertSame('Qrup report daytime (api)', $service->settingsFor('daytime')['template_name']);
+        $this->assertSame(22, $service->settingsFor('overtime')['template_id']);
+        $this->assertSame('Qrup report overtime (api)', $service->settingsFor('overtime')['template_name']);
+    }
+
+    public function test_report_service_executes_daytime_and_overtime_templates_separately(): void
+    {
+        config([
+            'fleet.wialon.shift_daytime_report_resource_id' => 601701680,
+            'fleet.wialon.shift_daytime_report_template_id' => 21,
+            'fleet.wialon.shift_daytime_report_template_name' => 'Qrup report daytime (api)',
+            'fleet.wialon.shift_overtime_report_resource_id' => 601701680,
+            'fleet.wialon.shift_overtime_report_template_id' => 22,
+            'fleet.wialon.shift_overtime_report_template_name' => 'Qrup report overtime (api)',
+        ]);
+
+        $wialon = new class extends WialonService
+        {
+            public array $templateCalls = [];
+
+            private array $rows = [];
+
+            public function __construct() {}
+
+            public function executeReport(
+                int|string $resourceId,
+                int|string $templateId,
+                int|string $objectId,
+                int $from,
+                int $to,
+                int $intervalFlags = 0,
+                ?string $sid = null,
+                bool $remoteExec = false,
+                ?int $requestTimeout = null
+            ): array {
+                $this->templateCalls[] = (int) $templateId;
+                $this->rows = (int) $templateId === 21
+                    ? [['uid' => '7001', 'c' => ['Unit both shifts', '8.00']]]
+                    : [
+                        ['uid' => '7001', 'c' => ['Unit both shifts', '3.00']],
+                        ['uid' => '7002', 'c' => ['Unit night only', '12.00']],
+                    ];
+
+                return [
+                    'reportResult' => [
+                        'tables' => [[
+                            'name' => 'unit_group_engine_hours',
+                            'header' => ['Grouping', 'Engine hours'],
+                            'rows' => count($this->rows),
+                        ]],
+                    ],
+                ];
+            }
+
+            public function selectReportResultRows(int $tableIndex, array $config, ?string $sid = null): array
+            {
+                return ($config['type'] ?? null) === 'range' ? $this->rows : [];
+            }
+
+            public function cleanupReportResult(string $sid): void {}
+        };
+
+        $service = new WialonShiftReportService($wialon, app(WialonShiftReportParser::class));
+        $date = CarbonImmutable::parse('2026-07-29 00:00:00', 'Asia/Baku');
+        $report = $service->executeForGroupWithSession('601701915', $date, $date->endOfDay(), 'sid');
+        $records = collect(app(WialonShiftReportParser::class)->parse($report)['records'])->keyBy('wialon_unit_id');
+
+        $this->assertSame([21, 22], $wialon->templateCalls);
+        $this->assertSame('Qrup report daytime (api) + Qrup report overtime (api)', $report['template_name']);
+        $this->assertSame(8.0, $records['7001']['daytime_hours']);
+        $this->assertSame(3.0, $records['7001']['overtime_hours']);
+        $this->assertSame(0.0, $records['7002']['daytime_hours']);
+        $this->assertSame(12.0, $records['7002']['overtime_hours']);
     }
 
     public function test_parser_prefers_wialon_timestamp_value_when_classifying_shift_table_rows(): void
@@ -488,7 +622,7 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_BETWEEN_7_AND_10]);
         $this->assertSame(1, $summary[FleetEfficiencyService::STATUS_NIGHT_SHIFT_ONLY]);
         $this->assertSame(3, $summary[FleetEfficiencyService::DAY_STATUS_OVER_10]);
-        $this->assertSame(4, $summary[FleetEfficiencyService::STATUS_OVERTIME]);
+        $this->assertSame(3, $summary[FleetEfficiencyService::STATUS_OVERTIME]);
         $this->assertSame(0, $summary[FleetEfficiencyService::STATUS_NO_DATA]);
         $this->assertSame(7, $summary['total']);
 
@@ -501,7 +635,7 @@ class WialonShiftReportTest extends TestCase
             'per_page' => 20,
         ]);
 
-        $this->assertSame(4, $overtimeRows->total());
+        $this->assertSame(3, $overtimeRows->total());
 
         $nightShiftOnlyRows = $efficiency->paginate([
             'from' => '2026-07-20',
@@ -567,9 +701,9 @@ class WialonShiftReportTest extends TestCase
             'work_category' => FleetEfficiencyService::STATUS_OVERTIME,
         ]);
 
-        $this->assertCount(4, $excelRows);
+        $this->assertCount(3, $excelRows);
         $this->assertEqualsCanonicalizing(
-            ['Unit daytime 0 overtime 4', 'Unit daytime 3 overtime 5', 'Unit daytime 9 overtime 4', 'Unit daytime 10 overtime 2'],
+            ['Unit daytime 3 overtime 5', 'Unit daytime 9 overtime 4', 'Unit daytime 10 overtime 2'],
             collect($excelRows)->pluck(2)->all()
         );
     }

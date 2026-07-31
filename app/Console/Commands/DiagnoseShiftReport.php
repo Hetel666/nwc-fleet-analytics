@@ -37,7 +37,6 @@ class DiagnoseShiftReport extends Command
 
         try {
             $settings = $reports->settings();
-            $template = $reports->findReportTemplate($settings['template_name']);
             $report = $reports->executeForGroup($group, $from, $to);
             $parsed = $parser->parse($report);
 
@@ -47,7 +46,9 @@ class DiagnoseShiftReport extends Command
                     ['report resource ID', $report['resource_id']],
                     ['report template ID', $report['template_id']],
                     ['report template name', $report['template_name']],
-                    ['report template type', $template['type'] ?? $report['template_type'] ?? 'unknown'],
+                    ['daytime template', $settings['sources']['daytime']['template_name'].' #'.$settings['sources']['daytime']['template_id']],
+                    ['overtime template', $settings['sources']['overtime']['template_name'].' #'.$settings['sources']['overtime']['template_id']],
+                    ['report template type', $report['template_type'] ?? 'unknown'],
                     ['group ID', $group->wialon_group_id],
                     ['group name', $group->name],
                     ['project', $group->project?->name ?? ''],
@@ -118,7 +119,7 @@ class DiagnoseShiftReport extends Command
     }
 
     /**
-     * @param array<int, array<string, mixed>> $records
+     * @param  array<int, array<string, mixed>>  $records
      */
     private function printDetails(array $records): void
     {

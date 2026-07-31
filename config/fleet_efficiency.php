@@ -32,8 +32,9 @@ return [
     | Dashboard business thresholds
     |--------------------------------------------------------------------------
     |
-    | These two efficiency widgets are based only on daytime shift hours.
-    | Overtime is counted separately and never changes the daytime status.
+    | Daytime and overtime values come from independent Wialon reports.
+    | Primary daytime buckets use daytime hours only. Supplemental indicators
+    | use both reports and never increase the unique equipment total.
     |
     */
     'daytime_status_rules' => [
