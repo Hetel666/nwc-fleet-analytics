@@ -124,6 +124,47 @@ class HistoricalRecalculationTest extends TestCase
             ]);
     }
 
+    public function test_preview_for_efficiency_section_uses_project_ownership_tasks_without_aggregate(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Efficiency project', 'active' => true]);
+
+        $nwcGroup = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '250',
+            'name' => 'Efficiency project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $icareGroup = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '251',
+            'name' => 'Efficiency project - ICARE',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+        ]);
+        $this->equipment($project, $nwcGroup, Equipment::OWNERSHIP_NWC, '2500');
+        $this->equipment($project, $icareGroup, Equipment::OWNERSHIP_ICARE, '2501');
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-13',
+                'date_to' => '2026-07-15',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+                'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 3,
+                'project_groups' => 2,
+                'fetch_tasks' => 6,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 6,
+            ]);
+    }
+
     public function test_preview_for_geofence_section_counts_projects_once(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
@@ -393,6 +434,58 @@ class HistoricalRecalculationTest extends TestCase
                     && $parameters['--from'] === '2026-07-27 00:00:00'
                     && $parameters['--to'] === '2026-07-28 23:59:59'
                     && $parameters['--force'] === true
+            ))
+            ->andReturn(0);
+
+        (new RunHistoricalRecalculationTaskJob($task->id))->handle(
+            app(WialonReportStatsSyncService::class),
+            $service
+        );
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
+    }
+
+    public function test_efficiency_history_runs_shift_sync_for_one_project_group(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Efficiency command project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '520',
+            'name' => 'Efficiency command project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '5200');
+        $service = app(HistoricalRecalculationService::class);
+        $run = $service->createRun([
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => true,
+        ], $admin);
+        $task = $run->tasks()->where('operation', HistoricalRecalculation::OPERATION_FETCH)->firstOrFail();
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('fleet:plan-shift-sync', \Mockery::on(
+                fn (array $parameters): bool => $parameters['--group'] === '520'
+                    && $parameters['--from'] === '2026-07-29'
+                    && $parameters['--to'] === '2026-07-29'
+                    && $parameters['--force'] === true
+            ))
+            ->andReturn(0);
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('fleet:run-shift-sync', \Mockery::on(
+                fn (array $parameters): bool => $parameters['--group'] === '520'
+                    && $parameters['--date'] === '2026-07-29'
+                    && $parameters['--limit'] === 1
+                    && $parameters['--retry-failed'] === true
             ))
             ->andReturn(0);
 

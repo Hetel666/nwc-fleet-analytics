@@ -30,6 +30,7 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             'timezone' => ['required', 'timezone'],
             'dashboard_section' => ['required', Rule::in([
                 HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+                HistoricalRecalculation::SECTION_EFFICIENCY,
                 HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
                 HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,

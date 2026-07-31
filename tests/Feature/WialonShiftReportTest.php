@@ -195,7 +195,7 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame('grouped_shift_rows', $dayOnly['reason']);
     }
 
-    public function test_parser_uses_two_shift_tables_and_keeps_morning_overtime_on_previous_day(): void
+    public function test_parser_uses_two_shift_tables_for_the_report_date(): void
     {
         $headers = ['Grouping', 'Custom column', 'Custom column', 'Engine hours', 'Equipment Type', 'Vendor', 'Year', 'Idling', 'Mileage (adjusted)', 'Beginning', 'End'];
 
@@ -236,16 +236,14 @@ class WialonShiftReportTest extends TestCase
 
         $this->assertSame('10-AF-171', $currentDay['unit_name']);
         $this->assertSame(0.06, $currentDay['daytime_hours']);
-        $this->assertSame(0.0, $currentDay['overtime_hours']);
-        $this->assertSame(0.06, $currentDay['total_hours']);
+        $this->assertSame(0.44, $currentDay['overtime_hours']);
+        $this->assertSame(0.5, $currentDay['total_hours']);
 
         $previousDay = collect($parsed['records'])
             ->where('wialon_unit_id', '600720325')
             ->firstWhere('statistic_date', '2026-07-28');
 
-        $this->assertSame(0.0, $previousDay['daytime_hours']);
-        $this->assertSame(0.44, $previousDay['overtime_hours']);
-        $this->assertSame(0.44, $previousDay['total_hours']);
+        $this->assertNull($previousDay);
     }
 
     public function test_shift_report_nested_rows_are_loaded_only_to_configured_depth(): void

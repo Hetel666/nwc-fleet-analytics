@@ -26,7 +26,7 @@ class HistoricalRecalculationService
         $aggregateTasks = $this->needsAggregation($payload)
             ? max(1, $this->selectedProjectIds($payload)->count() ?: 1)
             : 0;
-        $fetchTasks = $this->needsFetch($payload['operation'])
+        $fetchTasks = $this->needsFetch($payload['operation'], $payload['dashboard_section'] ?? null)
             ? $this->fetchTaskCount($payload, $dates, $targets)
             : 0;
 
@@ -266,7 +266,7 @@ class HistoricalRecalculationService
 
     private function createTasks(HistoricalRecalculation $run, array $payload): void
     {
-        if ($this->needsFetch($payload['operation'])) {
+        if ($this->needsFetch($payload['operation'], $payload['dashboard_section'] ?? null)) {
             $dates = ($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS
                 ? collect([$payload['date_from']])
                 : $this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']);
@@ -436,8 +436,13 @@ class HistoricalRecalculationService
         ))->map(fn (Carbon $date): string => $date->toDateString())->values();
     }
 
-    private function needsFetch(string $operation): bool
+    private function needsFetch(string $operation, ?string $dashboardSection = null): bool
     {
+        if ($dashboardSection === HistoricalRecalculation::SECTION_EFFICIENCY
+            && $operation === HistoricalRecalculation::OPERATION_RECALCULATE) {
+            return true;
+        }
+
         return in_array($operation, [
             HistoricalRecalculation::OPERATION_FETCH,
             HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
@@ -455,7 +460,12 @@ class HistoricalRecalculationService
 
     private function needsAggregation(array $payload): bool
     {
-        if (($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES) !== HistoricalRecalculation::SECTION_DAILY_AVERAGES) {
+        if (in_array(($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES), [
+            HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+        ], true)) {
             return false;
         }
 

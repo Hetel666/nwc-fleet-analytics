@@ -20,6 +20,7 @@ class HistoricalRecalculation extends Model
     public const OPERATION_FETCH_AND_RECALCULATE = 'fetch_and_recalculate';
 
     public const SECTION_DAILY_AVERAGES = 'daily_averages';
+    public const SECTION_EFFICIENCY = 'efficiency';
     public const SECTION_TOP_WORKING_UNITS = 'top_working_units';
     public const SECTION_GEOFENCE_OUTSIDE = 'geofence_outside';
 

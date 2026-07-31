@@ -579,9 +579,7 @@ class WialonShiftReportParser
 
         $beginning = $beginning->timezone($this->timezone());
 
-        return $beginning->hour < 8
-            ? $beginning->subDay()->startOfDay()
-            : $beginning->startOfDay();
+        return $beginning->startOfDay();
     }
 
     private function groupedShiftLabel(array $row, array $headers, array $cells): string

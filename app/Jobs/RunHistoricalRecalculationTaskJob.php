@@ -5,6 +5,8 @@ namespace App\Jobs;
 use App\Models\GeofenceViolationSyncItem;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
+use App\Models\ProjectWialonGroup;
+use App\Models\WialonReportSyncItem;
 use App\Services\HistoricalRecalculationService;
 use App\Services\WialonReportStatsSyncService;
 use Illuminate\Bus\Batchable;
@@ -124,6 +126,33 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
             ], fn (mixed $value): bool => $value !== null && $value !== ''));
 
             return 0;
+        }
+
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_EFFICIENCY) {
+            $group = ProjectWialonGroup::query()
+                ->where('project_id', $task->project_id)
+                ->where('ownership_type', $task->ownership_type)
+                ->firstOrFail();
+
+            $this->runArtisanOrFail('fleet:plan-shift-sync', array_filter([
+                '--from' => $date,
+                '--to' => $date,
+                '--group' => $group->wialon_group_id,
+                '--force' => (bool) $run->force,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+
+            $this->runArtisanOrFail('fleet:run-shift-sync', array_filter([
+                '--date' => $date,
+                '--group' => $group->wialon_group_id,
+                '--limit' => 1,
+                '--retry-failed' => (bool) $run->force,
+            ], fn (mixed $value): bool => $value !== null && $value !== ''));
+
+            return (int) WialonReportSyncItem::query()
+                ->where('sync_type', WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY)
+                ->where('report_date', $date)
+                ->where('wialon_group_id', $group->wialon_group_id)
+                ->value('rows_saved');
         }
 
         if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {
