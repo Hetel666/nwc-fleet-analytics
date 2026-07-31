@@ -169,15 +169,23 @@ class WialonShiftReportTest extends TestCase
             ]],
         ]);
 
-        $this->assertSame(2, count($parsed['records']));
+        $this->assertSame(3, count($parsed['records']));
         $this->assertSame(0, $parsed['unknown_rows']);
 
-        $grouped = collect($parsed['records'])->firstWhere('wialon_unit_id', '7001');
+        $previousOvertime = collect($parsed['records'])->firstWhere('statistic_date', '2026-06-30');
+        $this->assertSame('Unit Grouped', $previousOvertime['unit_name']);
+        $this->assertSame(0.0, $previousOvertime['daytime_hours']);
+        $this->assertSame(2.0, $previousOvertime['overtime_hours']);
+        $this->assertSame(2.0, $previousOvertime['total_hours']);
+
+        $grouped = collect($parsed['records'])
+            ->where('wialon_unit_id', '7001')
+            ->firstWhere('statistic_date', '2026-07-01');
         $this->assertSame('Unit Grouped', $grouped['unit_name']);
         $this->assertSame('2026-07-01', $grouped['statistic_date']);
         $this->assertSame(6.0, $grouped['daytime_hours']);
-        $this->assertSame(3.5, $grouped['overtime_hours']);
-        $this->assertSame(9.5, $grouped['total_hours']);
+        $this->assertSame(1.5, $grouped['overtime_hours']);
+        $this->assertSame(7.5, $grouped['total_hours']);
         $this->assertSame('grouped_shift_rows', $grouped['reason']);
 
         $dayOnly = collect($parsed['records'])->firstWhere('wialon_unit_id', '7002');

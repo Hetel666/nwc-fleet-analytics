@@ -388,17 +388,17 @@ class WialonShiftReportParser
             return $date->timezone($this->timezone())->startOfDay();
         }
 
+        $groupedDate = $this->groupedShiftDate($row, $headers, $cells);
+
+        if ($groupedDate !== null) {
+            return $groupedDate;
+        }
+
         $from = $report['from'] ?? null;
         $to = $report['to'] ?? null;
 
         if ($from instanceof CarbonInterface && $to instanceof CarbonInterface && $from->toDateString() === $to->toDateString()) {
             return $from->timezone($this->timezone())->startOfDay();
-        }
-
-        $groupedDate = $this->groupedShiftDate($row, $headers, $cells);
-
-        if ($groupedDate !== null) {
-            return $groupedDate;
         }
 
         foreach ($cells as $cell) {
