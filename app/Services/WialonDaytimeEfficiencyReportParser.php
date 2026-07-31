@@ -64,25 +64,30 @@ final class WialonDaytimeEfficiencyReportParser
     private function parseRow(array $row, array $indexes, CarbonImmutable $reportDate): ?array
     {
         $cells = array_values(is_array($row['c'] ?? null) ? $row['c'] : []);
-        $unitName = trim($this->displayValue($cells[$indexes['unit'] ?? 0] ?? null));
+        $cell = static fn (string $key, ?int $fallback = null): mixed
+            => isset($indexes[$key])
+                ? ($cells[$indexes[$key]] ?? null)
+                : ($fallback === null ? null : ($cells[$fallback] ?? null));
+
+        $unitName = trim($this->displayValue($cell('unit', 0)));
         $unitId = $this->unitId($row);
 
         if ($unitName === '' && $unitId === null) {
             return null;
         }
 
-        $rawHoursCell = $cells[$indexes['engine_hours'] ?? 3] ?? null;
+        $rawHoursCell = $cell('engine_hours', 3);
         $rawHours = $this->displayValue($rawHoursCell);
         $hours = $this->parseHours($rawHoursCell);
-        $rawMileageCell = $cells[$indexes['mileage'] ?? 8] ?? null;
-        $rawIdlingCell = $cells[$indexes['idling'] ?? 7] ?? null;
+        $rawMileageCell = $cell('mileage', 8);
+        $rawIdlingCell = $cell('idling', 7);
         $beginning = $this->parseTimestamp(
-            $cells[$indexes['beginning'] ?? 9] ?? null,
+            $cell('beginning', 9),
             $row['t1'] ?? null,
             $reportDate
         );
         $end = $this->parseTimestamp(
-            $cells[$indexes['end'] ?? 10] ?? null,
+            $cell('end', 10),
             $row['t2'] ?? null,
             $reportDate
         );
@@ -91,14 +96,14 @@ final class WialonDaytimeEfficiencyReportParser
             'fact_date' => $reportDate->toDateString(),
             'wialon_unit_id' => $unitId,
             'unit_name' => $unitName,
-            'model_name' => $this->displayValue($cells[$indexes['model'] ?? 1] ?? null),
-            'manufacturer_name' => $this->displayValue($cells[$indexes['manufacturer'] ?? 2] ?? null),
+            'model_name' => $this->displayValue($cell('model', 1)),
+            'manufacturer_name' => $this->displayValue($cell('manufacturer', 2)),
             'raw_engine_hours' => $rawHours,
             'engine_hours_decimal' => $hours,
             'engine_hours_seconds' => $hours === null ? null : (int) round($hours * 3600),
-            'wialon_equipment_type' => $this->displayValue($cells[$indexes['equipment_type'] ?? 4] ?? null),
-            'vendor' => $this->displayValue($cells[$indexes['vendor'] ?? 5] ?? null),
-            'year' => $this->displayValue($cells[$indexes['year'] ?? 6] ?? null),
+            'wialon_equipment_type' => $this->displayValue($cell('equipment_type', 4)),
+            'vendor' => $this->displayValue($cell('vendor', 5)),
+            'year' => $this->displayValue($cell('year', 6)),
             'raw_idling' => $this->displayValue($rawIdlingCell),
             'idling_hours' => $this->parseHours($rawIdlingCell),
             'raw_mileage' => $this->displayValue($rawMileageCell),
@@ -126,6 +131,31 @@ final class WialonDaytimeEfficiencyReportParser
             if ($type === 'user column') {
                 $custom[] = $index;
             }
+        }
+
+        // Wialon report columns are configurable. Once a column is removed,
+        // positional fallbacks would read a neighbouring value as another field.
+        if ($headers !== []) {
+            $find = fn (array $values, array $candidates): ?int => $this->findIndex($values, $candidates);
+
+            return [
+                'unit' => $find($normalized, ['grouping']) ?? 0,
+                'model' => $custom[0] ?? null,
+                'manufacturer' => $custom[1] ?? null,
+                'engine_hours' => $find($normalized, ['engine hours'])
+                    ?? $find($types, ['duration']),
+                'equipment_type' => $find($normalized, ['equipment type']),
+                'vendor' => $find($normalized, ['vendor', 'ownership']),
+                'year' => $find($normalized, ['year']),
+                'idling' => $find($normalized, ['idling'])
+                    ?? $find($types, ['duration stay']),
+                'mileage' => $find($normalized, ['mileage adjusted', 'mileage'])
+                    ?? $find($types, ['correct mileage']),
+                'beginning' => $find($normalized, ['beginning'])
+                    ?? $find($types, ['time begin']),
+                'end' => $find($normalized, ['end'])
+                    ?? $find($types, ['time end']),
+            ];
         }
 
         return [

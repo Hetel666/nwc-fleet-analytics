@@ -64,6 +64,35 @@ class DaytimeEfficiencyDashboardTest extends TestCase
         $this->assertSame('2026-07-29 17:36:02', $record['end_at']->format('Y-m-d H:i:s'));
     }
 
+    public function test_parser_does_not_shift_values_when_optional_wialon_columns_are_removed(): void
+    {
+        $date = CarbonImmutable::parse('2026-07-29 00:00:00', 'Asia/Baku');
+        $parsed = app(WialonDaytimeEfficiencyReportParser::class)->parse([
+            'from' => $date,
+            'tables' => [[
+                'table' => [
+                    'name' => 'unit_group_engine_hours',
+                    'header' => ['Grouping', 'Engine hours', 'Equipment Type', 'Vendor', 'Beginning', 'End'],
+                    'header_type' => ['', 'duration', 'user_column', 'user_column', 'time_begin', 'time_end'],
+                ],
+                'rows' => [[
+                    'uid' => '600261257',
+                    'c' => ['10-AD-725', '2.11', 'Bulldozer', 'NWC', '2026-07-29 08:18:06', '2026-07-29 17:36:02'],
+                ]],
+            ]],
+        ]);
+
+        $record = $parsed['records'][0];
+        $this->assertSame('10-AD-725', $record['unit_name']);
+        $this->assertSame(2.11, $record['engine_hours_decimal']);
+        $this->assertSame('Bulldozer', $record['wialon_equipment_type']);
+        $this->assertSame('NWC', $record['vendor']);
+        $this->assertNull($record['idling_hours']);
+        $this->assertNull($record['mileage_adjusted']);
+        $this->assertSame('2026-07-29 08:18:06', $record['beginning_at']->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-07-29 17:36:02', $record['end_at']->format('Y-m-d H:i:s'));
+    }
+
     public function test_dashboard_renders_separate_nwc_and_icare_daytime_blocks(): void
     {
         $this->seed(DemoSeeder::class);
