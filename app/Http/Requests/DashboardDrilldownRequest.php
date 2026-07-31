@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\DurationFormatter;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -127,6 +128,7 @@ class DashboardDrilldownRequest extends FormRequest
             'overtime_hours_max' => ['nullable', 'numeric', 'min:0'],
             'total_hours_min' => ['nullable', 'numeric', 'min:0'],
             'total_hours_max' => ['nullable', 'numeric', 'min:0'],
+            'duration_format' => ['nullable', Rule::in(DurationFormatter::allowed())],
             'geofence_violation' => ['nullable', 'boolean'],
             'live_only' => ['nullable', 'boolean'],
             'current_geozone_project_id' => ['nullable', 'integer', 'exists:projects,id'],

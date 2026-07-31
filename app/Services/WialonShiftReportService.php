@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\ProjectWialonGroup;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Carbon\CarbonPeriod;
 use RuntimeException;
 use Throwable;
 
@@ -99,22 +101,23 @@ class WialonShiftReportService
     {
         return ($this->reportSessionLock ?? app(WialonReportSessionLock::class))->run(
             function () use ($groupId, $from, $to, $sid): array {
-                $daytime = $this->executePreparedReportUnlocked(
-                    $groupId,
-                    $from,
-                    $to,
-                    $this->settingsFor('daytime'),
-                    $sid
-                );
-                $overtime = $this->executePreparedReportUnlocked(
-                    $groupId,
-                    $from,
-                    $to,
-                    $this->settingsFor('overtime'),
-                    $sid
-                );
+                $reports = [];
 
-                return $this->combineReports($daytime, $overtime);
+                foreach ($this->shiftWindows($from, $to) as $window) {
+                    $report = $this->executePreparedReportUnlocked(
+                        $groupId,
+                        $window['from'],
+                        $window['to'],
+                        $this->settingsFor('engine_hours'),
+                        $sid
+                    );
+                    $report['source_shift'] = $window['source'];
+                    $report['business_date'] = $window['date'];
+                    $report['window_name'] = $window['name'];
+                    $reports[] = $report;
+                }
+
+                return $this->combineReports($reports);
             }
         );
     }
@@ -176,20 +179,18 @@ class WialonShiftReportService
      */
     public function settings(): array
     {
-        $daytime = $this->settingsFor('daytime');
-        $overtime = $this->settingsFor('overtime');
+        $engineHours = $this->settingsFor('engine_hours');
 
         return [
-            'resource_id' => implode(',', array_unique([(string) $daytime['resource_id'], (string) $overtime['resource_id']])),
-            'template_id' => $daytime['template_id'].'+'.$overtime['template_id'],
-            'template_name' => $daytime['template_name'].' + '.$overtime['template_name'],
-            'template_type' => $daytime['template_type'] ?: $overtime['template_type'],
-            'interval_flags' => $daytime['interval_flags'],
-            'chunk_size' => min($daytime['chunk_size'], $overtime['chunk_size']),
-            'timeout' => max($daytime['timeout'], $overtime['timeout']),
+            'resource_id' => (string) $engineHours['resource_id'],
+            'template_id' => (string) $engineHours['template_id'],
+            'template_name' => $engineHours['template_name'],
+            'template_type' => $engineHours['template_type'],
+            'interval_flags' => $engineHours['interval_flags'],
+            'chunk_size' => $engineHours['chunk_size'],
+            'timeout' => $engineHours['timeout'],
             'sources' => [
-                'daytime' => $daytime,
-                'overtime' => $overtime,
+                'engine_hours' => $engineHours,
             ],
         ];
     }
@@ -199,7 +200,7 @@ class WialonShiftReportService
      */
     public function settingsFor(string $source): array
     {
-        if (! in_array($source, ['daytime', 'overtime'], true)) {
+        if (! in_array($source, ['engine_hours', 'daytime', 'overtime'], true)) {
             throw new RuntimeException("Unknown Wialon efficiency report source '{$source}'.");
         }
 
@@ -207,12 +208,16 @@ class WialonShiftReportService
             return $this->resolvedSettings[$source];
         }
 
-        $prefix = 'fleet.wialon.shift_'.$source.'_report_';
+        $prefix = $source === 'engine_hours'
+            ? 'fleet.wialon.shift_engine_hours_report_'
+            : 'fleet.wialon.shift_'.$source.'_report_';
         $resourceId = (int) config($prefix.'resource_id');
         $templateId = (int) config($prefix.'template_id');
         $templateName = (string) config(
             $prefix.'template_name',
-            $source === 'daytime' ? 'Qrup report daytime (api)' : 'Qrup report overtime (api)'
+            $source === 'engine_hours'
+                ? 'Qrup report Engine hours (api)'
+                : ($source === 'daytime' ? 'Qrup report daytime (api)' : 'Qrup report overtime (api)')
         );
         $templateType = null;
 
@@ -245,42 +250,92 @@ class WialonShiftReportService
     }
 
     /**
-     * @param  array<string, mixed>  $daytime
-     * @param  array<string, mixed>  $overtime
+     * @param  array<int, array<string, mixed>>  $reports
      * @return array<string, mixed>
      */
-    private function combineReports(array $daytime, array $overtime): array
+    private function combineReports(array $reports): array
     {
         $tables = [];
 
-        foreach (['daytime' => $daytime, 'overtime' => $overtime] as $source => $report) {
+        foreach ($reports as $report) {
+            $source = (string) ($report['source_shift'] ?? 'daytime');
+
             foreach ($report['tables'] ?? [] as $table) {
                 $table['index'] = count($tables);
                 $table['_source_shift'] = $source;
+                $table['_business_date'] = $report['business_date'] ?? null;
+                $table['_window_name'] = $report['window_name'] ?? null;
                 $tables[] = $table;
             }
         }
 
-        $cleanupErrors = array_values(array_filter([
-            $daytime['cleanup_error'] ?? null,
-            $overtime['cleanup_error'] ?? null,
-        ]));
+        $cleanupErrors = array_values(array_filter(array_map(
+            fn (array $report): ?string => $report['cleanup_error'] ?? null,
+            $reports
+        )));
+        $first = $reports[0] ?? [];
 
         return [
-            'resource_id' => implode(',', array_unique([(string) $daytime['resource_id'], (string) $overtime['resource_id']])),
-            'template_id' => $daytime['template_id'].'+'.$overtime['template_id'],
-            'template_name' => $daytime['template_name'].' + '.$overtime['template_name'],
-            'template_type' => $daytime['template_type'] ?: $overtime['template_type'],
-            'object_id' => $daytime['object_id'],
-            'from' => $daytime['from'],
-            'to' => $daytime['to'],
+            'resource_id' => (string) ($first['resource_id'] ?? ''),
+            'template_id' => (string) ($first['template_id'] ?? ''),
+            'template_name' => (string) ($first['template_name'] ?? ''),
+            'template_type' => $first['template_type'] ?? null,
+            'object_id' => $first['object_id'] ?? null,
+            'from' => $reports[0]['from'] ?? null,
+            'to' => $reports[array_key_last($reports)]['to'] ?? null,
             'tables' => $tables,
-            'sources' => [
-                'daytime' => $this->reportMetadata($daytime),
-                'overtime' => $this->reportMetadata($overtime),
-            ],
+            'sources' => collect($reports)
+                ->map(fn (array $report): array => [
+                    ...$this->reportMetadata($report),
+                    'source_shift' => $report['source_shift'] ?? null,
+                    'business_date' => $report['business_date'] ?? null,
+                    'window_name' => $report['window_name'] ?? null,
+                ])
+                ->values()
+                ->all(),
             'cleanup_error' => implode(' | ', $cleanupErrors),
         ];
+    }
+
+    /**
+     * @return array<int, array{source: 'daytime'|'overtime', name: string, date: string, from: CarbonInterface, to: CarbonInterface}>
+     */
+    private function shiftWindows(CarbonInterface $from, CarbonInterface $to): array
+    {
+        $timezone = (string) config('fleet_efficiency.timezone', 'Asia/Baku');
+        $from = CarbonImmutable::instance($from)->timezone($timezone);
+        $to = CarbonImmutable::instance($to)->timezone($timezone);
+        $windows = [];
+
+        foreach (CarbonPeriod::create($from->startOfDay(), $to->startOfDay()) as $date) {
+            $date = CarbonImmutable::instance($date)->timezone($timezone);
+            $businessDate = $date->toDateString();
+            $dayStart = $date->setTimeFromTimeString((string) config('fleet_efficiency.day_shift.start', '08:00:00'));
+            $dayEnd = $date->setTimeFromTimeString((string) config('fleet_efficiency.day_shift.end', '17:59:59'));
+
+            foreach ([
+                ['source' => 'overtime', 'name' => 'overtime_morning', 'from' => $date->startOfDay(), 'to' => $dayStart->subSecond()],
+                ['source' => 'daytime', 'name' => 'daytime', 'from' => $dayStart, 'to' => $dayEnd],
+                ['source' => 'overtime', 'name' => 'overtime_evening', 'from' => $dayEnd->addSecond(), 'to' => $date->endOfDay()],
+            ] as $window) {
+                $windowFrom = $window['from']->max($from);
+                $windowTo = $window['to']->min($to);
+
+                if ($windowFrom->greaterThan($windowTo)) {
+                    continue;
+                }
+
+                $windows[] = [
+                    'source' => $window['source'],
+                    'name' => $window['name'],
+                    'date' => $businessDate,
+                    'from' => $windowFrom,
+                    'to' => $windowTo,
+                ];
+            }
+        }
+
+        return $windows;
     }
 
     /**

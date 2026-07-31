@@ -36,6 +36,8 @@ class WialonShiftReportParser
                 '_current_table_index' => (int) ($reportTable['index'] ?? $tableIndex),
                 '_current_table_position' => (int) $tableIndex,
                 '_current_table_count' => count($report['tables'] ?? []),
+                '_business_date' => $reportTable['_business_date'] ?? null,
+                '_window_name' => $reportTable['_window_name'] ?? null,
                 '_forced_shift_field' => match ($reportTable['_source_shift'] ?? null) {
                     'daytime' => 'daytime_hours',
                     'overtime' => 'overtime_hours',
@@ -120,23 +122,36 @@ class WialonShiftReportParser
             $daytimeHours = $directHours['daytime_hours'] ?? null;
             $overtimeHours = $directHours['overtime_hours'] ?? null;
             $totalHours = $directHours['total_hours'] ?? null;
+            $daytimeSeconds = $directHours['daytime_seconds'] ?? null;
+            $overtimeSeconds = $directHours['overtime_seconds'] ?? null;
+            $totalSeconds = $directHours['total_seconds'] ?? null;
             $reason = $this->reason($daytimeHours, $overtimeHours, $directHours);
         } elseif ($groupedShift !== null) {
             $daytimeHours = $groupedShift['shift'] === 'daytime_hours' ? $groupedShift['hours'] : null;
             $overtimeHours = $groupedShift['shift'] === 'overtime_hours' ? $groupedShift['hours'] : null;
             $totalHours = $groupedShift['hours'];
+            $daytimeSeconds = $groupedShift['shift'] === 'daytime_hours' ? $groupedShift['seconds'] : null;
+            $overtimeSeconds = $groupedShift['shift'] === 'overtime_hours' ? $groupedShift['seconds'] : null;
+            $totalSeconds = $groupedShift['seconds'];
             $reason = 'grouped_shift_row';
         } elseif (($tableShift = $this->tableShiftHours($row, $report, $headers, $cells)) !== null) {
             $daytimeHours = $tableShift['shift'] === 'daytime_hours' ? $tableShift['hours'] : null;
             $overtimeHours = $tableShift['shift'] === 'overtime_hours' ? $tableShift['hours'] : null;
             $totalHours = $tableShift['hours'];
+            $daytimeSeconds = $tableShift['shift'] === 'daytime_hours' ? $tableShift['seconds'] : null;
+            $overtimeSeconds = $tableShift['shift'] === 'overtime_hours' ? $tableShift['seconds'] : null;
+            $totalSeconds = $tableShift['seconds'];
             $reason = 'table_shift_row';
         } else {
             return null;
         }
 
-        if ($daytimeHours !== null && $overtimeHours !== null) {
+        if ($daytimeSeconds !== null && $overtimeSeconds !== null) {
+            $totalSeconds = $daytimeSeconds + $overtimeSeconds;
+            $totalHours = $totalSeconds / 3600;
+        } elseif ($daytimeHours !== null && $overtimeHours !== null) {
             $totalHours = $daytimeHours + $overtimeHours;
+            $totalSeconds = $this->hoursToSeconds($totalHours);
         }
 
         return [
@@ -144,8 +159,11 @@ class WialonShiftReportParser
             'unit_name' => $unitName,
             'statistic_date' => $date->toDateString(),
             'daytime_hours' => $daytimeHours === null ? null : round(max(0, $daytimeHours), 2),
+            'daytime_seconds' => $daytimeSeconds === null ? null : max(0, (int) $daytimeSeconds),
             'overtime_hours' => $overtimeHours === null ? null : round(max(0, $overtimeHours), 2),
+            'overtime_seconds' => $overtimeSeconds === null ? null : max(0, (int) $overtimeSeconds),
             'total_hours' => $totalHours === null ? null : round(max(0, $totalHours), 2),
+            'total_seconds' => $totalSeconds === null ? null : max(0, (int) $totalSeconds),
             'source_intervals' => [],
             'source_table' => (string) ($report['_current_table'] ?? ''),
             'reason' => $reason,
@@ -180,23 +198,30 @@ class WialonShiftReportParser
 
     public function parseDuration(mixed $value): ?float
     {
+        $seconds = $this->parseDurationSeconds($value);
+
+        return $seconds === null ? null : $seconds / 3600;
+    }
+
+    public function parseDurationSeconds(mixed $value): ?int
+    {
         if (is_array($value)) {
-            $text = $this->normalizeCellValue($value['t'] ?? null);
-
-            if ($text !== '') {
-                $parsed = $this->parseDuration($text);
-
-                if ($parsed !== null) {
-                    return $parsed;
-                }
-            }
-
             $numeric = $value['v'] ?? null;
 
             if (is_numeric($numeric)) {
                 $number = (float) $numeric;
 
-                return $number > 24 ? $number / 3600 : $number;
+                return (int) round((($value['vt'] ?? null) === 42 || $number > 24) ? $number : $number * 3600);
+            }
+
+            $text = $this->normalizeCellValue($value['t'] ?? null);
+
+            if ($text !== '') {
+                $parsed = $this->parseDurationSeconds($text);
+
+                if ($parsed !== null) {
+                    return $parsed;
+                }
             }
 
             $value = $text;
@@ -214,20 +239,20 @@ class WialonShiftReportParser
             $minutes = (int) $matches[3];
             $seconds = (int) ($matches[4] ?? 0);
 
-            return (($days * 24 + $hours) * 3600 + $minutes * 60 + $seconds) / 3600;
+            return ($days * 24 + $hours) * 3600 + $minutes * 60 + $seconds;
         }
 
         if (preg_match('/^\d+(?:[,.]\d+)?$/', $text)) {
             $number = (float) str_replace(',', '.', $text);
 
-            return $number > 24 ? $number / 3600 : $number;
+            return (int) round($number > 24 ? $number : $number * 3600);
         }
 
         if (preg_match('/(?:(\d+(?:[,.]\d+)?)\s*saat)?\s*(?:(\d+)\s*d[eə]qiq[eə])?/iu', $text, $matches) && trim($matches[0] ?? '') !== '') {
             $hours = (float) str_replace(',', '.', $matches[1] ?? '0');
             $minutes = (int) ($matches[2] ?? 0);
 
-            return $hours + ($minutes / 60);
+            return (int) round($hours * 3600 + $minutes * 60);
         }
 
         return null;
@@ -455,7 +480,7 @@ class WialonShiftReportParser
     }
 
     /**
-     * @return array{daytime_hours?: float|null, overtime_hours?: float|null, total_hours?: float|null}
+     * @return array{daytime_hours?: float|null, daytime_seconds?: int|null, overtime_hours?: float|null, overtime_seconds?: int|null, total_hours?: float|null, total_seconds?: int|null}
      */
     private function directShiftHours(array $headers, array $cells): array
     {
@@ -465,22 +490,22 @@ class WialonShiftReportParser
         $result = [];
 
         if ($dayIndex !== null) {
-            $result['daytime_hours'] = $this->parseDuration($cells[$dayIndex] ?? null);
+            $this->setDuration($result, 'daytime', $cells[$dayIndex] ?? null);
         }
 
         if ($overtimeIndex !== null) {
-            $result['overtime_hours'] = $this->parseDuration($cells[$overtimeIndex] ?? null);
+            $this->setDuration($result, 'overtime', $cells[$overtimeIndex] ?? null);
         }
 
         if ($totalIndex !== null && $totalIndex !== $dayIndex && $totalIndex !== $overtimeIndex) {
-            $result['total_hours'] = $this->parseDuration($cells[$totalIndex] ?? null);
+            $this->setDuration($result, 'total', $cells[$totalIndex] ?? null);
         }
 
         return array_filter($result, fn (mixed $value): bool => $value !== null);
     }
 
     /**
-     * @return array{shift: 'daytime_hours'|'overtime_hours', hours: float|null}|null
+     * @return array{shift: 'daytime_hours'|'overtime_hours', hours: float|null, seconds: int|null}|null
      */
     private function groupedShiftHours(array $row, array $headers, array $cells): ?array
     {
@@ -498,17 +523,21 @@ class WialonShiftReportParser
             return [
                 'shift' => $shift,
                 'hours' => null,
+                'seconds' => null,
             ];
         }
 
+        $seconds = $this->parseDurationSeconds($cells[$hoursIndex] ?? null);
+
         return [
             'shift' => $shift,
-            'hours' => $this->parseDuration($cells[$hoursIndex] ?? null),
+            'hours' => $seconds === null ? null : $seconds / 3600,
+            'seconds' => $seconds,
         ];
     }
 
     /**
-     * @return array{shift: 'daytime_hours'|'overtime_hours', hours: float|null}|null
+     * @return array{shift: 'daytime_hours'|'overtime_hours', hours: float|null, seconds: int|null}|null
      */
     private function tableShiftHours(array $row, array $report, array $headers, array $cells): ?array
     {
@@ -524,10 +553,28 @@ class WialonShiftReportParser
             return null;
         }
 
+        $seconds = $this->parseDurationSeconds($cells[$hoursIndex] ?? null);
+
         return [
             'shift' => $shift,
-            'hours' => $this->parseDuration($cells[$hoursIndex] ?? null),
+            'hours' => $seconds === null ? null : $seconds / 3600,
+            'seconds' => $seconds,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function setDuration(array &$result, string $prefix, mixed $value): void
+    {
+        $seconds = $this->parseDurationSeconds($value);
+
+        if ($seconds === null) {
+            return;
+        }
+
+        $result[$prefix.'_seconds'] = $seconds;
+        $result[$prefix.'_hours'] = $seconds / 3600;
     }
 
     private function tableShiftField(array $report, ?array $row = null, array $headers = [], array $cells = []): ?string
@@ -578,6 +625,10 @@ class WialonShiftReportParser
     {
         if ($this->tableShiftField($report, $row, $headers, $cells) === null) {
             return null;
+        }
+
+        if (! empty($report['_business_date'])) {
+            return CarbonImmutable::parse((string) $report['_business_date'], $this->timezone())->startOfDay();
         }
 
         $beginningIndex = $this->columnIndex($headers, ['beginning', 'start', 'from']);
@@ -824,7 +875,18 @@ class WialonShiftReportParser
             $existing[$field] = round(max(0, (float) ($existing[$field] ?? 0) + (float) $record[$field]), 2);
         }
 
-        $existing['total_hours'] = $this->sumKnownShiftHours($existing);
+        foreach (['daytime_seconds', 'overtime_seconds'] as $field) {
+            if (($record[$field] ?? null) === null) {
+                continue;
+            }
+
+            $existing[$field] = max(0, (int) ($existing[$field] ?? 0) + (int) $record[$field]);
+        }
+
+        $existing['total_seconds'] = $this->sumKnownShiftSeconds($existing);
+        $existing['total_hours'] = $existing['total_seconds'] === null
+            ? $this->sumKnownShiftHours($existing)
+            : round($existing['total_seconds'] / 3600, 2);
         $existing['wialon_unit_id'] = $existing['wialon_unit_id'] ?: $record['wialon_unit_id'];
         $existing['unit_name'] = $existing['unit_name'] ?: $record['unit_name'];
         $existing['reason'] = $this->mergedShiftReason($existing, $record);
@@ -851,9 +913,12 @@ class WialonShiftReportParser
             return $record;
         }
 
+        $record['daytime_seconds'] = max(0, (int) ($record['daytime_seconds'] ?? $this->hoursToSeconds($record['daytime_hours'] ?? 0)));
+        $record['overtime_seconds'] = max(0, (int) ($record['overtime_seconds'] ?? $this->hoursToSeconds($record['overtime_hours'] ?? 0)));
+        $record['total_seconds'] = $record['daytime_seconds'] + $record['overtime_seconds'];
         $record['daytime_hours'] = round(max(0, (float) ($record['daytime_hours'] ?? 0)), 2);
         $record['overtime_hours'] = round(max(0, (float) ($record['overtime_hours'] ?? 0)), 2);
-        $record['total_hours'] = round($record['daytime_hours'] + $record['overtime_hours'], 2);
+        $record['total_hours'] = round($record['total_seconds'] / 3600, 2);
         $record['reason'] = 'grouped_shift_rows';
 
         return $record;
@@ -866,6 +931,20 @@ class WialonShiftReportParser
         }
 
         return round(max(0, (float) ($record['daytime_hours'] ?? 0) + (float) ($record['overtime_hours'] ?? 0)), 2);
+    }
+
+    private function sumKnownShiftSeconds(array $record): ?int
+    {
+        if (($record['daytime_seconds'] ?? null) === null && ($record['overtime_seconds'] ?? null) === null) {
+            return null;
+        }
+
+        return max(0, (int) ($record['daytime_seconds'] ?? 0) + (int) ($record['overtime_seconds'] ?? 0));
+    }
+
+    private function hoursToSeconds(mixed $hours): int
+    {
+        return (int) round(max(0, (float) $hours) * 3600);
     }
 
     private function reason(?float $daytimeHours, ?float $overtimeHours, array $directHours): string

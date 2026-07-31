@@ -310,20 +310,19 @@ class WialonShiftReportTest extends TestCase
         $this->assertSame('Qrup report overtime (api)', $service->settingsFor('overtime')['template_name']);
     }
 
-    public function test_report_service_executes_daytime_and_overtime_templates_separately(): void
+    public function test_report_service_executes_engine_hours_template_for_three_shift_windows(): void
     {
         config([
-            'fleet.wialon.shift_daytime_report_resource_id' => 601701680,
-            'fleet.wialon.shift_daytime_report_template_id' => 21,
-            'fleet.wialon.shift_daytime_report_template_name' => 'Qrup report daytime (api)',
-            'fleet.wialon.shift_overtime_report_resource_id' => 601701680,
-            'fleet.wialon.shift_overtime_report_template_id' => 22,
-            'fleet.wialon.shift_overtime_report_template_name' => 'Qrup report overtime (api)',
+            'fleet.wialon.shift_engine_hours_report_resource_id' => 601701680,
+            'fleet.wialon.shift_engine_hours_report_template_id' => 31,
+            'fleet.wialon.shift_engine_hours_report_template_name' => 'Qrup report Engine hours (api)',
         ]);
 
         $wialon = new class extends WialonService
         {
             public array $templateCalls = [];
+
+            public array $windows = [];
 
             private array $rows = [];
 
@@ -341,12 +340,18 @@ class WialonShiftReportTest extends TestCase
                 ?int $requestTimeout = null
             ): array {
                 $this->templateCalls[] = (int) $templateId;
-                $this->rows = (int) $templateId === 21
-                    ? [['uid' => '7001', 'c' => ['Unit both shifts', '8.00']]]
-                    : [
+                $this->windows[] = [
+                    CarbonImmutable::createFromTimestamp($from, 'Asia/Baku')->format('H:i:s'),
+                    CarbonImmutable::createFromTimestamp($to, 'Asia/Baku')->format('H:i:s'),
+                ];
+                $this->rows = match (CarbonImmutable::createFromTimestamp($from, 'Asia/Baku')->format('H:i:s')) {
+                    '00:00:00' => [['uid' => '7002', 'c' => ['Unit night only', '2.00']]],
+                    '08:00:00' => [['uid' => '7001', 'c' => ['Unit both shifts', '8.00']]],
+                    default => [
                         ['uid' => '7001', 'c' => ['Unit both shifts', '3.00']],
-                        ['uid' => '7002', 'c' => ['Unit night only', '12.00']],
-                    ];
+                        ['uid' => '7002', 'c' => ['Unit night only', '10.00']],
+                    ],
+                };
 
                 return [
                     'reportResult' => [
@@ -372,8 +377,13 @@ class WialonShiftReportTest extends TestCase
         $report = $service->executeForGroupWithSession('601701915', $date, $date->endOfDay(), 'sid');
         $records = collect(app(WialonShiftReportParser::class)->parse($report)['records'])->keyBy('wialon_unit_id');
 
-        $this->assertSame([21, 22], $wialon->templateCalls);
-        $this->assertSame('Qrup report daytime (api) + Qrup report overtime (api)', $report['template_name']);
+        $this->assertSame([31, 31, 31], $wialon->templateCalls);
+        $this->assertSame([
+            ['00:00:00', '07:59:59'],
+            ['08:00:00', '17:59:59'],
+            ['18:00:00', '23:59:59'],
+        ], $wialon->windows);
+        $this->assertSame('Qrup report Engine hours (api)', $report['template_name']);
         $this->assertSame(8.0, $records['7001']['daytime_hours']);
         $this->assertSame(3.0, $records['7001']['overtime_hours']);
         $this->assertSame(0.0, $records['7002']['daytime_hours']);

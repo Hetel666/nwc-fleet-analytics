@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Support\DashboardDateRangePolicy;
+use App\Support\DurationFormatter;
 use App\Support\FleetVehicleType;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -78,6 +79,7 @@ class DashboardFleetDrilldownService
             'overtime_hours_max' => $this->nullableFloat($input['overtime_hours_max'] ?? null),
             'total_hours_min' => $this->nullableFloat($input['total_hours_min'] ?? null),
             'total_hours_max' => $this->nullableFloat($input['total_hours_max'] ?? null),
+            'duration_format' => DurationFormatter::normalize($input['duration_format'] ?? null),
             'unit_name' => trim((string) ($input['unit_name'] ?? '')),
             'registration_number' => trim((string) ($input['registration_number'] ?? '')),
             'wialon_id' => trim((string) ($input['wialon_id'] ?? '')),
@@ -331,9 +333,12 @@ class DashboardFleetDrilldownService
                 'vehicle_type' => 'Texnika növü',
                 'ownership' => 'Mənsubiyyət',
                 'project' => 'Layihə',
-                'daytime_hours' => 'Gündüz iş saatı',
-                'overtime_hours' => 'Overtime saatı',
-                'total_hours' => 'Ümumi iş saatı',
+                'daytime_hours' => 'Gunduz Engine hours, '.DurationFormatter::labelSuffix($filters['duration_format'] ?? null),
+                'overtime_hours' => 'Gece Engine hours, '.DurationFormatter::labelSuffix($filters['duration_format'] ?? null),
+                'total_hours' => 'Umumi Engine hours, '.DurationFormatter::labelSuffix($filters['duration_format'] ?? null),
+                'daytime_seconds' => 'Gunduz saniye',
+                'overtime_seconds' => 'Gece saniye',
+                'total_seconds' => 'Umumi saniye',
                 'work_status_label' => 'Əsas iş statusu',
                 'overtime_label' => 'Overtime',
                 'data_status' => 'Məlumat statusu',
@@ -406,6 +411,10 @@ class DashboardFleetDrilldownService
 
         if ($filters['has_overtime'] !== 'all') {
             $summary['Overtime'] = $filters['has_overtime'] === 'yes' ? 'Var' : 'Yoxdur';
+        }
+
+        if ($filters['work_category'] || $filters['day_status']) {
+            $summary['Müddət formatı'] = DurationFormatter::labelSuffix($filters['duration_format'] ?? null);
         }
 
         foreach ([
@@ -804,6 +813,7 @@ class DashboardFleetDrilldownService
             'overtime_hours_max' => $filters['overtime_hours_max'],
             'total_hours_min' => $filters['total_hours_min'],
             'total_hours_max' => $filters['total_hours_max'],
+            'duration_format' => $filters['duration_format'],
             'unit_name' => $filters['unit_name'],
             'registration_number' => $filters['registration_number'],
             'wialon_id' => $filters['wialon_id'],

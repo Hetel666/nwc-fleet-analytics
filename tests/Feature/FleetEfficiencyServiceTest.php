@@ -243,7 +243,7 @@ class FleetEfficiencyServiceTest extends TestCase
         $this->assertSame('-', $missingRows[0][7]);
         $this->assertSame('-', $missingRows[0][8]);
         $this->assertSame('-', $missingRows[0][9]);
-        $this->assertSame('Məlumat yoxdur', $missingRows[0][12]);
+        $this->assertSame('Məlumat yoxdur', $missingRows[0][15]);
     }
 
     public function test_efficiency_boundaries_and_supplemental_indicators_are_counted_separately(): void

@@ -2532,6 +2532,14 @@
                                             <option value="no">Yoxdur</option>
                                         </select>
                                     </div>
+                                    <div class="col-12">
+                                        <label class="form-label" for="dashboardDrilldownDurationFormat">Müddət formatı</label>
+                                        <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDurationFormat" data-filter-name="duration_format">
+                                            <option value="decimal_hours">saat (yüzdə bir dəqiqliklə)</option>
+                                            <option value="hours_hms">saat:dəqiqə:saniyə</option>
+                                            <option value="days_hms">gün saat:dəqiqə:saniyə</option>
+                                        </select>
+                                    </div>
                                     <div class="col-4">
                                         <label class="form-label" for="dashboardDrilldownDayMin">Gündüz min</label>
                                         <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDayMin" data-filter-name="day_hours_min">
@@ -3760,6 +3768,31 @@ const drilldownNext = document.getElementById('dashboardDrilldownNext');
 const drilldownExport = document.getElementById('dashboardDrilldownExport');
 const drilldownRetry = document.getElementById('dashboardDrilldownRetry');
 const drilldownFormula = document.getElementById('dashboardDrilldownFormula');
+const efficiencyDurationFormatKey = 'efficiency_duration_format';
+const efficiencyDurationFormats = new Set(['days_hms', 'hours_hms', 'decimal_hours']);
+
+const readEfficiencyDurationFormat = () => {
+    try {
+        const value = window.localStorage?.getItem(efficiencyDurationFormatKey);
+
+        return efficiencyDurationFormats.has(value) ? value : 'decimal_hours';
+    } catch (error) {
+        return 'decimal_hours';
+    }
+};
+
+const saveEfficiencyDurationFormat = value => {
+    if (!efficiencyDurationFormats.has(value)) {
+        return;
+    }
+
+    try {
+        window.localStorage?.setItem(efficiencyDurationFormatKey, value);
+    } catch (error) {
+        // localStorage can be unavailable in private or restricted browser modes.
+    }
+};
+
 let drilldownController = null;
 let drilldownRequestId = 0;
 let drilldownReturnFocus = null;
@@ -3845,6 +3878,7 @@ const baseDrilldownFilters = () => ({
     equipment_type_id: dashboardPage?.dataset.dashboardEquipmentTypeId || '',
     ownership: dashboardPage?.dataset.dashboardOwnership || 'all',
     data_status: 'all',
+    duration_format: readEfficiencyDurationFormat(),
     per_page: 20,
 });
 
@@ -3888,6 +3922,7 @@ const drilldownFilterLabels = {
     overtime_hours_max: 'Overtime max',
     total_hours_min: 'Ümumi min',
     total_hours_max: 'Ümumi max',
+    duration_format: 'Müddət formatı',
     unit_name: 'Texnika',
     registration_number: 'Qeydiyyat nişanı',
     wialon_id: 'Wialon ID',
@@ -3900,6 +3935,7 @@ const drilldownValueLabels = {
     work_category: { less_than_1_hour: @json(__('app.worked_less_than_1_hour')), less_than_7_hours: @json(__('app.worked_less_than_7_hours')), between_7_and_10_hours: @json(__('app.worked_7_to_10_hours')), night_shift_only: @json(__('app.worked_night_shift_only')), over_10_hours: @json(__('app.worked_over_10_hours')), overtime: @json(__('app.worked_overtime_hours')), no_data: @json(__('app.equipment_without_data')) },
     day_status: { less_than_1_hour: @json(__('app.worked_less_than_1_hour')), less_than_7_hours: @json(__('app.worked_less_than_7_hours')), between_7_and_10_hours: @json(__('app.worked_7_to_10_hours')), night_shift_only: @json(__('app.worked_night_shift_only')), over_10_hours: @json(__('app.worked_over_10_hours')) },
     has_overtime: { all: 'Hamısı', yes: 'Var', no: 'Yoxdur' },
+    duration_format: { decimal_hours: 'saat (yüzdə bir dəqiqliklə)', hours_hms: 'saat:dəqiqə:saniyə', days_hms: 'gün saat:dəqiqə:saniyə' },
     vehicle_types: @json($efficiencyVehicleTypes),
 };
 
@@ -4042,6 +4078,10 @@ const collectDrilldownControlFilters = () => {
         filters[name] = control.value;
     });
 
+    if (filters.duration_format) {
+        saveEfficiencyDurationFormat(filters.duration_format);
+    }
+
     return cleanDrilldownFilters(filters);
 };
 
@@ -4052,7 +4092,7 @@ const renderDrilldownChips = () => {
 
     drilldownChips.textContent = '';
     const hidden = new Set(['page', 'per_page', 'sort', 'direction', 'title', 'view', 'date_from', 'date_to', 'ownership', 'geofence_violation', 'current_geozone_project_id', 'current_geozone_id', 'current_geozone_key', 'top_working_equipment_id', 'top_working_stat_date', 'top_working_ranking', 'metric']);
-    const defaultValues = { ownership: 'all', data_status: 'all', has_overtime: 'all', group_by: 'details' };
+    const defaultValues = { ownership: 'all', data_status: 'all', has_overtime: 'all', group_by: 'details', duration_format: 'decimal_hours' };
 
     Object.entries(cleanDrilldownFilters(drilldownState.filters)).forEach(([name, value]) => {
         if (name === 'work_category' && drilldownState.filters.day_status === value) {
@@ -4138,7 +4178,14 @@ const renderDrilldownRows = rows => {
 
         columns.forEach(key => {
             const td = document.createElement('td');
-            const value = key === 'number' ? rowNumber : row[key];
+            const formattedDurationKey = {
+                daytime_hours: 'daytime_formatted',
+                overtime_hours: 'overtime_formatted',
+                total_hours: 'total_formatted',
+            }[key];
+            const value = key === 'number'
+                ? rowNumber
+                : (formattedDurationKey && row[formattedDurationKey] !== undefined ? row[formattedDurationKey] : row[key]);
             const isSummaryNumber = ['project_types', 'efficiency_projects'].includes(drilldownState.mode)
                 && ['nwc_count', 'icare_count', 'count'].includes(key);
             const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
@@ -4709,7 +4756,7 @@ drilldownApplyFilters?.addEventListener('click', () => {
 });
 
 drilldownClearFilters?.addEventListener('click', () => {
-    drilldownState.filters = { ...drilldownState.baseFilters, page: 1 };
+    drilldownState.filters = { ...drilldownState.baseFilters, duration_format: readEfficiencyDurationFormat(), page: 1 };
     syncDrilldownFilterControls();
     loadDashboardDrilldown();
 });
@@ -4735,6 +4782,18 @@ drilldownGroupMode?.addEventListener('change', () => {
     drilldownState.filters.page = 1;
     loadDashboardDrilldown();
 });
+
+drilldownFilterControls
+    .filter(control => control.dataset.filterName === 'duration_format')
+    .forEach(control => {
+        control.addEventListener('change', () => {
+            const value = efficiencyDurationFormats.has(control.value) ? control.value : 'decimal_hours';
+            saveEfficiencyDurationFormat(value);
+            drilldownState.filters.duration_format = value;
+            drilldownState.filters.page = 1;
+            loadDashboardDrilldown();
+        });
+    });
 
 drilldownPrev?.addEventListener('click', () => {
     const currentPage = Number(drilldownState.meta?.current_page || 1);

@@ -811,6 +811,67 @@ class DashboardDrilldownTest extends TestCase
             ->assertJsonPath('data.0.name', 'Repair unit');
     }
 
+    public function test_efficiency_drilldown_accepts_duration_format_and_returns_formatted_seconds(): void
+    {
+        $user = $this->user();
+        $project = Project::query()->create(['name' => 'Project A', 'active' => true]);
+        $this->projectGroup($project, '601701201', Equipment::OWNERSHIP_NWC);
+        $type = EquipmentType::query()->create(['name' => 'Excavator']);
+        $equipment = Equipment::query()->create([
+            'name' => 'Formatted Excavator',
+            'wialon_unit_id' => '9001',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'matched_wialon_group_id' => '601701201',
+            'active' => true,
+        ]);
+
+        EquipmentDailyStat::query()->create([
+            'stat_date' => '2026-07-29',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 25.02,
+            'daytime_hours' => 0.5,
+            'daytime_seconds' => 1800,
+            'overtime_hours' => 24.52,
+            'overtime_seconds' => 88261,
+            'total_hours' => 25.02,
+            'total_seconds' => 90061,
+            'day_status' => 'less_than_1_hour',
+            'has_overtime' => true,
+            'data_available' => true,
+            'calculation_source' => 'wialon_shift_report',
+            'calculation_status' => 'ok',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-29',
+                'ownership' => 'nwc',
+                'work_category' => 'less_than_1_hour',
+                'duration_format' => 'hours_hms',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.0.daytime_seconds', 1800)
+            ->assertJsonPath('data.0.daytime_formatted', '00:30:00')
+            ->assertJsonPath('data.0.total_seconds', 90061)
+            ->assertJsonPath('data.0.total_formatted', '25:01:01')
+            ->assertJsonPath('data.0.duration_format', 'hours_hms');
+
+        $this->actingAs($user)
+            ->getJson(route('dashboard.drilldown.units', [
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-29',
+                'ownership' => 'nwc',
+                'work_category' => 'less_than_1_hour',
+                'duration_format' => 'bad',
+            ]))
+            ->assertUnprocessable();
+    }
+
     private function user(): User
     {
         return User::query()->create([

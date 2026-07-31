@@ -112,8 +112,11 @@ class FleetShiftDailyStatsSyncService
         $daytime = $record['daytime_hours'] ?? null;
         $overtime = $record['overtime_hours'] ?? null;
         $total = $record['total_hours'] ?? null;
-        $dataAvailable = $record !== null && $daytime !== null && $overtime !== null;
-        $hasOvertime = $overtime === null ? null : (float) $overtime > 0;
+        $daytimeSeconds = $this->nullableSeconds($record['daytime_seconds'] ?? null, $daytime);
+        $overtimeSeconds = $this->nullableSeconds($record['overtime_seconds'] ?? null, $overtime);
+        $totalSeconds = $this->nullableSeconds($record['total_seconds'] ?? null, $total);
+        $dataAvailable = $record !== null && $daytimeSeconds !== null && $overtimeSeconds !== null;
+        $hasOvertime = $overtimeSeconds === null ? null : $overtimeSeconds > 0;
         $existing = EquipmentDailyStat::query()
             ->where('stat_date', $statDate)
             ->where('equipment_id', $equipment->id)
@@ -123,12 +126,18 @@ class FleetShiftDailyStatsSyncService
             return $existing;
         }
 
-        if ($daytime !== null && $overtime !== null) {
+        if ($daytimeSeconds !== null && $overtimeSeconds !== null) {
+            $totalSeconds = $daytimeSeconds + $overtimeSeconds;
+            $daytime = $daytimeSeconds / 3600;
+            $overtime = $overtimeSeconds / 3600;
+            $total = $totalSeconds / 3600;
+        } elseif ($daytime !== null && $overtime !== null) {
             $total = (float) $daytime + (float) $overtime;
+            $totalSeconds = (int) round($total * 3600);
         }
 
         $dayStatus = $dataAvailable
-            ? $this->efficiency->efficiencyStatusForHours((float) $daytime, $total === null ? null : (float) $total)
+            ? $this->efficiency->efficiencyStatusForSeconds($daytimeSeconds, $totalSeconds)
             : null;
 
         return EquipmentDailyStat::updateOrCreate(
@@ -138,8 +147,11 @@ class FleetShiftDailyStatsSyncService
                 'ownership_type' => $equipment->ownership_type,
                 'worked_hours' => $total === null ? 0 : round((float) $total, 2),
                 'daytime_hours' => $daytime === null ? null : round((float) $daytime, 2),
+                'daytime_seconds' => $daytimeSeconds,
                 'overtime_hours' => $overtime === null ? null : round((float) $overtime, 2),
+                'overtime_seconds' => $overtimeSeconds,
                 'total_hours' => $total === null ? null : round((float) $total, 2),
+                'total_seconds' => $totalSeconds,
                 'day_status' => $dayStatus,
                 'has_overtime' => $hasOvertime,
                 'data_available' => $dataAvailable,
@@ -165,6 +177,19 @@ class FleetShiftDailyStatsSyncService
         }
 
         return $existing->worked_hours !== null || $existing->distance_km !== null;
+    }
+
+    private function nullableSeconds(mixed $seconds, mixed $hours): ?int
+    {
+        if ($seconds !== null && $seconds !== '') {
+            return max(0, (int) $seconds);
+        }
+
+        if ($hours === null || $hours === '') {
+            return null;
+        }
+
+        return (int) round(max(0, (float) $hours) * 3600);
     }
 
     /**
