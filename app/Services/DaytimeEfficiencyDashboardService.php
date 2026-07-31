@@ -25,6 +25,39 @@ final class DaytimeEfficiencyDashboardService
         ];
     }
 
+    /**
+     * Return the daytime report summaries in the common Dashboard filter shape.
+     * The full daytime page still owns pagination and row-level filtering.
+     *
+     * @param  array<string, mixed>  $dashboardFilters
+     * @return array<string, mixed>
+     */
+    public function dashboardSummaries(array $dashboardFilters): array
+    {
+        $filters = [
+            'date_from' => $dashboardFilters['from'],
+            'date_to' => $dashboardFilters['to'],
+            'project_id' => $dashboardFilters['project_id'] ?? null,
+            'equipment_type_id' => $dashboardFilters['equipment_type_id'] ?? null,
+            // Ownership is applied explicitly once per summary below so both
+            // cards stay correct when the common Dashboard is set to "all".
+            'ownership_type' => null,
+        ];
+
+        return [
+            'summaries' => [
+                'nwc' => $this->summary($filters, Equipment::OWNERSHIP_NWC),
+                'icare' => $this->summary($filters, Equipment::OWNERSHIP_ICARE),
+            ],
+            'labels' => $this->categoryLabels(),
+            'colors' => collect(config('daytime_efficiency.categories', []))
+                ->map(fn (array $category): string => $category['color'])
+                ->all(),
+            'source' => (string) config('daytime_efficiency.report_template_name'),
+            'timezone' => (string) config('daytime_efficiency.timezone', 'Asia/Baku'),
+        ];
+    }
+
     /** @return array<string, int> */
     public function summary(array $filters, string $ownership): array
     {

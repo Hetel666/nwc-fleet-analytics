@@ -108,6 +108,7 @@ class DashboardPerformanceProfileTest extends TestCase
         $this->assertEqualsCanonicalizing([
             'overview',
             'projectActualWorkHourCategoriesByOwnership',
+            'daytimeEfficiency',
             'dailyAverageDashboards',
             'leastWorking',
             'mostWorking',

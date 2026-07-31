@@ -92,6 +92,17 @@
     };
     $projectWorkCategorySummaryNwc = $projectWorkCategorySummaryFor($projectWorkCategoryRowsNwc);
     $projectWorkCategorySummaryIcare = $projectWorkCategorySummaryFor($projectWorkCategoryRowsIcare);
+    $daytimeEfficiency = $data['daytimeEfficiency'] ?? [
+        'summaries' => [$nwc => [], $icare => []],
+        'labels' => [],
+        'colors' => [],
+        'source' => config('daytime_efficiency.report_template_name'),
+        'timezone' => config('daytime_efficiency.timezone', 'Asia/Baku'),
+    ];
+    $daytimeEfficiencySummaries = $daytimeEfficiency['summaries'] ?? [];
+    $daytimeEfficiencyLabels = $daytimeEfficiency['labels'] ?? [];
+    $daytimeEfficiencyColors = $daytimeEfficiency['colors'] ?? [];
+    $daytimeEfficiencyCategoryOrder = array_keys(config('daytime_efficiency.categories', []));
     $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
     $projectComparisonTotals = [
         $nwc => (float) $projectComparisonRows->sum($nwc),
@@ -210,6 +221,7 @@
         'equipment-types-icare' => __('app.equipment_type_distribution').': '.__('app.ownership_icare'),
         'project-work-categories-nwc' => 'Project üzrə: '.__('app.ownership_nwc'),
         'project-work-categories-icare' => 'Project üzrə: '.__('app.ownership_icare'),
+        'daytime-efficiency' => 'Effektivlik gündüz',
         'average-engine-hours' => 'Orta motosaat göstəricisi',
         'average-mileage' => 'Orta yürüş göstəricisi',
         'least-working' => __('app.least_working'),
@@ -264,6 +276,106 @@
     }
     .dashboard-widget {
         transition: opacity .15s ease, transform .15s ease;
+    }
+    .daytime-efficiency-shell {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+    }
+    .daytime-efficiency-card {
+        min-width: 0;
+        overflow: hidden;
+    }
+    .daytime-efficiency-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .daytime-efficiency-card-header h3 {
+        font-size: 1rem;
+        margin: 0 0 3px;
+    }
+    .daytime-efficiency-card-header p {
+        color: var(--fleet-muted);
+        font-size: .76rem;
+        margin: 0;
+    }
+    .daytime-efficiency-content {
+        display: grid;
+        grid-template-columns: minmax(150px, .8fr) minmax(250px, 1.2fr);
+        align-items: center;
+        gap: 16px;
+    }
+    .daytime-efficiency-donut {
+        width: min(100%, 210px);
+        aspect-ratio: 1;
+        margin: 0 auto;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        position: relative;
+    }
+    .daytime-efficiency-donut::after {
+        content: '';
+        width: 58%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: var(--fleet-card);
+        position: absolute;
+    }
+    .daytime-efficiency-donut-center {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+        line-height: 1.1;
+    }
+    .daytime-efficiency-donut-center strong {
+        display: block;
+        font-size: 1.55rem;
+    }
+    .daytime-efficiency-donut-center span {
+        color: var(--fleet-muted);
+        font-size: .72rem;
+    }
+    .daytime-efficiency-summary {
+        width: 100%;
+        table-layout: fixed;
+        margin: 0;
+    }
+    .daytime-efficiency-summary th,
+    .daytime-efficiency-summary td {
+        padding: 7px 8px;
+        font-size: .78rem;
+    }
+    .daytime-efficiency-summary th:last-child,
+    .daytime-efficiency-summary td:last-child {
+        width: 58px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+    }
+    .daytime-efficiency-summary td:first-child {
+        overflow-wrap: anywhere;
+    }
+    .daytime-efficiency-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 7px;
+        vertical-align: 1px;
+    }
+    .daytime-efficiency-total td {
+        border-top: 2px solid var(--fleet-line);
+        font-weight: 800;
+    }
+    @media (max-width: 1050px) {
+        .daytime-efficiency-content { grid-template-columns: 1fr; }
+        .daytime-efficiency-donut { width: min(100%, 180px); }
+    }
+    @media (max-width: 700px) {
+        .daytime-efficiency-shell { grid-template-columns: 1fr; }
     }
     .dashboard-widget.is-editable .panel {
         outline: 1px dashed rgba(31, 111, 235, .38);
@@ -2120,6 +2232,15 @@
                     'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Project üzrə: '.__('app.ownership_icare')),
                 ])
             </div>
+
+            @if (config('daytime_efficiency.enabled', true))
+                @php
+                    $widgetLayout = $dashboardWidgetLayoutFor('daytime-efficiency', 'col-12', 12);
+                @endphp
+                <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('daytime-efficiency') }}" data-dashboard-widget="daytime-efficiency" data-widget-key="daytime-efficiency" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('daytime-efficiency') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+                    @include('dashboard.partials.daytime-efficiency-dashboard-cards')
+                </div>
+            @endif
 
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-xl-6', 6);

@@ -121,6 +121,14 @@ class DaytimeEfficiencyDashboardTest extends TestCase
             ->assertSee('10-AD-725')
             ->assertSee('2.11')
             ->assertDontSee('Qrup report overtime (api)');
+
+        $this->actingAs($admin)
+            ->get('/dashboard?tab=efficiency&date_from=2026-07-29&date_to=2026-07-29')
+            ->assertOk()
+            ->assertSee('data-dashboard-widget="daytime-efficiency"', false)
+            ->assertSee('Effektivlik gündüz: NWC üzrə')
+            ->assertSee('Qrup report daytime (api)')
+            ->assertSee('>1</strong>', false);
     }
 
     public function test_category_drill_down_keeps_date_and_ownership_filters(): void
