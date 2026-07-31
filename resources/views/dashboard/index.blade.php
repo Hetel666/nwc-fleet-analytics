@@ -93,6 +93,11 @@
     $projectWorkCategorySummaryNwc = $projectWorkCategorySummaryFor($projectWorkCategoryRowsNwc);
     $projectWorkCategorySummaryIcare = $projectWorkCategorySummaryFor($projectWorkCategoryRowsIcare);
     $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
+    $projectComparisonTotals = [
+        $nwc => (float) $projectComparisonRows->sum($nwc),
+        $icare => (float) $projectComparisonRows->sum($icare),
+    ];
+    $projectComparisonTotals['total'] = $projectComparisonTotals[$nwc] + $projectComparisonTotals[$icare];
     $projectComparisonTop = $projectComparisonRows->take(10)->values();
     $projectComparisonHasMore = $projectComparisonRows->count() > 10;
     $projectComparisonChartHeight = min(max($projectComparisonTop->count() * 34 + 80, 260), 520);
@@ -536,6 +541,30 @@
     .dashboard-scroll-table.dashboard-type-table,
     .dashboard-scroll-table.dashboard-type-table.is-expanded {
         max-height: 252px;
+    }
+    .dashboard-project-comparison-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+    .dashboard-project-comparison-table col:first-child {
+        width: auto;
+    }
+    .dashboard-project-comparison-table col:not(:first-child) {
+        width: 72px;
+    }
+    .dashboard-project-comparison-table th:not(:first-child),
+    .dashboard-project-comparison-table td:not(:first-child) {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .dashboard-project-comparison-table th:last-child,
+    .dashboard-project-comparison-table td:last-child {
+        font-weight: 800;
+    }
+    .dashboard-project-comparison-total td {
+        background: color-mix(in srgb, var(--fleet-blue) 8%, var(--fleet-card));
+        font-weight: 800;
+        border-bottom-width: 2px;
     }
     .dashboard-work-status-card {
         min-height: 470px;
@@ -2323,15 +2352,33 @@
                                     data-expandable="project-comparison"
                                     data-expanded="1"
                                 >
-                                    <table class="table table-sm align-middle mb-0">
+                                    <table class="table table-sm align-middle mb-0 dashboard-project-comparison-table">
+                                        <colgroup>
+                                            <col>
+                                            <col>
+                                            <col>
+                                            <col>
+                                        </colgroup>
                                         <thead>
                                             <tr>
                                                 <th>{{ __('app.project') }}</th>
                                                 <th class="text-end">NWC</th>
                                                 <th class="text-end">{{ __('app.ownership_icare') }}</th>
+                                                <th class="text-end">Cəmi</th>
                                             </tr>
                                         </thead>
                                         <tbody>
+                                            <tr
+                                                class="dashboard-project-comparison-total"
+                                                data-project-comparison-total-nwc="{{ (int) round($projectComparisonTotals[$nwc]) }}"
+                                                data-project-comparison-total-icare="{{ (int) round($projectComparisonTotals[$icare]) }}"
+                                                data-project-comparison-total="{{ (int) round($projectComparisonTotals['total']) }}"
+                                            >
+                                                <td>Cəmi</td>
+                                                <td class="text-end">{{ number_format($projectComparisonTotals[$nwc], 0) }}</td>
+                                                <td class="text-end">{{ number_format($projectComparisonTotals[$icare], 0) }}</td>
+                                                <td class="text-end">{{ number_format($projectComparisonTotals['total'], 0) }}</td>
+                                            </tr>
                                             @foreach ($projectComparisonRows as $row)
                                                 <tr class="{{ $loop->iteration > 10 ? 'expandable-extra' : '' }}">
                                                     <td>
@@ -2347,6 +2394,7 @@
                                                     </td>
                                                     <td class="text-end">{{ number_format($row[$nwc], 0) }}</td>
                                                     <td class="text-end">{{ number_format($row[$icare], 0) }}</td>
+                                                    <td class="text-end">{{ number_format($row['total'], 0) }}</td>
                                                 </tr>
                                             @endforeach
                                         </tbody>

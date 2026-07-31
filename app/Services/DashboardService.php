@@ -1067,13 +1067,20 @@ class DashboardService
                 ])
                 ->all(),
             'project-comparison' => collect($this->getProjectOwnershipComparison($filters))
-                ->map(fn (array $row): array => [
-                    $row['name'],
-                    $row[Equipment::OWNERSHIP_NWC],
-                    $row[Equipment::OWNERSHIP_ICARE],
-                    $row['total'],
-                ])
-                ->all(),
+                ->pipe(function ($rows): array {
+                    $projectRows = $rows->map(fn (array $row): array => [
+                        $row['name'],
+                        $row[Equipment::OWNERSHIP_NWC],
+                        $row[Equipment::OWNERSHIP_ICARE],
+                        $row['total'],
+                    ]);
+                    $nwcTotal = (float) $rows->sum(Equipment::OWNERSHIP_NWC);
+                    $icareTotal = (float) $rows->sum(Equipment::OWNERSHIP_ICARE);
+
+                    return $projectRows
+                        ->prepend(['Cəmi', $nwcTotal, $icareTotal, $nwcTotal + $icareTotal])
+                        ->all();
+                }),
             default => [
                 ['Ümumi işləmə saatı', $this->getOverview($filters)['total_hours']],
                 ['Ümumi məsafə', $this->getOverview($filters)['total_distance']],

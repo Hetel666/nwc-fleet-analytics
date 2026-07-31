@@ -68,6 +68,27 @@ class DashboardOwnershipShareTest extends TestCase
         ], $result[Equipment::OWNERSHIP_ICARE]);
     }
 
+    public function test_project_comparison_export_starts_with_ownership_totals(): void
+    {
+        $project = Project::create(['name' => 'Export totals project', 'active' => true]);
+        $type = EquipmentType::create(['name' => 'Exported']);
+        $nwcGroup = $this->projectGroup($project, '601709801', Equipment::OWNERSHIP_NWC, 'Export totals - NWC');
+        $icareGroup = $this->projectGroup($project, '601709802', Equipment::OWNERSHIP_ICARE, 'Export totals - ICARE');
+
+        $this->equipment($project, $type, $nwcGroup, 'NWC Unit 1', 'export-nwc-1');
+        $this->equipment($project, $type, $nwcGroup, 'NWC Unit 2', 'export-nwc-2');
+        $this->equipment($project, $type, $icareGroup, 'ICARE Unit', 'export-icare-1');
+
+        $rows = app(DashboardService::class)->getDashboardExport([
+            'project_id' => $project->id,
+            'from' => '2026-07-31',
+            'to' => '2026-07-31',
+        ], 'project-comparison')['sections'][0]['rows'];
+
+        $this->assertSame(['Cəmi', 2.0, 1.0, 3.0], $rows[0]);
+        $this->assertSame(['Export totals project', 2.0, 1.0, 3.0], $rows[1]);
+    }
+
     private function projectGroup(Project $project, string $groupId, string $ownershipType, string $name): ProjectWialonGroup
     {
         return ProjectWialonGroup::create([

@@ -156,6 +156,41 @@ class DashboardAccessTest extends TestCase
         $this->assertStringContainsString('>Gizlət</button>', $html);
     }
 
+    public function test_project_comparison_shows_ownership_and_grand_totals(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $admin = User::where('email', 'admin@example.com')->firstOrFail();
+        $project = Project::query()->create(['name' => 'Totals project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601709803',
+            'name' => 'Totals project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $type = EquipmentType::query()->firstOrCreate(['name' => 'Totals type']);
+        Equipment::query()->create([
+            'name' => 'Totals unit',
+            'wialon_unit_id' => 'totals-unit',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'matched_wialon_group_id' => $group->wialon_group_id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+        Cache::flush();
+        $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
+
+        $this->assertStringContainsString('dashboard-project-comparison-table', $html);
+        $this->assertStringContainsString('dashboard-project-comparison-total', $html);
+        $this->assertStringContainsString('data-project-comparison-total-nwc=', $html);
+        $this->assertStringContainsString('data-project-comparison-total-icare=', $html);
+        $this->assertStringContainsString('data-project-comparison-total=', $html);
+        $this->assertMatchesRegularExpression('/<th class="text-end">Cəmi<\/th>/', $html);
+    }
+
     public function test_project_comparison_uses_two_level_drilldown_without_ownership_override(): void
     {
         $this->seed(DemoSeeder::class);
