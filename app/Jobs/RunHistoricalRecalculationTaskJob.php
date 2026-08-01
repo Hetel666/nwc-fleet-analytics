@@ -22,14 +22,17 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
 {
     use Batchable, Queueable;
 
-    public int $timeout;
+    public int $timeout = 900;
 
-    public int $tries;
+    public int $tries = 3;
 
-    public function __construct(public int $taskId)
+    public bool $failOnTimeout = true;
+
+    public function __construct(public int $taskId) {}
+
+    public function backoff(): array
     {
-        $this->timeout = (int) config('historical_recalculation.timeout', 900);
-        $this->tries = max(1, (int) config('historical_recalculation.tries', 3));
+        return [60, 300];
     }
 
     public function handle(WialonReportStatsSyncService $sync, HistoricalRecalculationService $service): void

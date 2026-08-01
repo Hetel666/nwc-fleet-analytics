@@ -23,6 +23,8 @@ class DashboardExport extends Model
         'disk',
         'path',
         'file_name',
+        'mime_type',
+        'file_size',
         'error_message',
         'started_at',
         'completed_at',
@@ -33,6 +35,7 @@ class DashboardExport extends Model
     {
         return [
             'filters' => 'array',
+            'file_size' => 'integer',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
             'expires_at' => 'datetime',

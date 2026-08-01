@@ -30,6 +30,10 @@ php artisan view:cache
 chown -R www-data:www-data storage bootstrap/cache
 
 if [ "$#" -gt 0 ]; then
+    if [ "$(id -u)" = "0" ]; then
+        exec gosu www-data "$@"
+    fi
+
     exec "$@"
 fi
 

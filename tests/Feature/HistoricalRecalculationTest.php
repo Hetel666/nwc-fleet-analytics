@@ -497,6 +497,20 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
     }
 
+    public function test_historical_jobs_define_explicit_retry_and_timeout_policies(): void
+    {
+        $taskJob = new RunHistoricalRecalculationTaskJob(1);
+        $finalizeJob = new FinalizeHistoricalRecalculationJob(1);
+
+        $this->assertSame(3, $taskJob->tries);
+        $this->assertSame(900, $taskJob->timeout);
+        $this->assertTrue($taskJob->failOnTimeout);
+        $this->assertSame([60, 300], $taskJob->backoff());
+        $this->assertSame(3, $finalizeJob->tries);
+        $this->assertSame(300, $finalizeJob->timeout);
+        $this->assertTrue($finalizeJob->failOnTimeout);
+    }
+
     private function equipment(
         Project $project,
         ProjectWialonGroup $group,

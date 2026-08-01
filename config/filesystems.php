@@ -38,6 +38,13 @@ return [
             'report' => false,
         ],
 
+        'dashboard_exports' => [
+            'driver' => 'local',
+            'root' => env('DASHBOARD_EXPORT_ROOT', storage_path('app/dashboard-exports')),
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

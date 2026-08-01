@@ -86,7 +86,7 @@ return [
         'modal_max_period_days' => (int) env('DASHBOARD_MODAL_MAX_PERIOD_DAYS', 92),
         'export_max_period_days' => (int) env('DASHBOARD_EXPORT_MAX_PERIOD_DAYS', 366),
         'export_sync_max_days' => (int) env('DASHBOARD_EXPORT_SYNC_MAX_DAYS', 31),
-        'export_root' => env('DASHBOARD_EXPORT_ROOT', storage_path('app/private/dashboard-exports')),
+        'export_disk' => env('DASHBOARD_EXPORT_DISK', 'dashboard_exports'),
         'export_retention_hours' => (int) env('DASHBOARD_EXPORT_RETENTION_HOURS', 24),
         'reversed_date_range_mode' => env('DASHBOARD_REVERSED_DATE_RANGE_MODE', 'swap'),
     ],

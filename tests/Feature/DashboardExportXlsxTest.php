@@ -12,9 +12,12 @@ use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Services\DashboardService;
 use App\Services\XlsxExportService;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Mockery;
+use RuntimeException;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -141,22 +144,9 @@ class DashboardExportXlsxTest extends TestCase
 
     public function test_background_dashboard_export_generates_downloadable_file(): void
     {
-        $exportRoot = storage_path('framework/testing/dashboard-exports');
-        File::deleteDirectory($exportRoot);
-        config(['fleet.dashboard.export_root' => $exportRoot]);
+        Storage::fake('dashboard_exports');
         $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
-        $record = DashboardExport::query()->create([
-            'user_id' => $user->id,
-            'block' => 'overview',
-            'filters' => [
-                'from' => '2026-07-01',
-                'to' => '2026-07-01',
-                'project_id' => null,
-                'equipment_type_id' => null,
-                'ownership_type' => null,
-            ],
-            'status' => DashboardExport::STATUS_PENDING,
-        ]);
+        $record = $this->exportRecord($user);
 
         (new GenerateDashboardExportJob($record->id))->handle(
             app(DashboardService::class),
@@ -165,14 +155,124 @@ class DashboardExportXlsxTest extends TestCase
 
         $record->refresh();
         $this->assertSame(DashboardExport::STATUS_READY, $record->status);
-        $this->assertFileExists($exportRoot.DIRECTORY_SEPARATOR.$record->path);
+        $this->assertSame('dashboard_exports', $record->disk);
+        $this->assertSame('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', $record->mime_type);
+        $this->assertGreaterThan(0, $record->file_size);
+        Storage::disk('dashboard_exports')->assertExists($record->path);
 
         $this->actingAs($user)
             ->get(route('dashboard.exports.download', $record))
             ->assertOk()
             ->assertDownload($record->file_name);
+    }
 
-        File::deleteDirectory($exportRoot);
+    public function test_export_job_and_database_queue_have_explicit_runtime_policies(): void
+    {
+        $job = new GenerateDashboardExportJob(1);
+
+        $this->assertSame(2, $job->tries);
+        $this->assertSame(1800, $job->timeout);
+        $this->assertTrue($job->failOnTimeout);
+        $this->assertSame([120], $job->backoff());
+        $this->assertSame(2100, config('queue.connections.database.retry_after'));
+        $this->assertTrue(config('queue.connections.database.after_commit'));
+    }
+
+    public function test_background_export_job_is_idempotent_after_success(): void
+    {
+        Storage::fake('dashboard_exports');
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->exportRecord($user);
+        $job = new GenerateDashboardExportJob($record->id);
+
+        $job->handle(app(DashboardService::class), app(XlsxExportService::class));
+        $firstPath = $record->refresh()->path;
+        $job->handle(app(DashboardService::class), app(XlsxExportService::class));
+
+        $this->assertSame($firstPath, $record->refresh()->path);
+        $this->assertCount(1, Storage::disk('dashboard_exports')->allFiles());
+    }
+
+    public function test_export_download_is_forbidden_for_another_user(): void
+    {
+        Storage::fake('dashboard_exports');
+        $owner = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $other = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->readyExportRecord($owner);
+
+        $this->actingAs($other)
+            ->get(route('dashboard.exports.download', $record))
+            ->assertForbidden();
+    }
+
+    public function test_export_download_returns_not_found_when_file_is_missing(): void
+    {
+        Storage::fake('dashboard_exports');
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->readyExportRecord($user, storeFile: false);
+
+        $this->actingAs($user)
+            ->get(route('dashboard.exports.download', $record))
+            ->assertNotFound();
+    }
+
+    public function test_export_download_returns_conflict_while_pending(): void
+    {
+        Storage::fake('dashboard_exports');
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->exportRecord($user);
+
+        $this->actingAs($user)
+            ->get(route('dashboard.exports.download', $record))
+            ->assertStatus(409);
+    }
+
+    public function test_export_download_returns_gone_after_expiration(): void
+    {
+        Storage::fake('dashboard_exports');
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->readyExportRecord($user, expiresAt: now()->subMinute());
+
+        $this->actingAs($user)
+            ->get(route('dashboard.exports.download', $record))
+            ->assertStatus(410);
+    }
+
+    public function test_export_write_failure_does_not_mark_record_ready(): void
+    {
+        $disk = Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('put')->once()->andReturnFalse();
+        $disk->shouldReceive('delete')->once()->andReturnTrue();
+        Storage::shouldReceive('disk')->with('dashboard_exports')->andReturn($disk);
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->exportRecord($user);
+
+        try {
+            (new GenerateDashboardExportJob($record->id))->handle(
+                app(DashboardService::class),
+                app(XlsxExportService::class)
+            );
+            $this->fail('The export job should fail when the disk rejects the write.');
+        } catch (RuntimeException) {
+            // Expected write failure.
+        }
+
+        $record->refresh();
+        $this->assertSame(DashboardExport::STATUS_FAILED, $record->status);
+        $this->assertNull($record->completed_at);
+        $this->assertNull($record->path);
+    }
+
+    public function test_prune_command_deletes_expired_export_file_and_record(): void
+    {
+        Storage::fake('dashboard_exports');
+        $user = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+        $record = $this->readyExportRecord($user, expiresAt: now()->subMinute());
+
+        $this->artisan('fleet:prune-dashboard-exports')->assertSuccessful();
+
+        $this->assertDatabaseMissing('dashboard_exports', ['id' => $record->id]);
+        Storage::disk('dashboard_exports')->assertMissing($record->path);
     }
 
     public function test_background_export_can_exceed_modal_period_limit(): void
@@ -188,5 +288,44 @@ class DashboardExportXlsxTest extends TestCase
         ], 'least-working');
 
         $this->assertSame([], $export['sections'][0]['rows']);
+    }
+
+    private function exportRecord(User $user): DashboardExport
+    {
+        return DashboardExport::query()->create([
+            'user_id' => $user->id,
+            'block' => 'overview',
+            'filters' => [
+                'from' => '2026-07-01',
+                'to' => '2026-07-01',
+                'project_id' => null,
+                'equipment_type_id' => null,
+                'ownership_type' => null,
+            ],
+            'status' => DashboardExport::STATUS_PENDING,
+        ]);
+    }
+
+    private function readyExportRecord(User $user, bool $storeFile = true, mixed $expiresAt = null): DashboardExport
+    {
+        $path = $user->id.'/test-export.xlsx';
+
+        if ($storeFile) {
+            Storage::disk('dashboard_exports')->put($path, 'xlsx-content');
+        }
+
+        return DashboardExport::query()->create([
+            'user_id' => $user->id,
+            'block' => 'overview',
+            'filters' => [],
+            'status' => DashboardExport::STATUS_READY,
+            'disk' => 'dashboard_exports',
+            'path' => $path,
+            'file_name' => 'dashboard.xlsx',
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'file_size' => 12,
+            'completed_at' => now(),
+            'expires_at' => $expiresAt ?? now()->addHour(),
+        ]);
     }
 }

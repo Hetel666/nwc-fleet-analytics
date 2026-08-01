@@ -11,15 +11,13 @@ class FinalizeHistoricalRecalculationJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout;
+    public int $timeout = 300;
 
-    public int $tries;
+    public int $tries = 3;
 
-    public function __construct(public int $runId)
-    {
-        $this->timeout = (int) config('historical_recalculation.timeout', 900);
-        $this->tries = 1;
-    }
+    public bool $failOnTimeout = true;
+
+    public function __construct(public int $runId) {}
 
     public function handle(HistoricalRecalculationService $service): void
     {
@@ -27,6 +25,7 @@ class FinalizeHistoricalRecalculationJob implements ShouldQueue
 
         if (! $lock->get()) {
             $this->release(30);
+
             return;
         }
 

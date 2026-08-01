@@ -9,11 +9,11 @@ use App\Services\DashboardService;
 use App\Services\XlsxExportService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DashboardExportController extends Controller
 {
@@ -86,23 +86,21 @@ class DashboardExportController extends Controller
         ];
     }
 
-    public function download(Request $request, DashboardExport $export): BinaryFileResponse
+    public function download(Request $request, DashboardExport $export): StreamedResponse
     {
         $this->authorizeExport($request, $export);
-        $root = (string) config('fleet.dashboard.export_root', storage_path('app/private/dashboard-exports'));
-        $path = $root.DIRECTORY_SEPARATOR.$export->path;
-        abort_unless(
-            $export->status === DashboardExport::STATUS_READY
-                && $export->path
-                && ! ($export->expires_at?->isPast() ?? true)
-                && File::exists($path),
-            404
-        );
+        abort_unless($export->status === DashboardExport::STATUS_READY, 409);
+        abort_if($export->expires_at?->isPast() ?? false, 410);
+        abort_unless(filled($export->path), 404);
 
-        return response()->download(
-            $path,
+        $diskName = $export->disk ?: (string) config('fleet.dashboard.export_disk', 'dashboard_exports');
+        $disk = Storage::disk($diskName);
+        abort_unless($disk->exists($export->path), 404);
+
+        return $disk->download(
+            $export->path,
             $export->file_name ?: 'dashboard.xlsx',
-            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+            ['Content-Type' => $export->mime_type ?: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
         );
     }
 
