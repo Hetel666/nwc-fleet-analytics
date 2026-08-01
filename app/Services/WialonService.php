@@ -570,11 +570,12 @@ class WialonService
 
     public function getReportResultRows(int $tableIndex, int $indexFrom, int $indexTo, ?string $sid = null): array
     {
-        $rows = $this->request('report/get_result_rows', [
-            'tableIndex' => $tableIndex,
-            'indexFrom' => $indexFrom,
-            'indexTo' => $indexTo,
-        ], $sid ?? $this->getSessionId());
+        $rows = $this->getResultRowsChunk(
+            $sid ?? $this->getSessionId(),
+            $tableIndex,
+            $indexFrom,
+            $indexTo,
+        );
 
         return is_array($rows) ? $rows : [];
     }
