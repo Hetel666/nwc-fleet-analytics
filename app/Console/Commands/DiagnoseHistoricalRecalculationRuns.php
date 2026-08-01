@@ -13,6 +13,7 @@ class DiagnoseHistoricalRecalculationRuns extends Command
         {--run=* : Inspect specific run IDs}
         {--limit=100 : Maximum number of recent runs}
         {--repair : Finalize only selected non-terminal runs whose tasks are all terminal}
+        {--recover-stale-running : Mark stale running fetch tasks failed and dispatch the next pending task for explicit runs}
         {--force : Required with --repair in production}';
 
     protected $description = 'Diagnose historical recalculation run/task consistency without changing data by default.';
@@ -25,6 +26,7 @@ class DiagnoseHistoricalRecalculationRuns extends Command
             ->unique()
             ->values();
         $repair = (bool) $this->option('repair');
+        $recoverStaleRunning = (bool) $this->option('recover-stale-running');
 
         if ($repair && $runIds->isEmpty()) {
             $this->error('--repair requires at least one explicit --run ID.');
@@ -32,8 +34,14 @@ class DiagnoseHistoricalRecalculationRuns extends Command
             return self::FAILURE;
         }
 
-        if ($repair && app()->isProduction() && ! $this->option('force')) {
-            $this->error('--force is required with --repair in production after a verified backup.');
+        if ($recoverStaleRunning && $runIds->isEmpty()) {
+            $this->error('--recover-stale-running requires at least one explicit --run ID.');
+
+            return self::FAILURE;
+        }
+
+        if (($repair || $recoverStaleRunning) && app()->isProduction() && ! $this->option('force')) {
+            $this->error('--force is required with repair options in production after a verified backup.');
 
             return self::FAILURE;
         }
@@ -47,6 +55,17 @@ class DiagnoseHistoricalRecalculationRuns extends Command
         $rows = [];
 
         foreach ($runs as $run) {
+            $recovered = 0;
+
+            if ($recoverStaleRunning) {
+                $recovered = $service->failStaleRunningFetchTasks($run);
+
+                if ($recovered > 0) {
+                    $service->dispatchNextPendingFetchTask($run->refresh());
+                }
+            }
+
+            $run->refresh();
             $counts = $run->tasks()
                 ->selectRaw('status, COUNT(*) total')
                 ->groupBy('status')
@@ -60,11 +79,14 @@ class DiagnoseHistoricalRecalculationRuns extends Command
             ];
             $total = array_sum($actual);
             $terminal = $actual['completed'] + $actual['failed'] + $actual['cancelled'];
+            $staleRunning = $this->staleRunningFetchTasks($run);
             $countersMatch = $run->total_tasks === $total
                 && $run->completed_tasks === $actual['completed']
                 && $run->failed_tasks === $actual['failed']
                 && $run->cancelled_tasks === $actual['cancelled'];
-            $recommendation = $this->recommendation($run, $total, $terminal, $countersMatch);
+            $recommendation = $recovered > 0
+                ? 'RECOVERED_STALE_RUNNING:'.$recovered
+                : $this->recommendation($run, $total, $terminal, $countersMatch, $staleRunning);
 
             if ($repair && $recommendation === 'FINALIZE') {
                 $service->finalize($run->id);
@@ -82,6 +104,7 @@ class DiagnoseHistoricalRecalculationRuns extends Command
                 $actual['completed'],
                 $actual['failed'],
                 $actual['cancelled'],
+                $staleRunning,
                 $countersMatch ? 'OK' : 'MISMATCH',
                 $recommendation,
             ];
@@ -89,7 +112,7 @@ class DiagnoseHistoricalRecalculationRuns extends Command
 
         $this->table([
             'Run', 'Module', 'Status', 'Total', 'Pending', 'Running', 'Completed',
-            'Failed', 'Cancelled', 'Counters', 'Recommended action',
+            'Failed', 'Cancelled', 'Stale Running', 'Counters', 'Recommended action',
         ], $rows);
 
         return self::SUCCESS;
@@ -99,8 +122,13 @@ class DiagnoseHistoricalRecalculationRuns extends Command
         HistoricalRecalculation $run,
         int $total,
         int $terminal,
-        bool $countersMatch
+        bool $countersMatch,
+        int $staleRunning
     ): string {
+        if (! $run->isTerminal() && $staleRunning > 0) {
+            return 'RECOVER_STALE_RUNNING';
+        }
+
         if (! $run->isTerminal() && $total === 0) {
             return 'REVIEW_NO_TASKS';
         }
@@ -118,5 +146,25 @@ class DiagnoseHistoricalRecalculationRuns extends Command
         }
 
         return 'NONE';
+    }
+
+    private function staleRunningFetchTasks(HistoricalRecalculation $run): int
+    {
+        $staleSeconds = max(0, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
+
+        if ($staleSeconds <= 0) {
+            return 0;
+        }
+
+        $cutoff = now(config('app.timezone'))->subSeconds($staleSeconds);
+
+        return (int) $run->tasks()
+            ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+            ->where('status', HistoricalRecalculationTask::STATUS_RUNNING)
+            ->where(function ($query) use ($cutoff): void {
+                $query->whereNull('last_heartbeat_at')
+                    ->orWhere('last_heartbeat_at', '<=', $cutoff);
+            })
+            ->count();
     }
 }

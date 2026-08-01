@@ -61,6 +61,11 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 
         if ($task->status !== HistoricalRecalculationTask::STATUS_PENDING) {
             $service->dispatchNextPendingFetchTask($run);
+            $task = $task->refresh();
+
+            if ($task->status === HistoricalRecalculationTask::STATUS_RUNNING) {
+                $this->release($this->releaseDelayUntilStale($task));
+            }
 
             return;
         }
@@ -141,5 +146,18 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
         $service = app(HistoricalRecalculationService::class);
         $service->markTaskFailed($task, $exception?->getMessage() ?: 'Queue worker failed before task completion.');
         $service->dispatchNextPendingFetchTask($task->run->refresh());
+    }
+
+    private function releaseDelayUntilStale(HistoricalRecalculationTask $task): int
+    {
+        $staleSeconds = max(5, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
+
+        if (! $task->last_heartbeat_at) {
+            return 5;
+        }
+
+        $ageSeconds = max(0, now(config('app.timezone'))->getTimestamp() - $task->last_heartbeat_at->getTimestamp());
+
+        return max(5, ($staleSeconds - $ageSeconds) + 5);
     }
 }

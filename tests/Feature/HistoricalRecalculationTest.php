@@ -823,6 +823,101 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_retry_of_fresh_running_task_is_released_until_stale_window(): void
+    {
+        Queue::fake();
+        config()->set('historical_recalculation.stale_running_task_seconds', 600);
+        Carbon::setTestNow(Carbon::parse('2026-08-02 12:00:00', 'Asia/Baku'));
+
+        try {
+            $run = HistoricalRecalculation::query()->create([
+                'uuid' => 'd1b41070-cf1c-4605-b121-36448b68fb44',
+                'signature' => 'fresh-running-job-test',
+                'status' => HistoricalRecalculation::STATUS_RUNNING,
+                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-30',
+                'timezone' => 'Asia/Baku',
+                'force' => false,
+                'project_ids' => [],
+            ]);
+            $task = HistoricalRecalculationTask::query()->create([
+                'historical_recalculation_id' => $run->id,
+                'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'stat_date' => '2026-07-29',
+                'attempts' => 1,
+                'last_heartbeat_at' => now(config('app.timezone'))->subSeconds(120),
+            ]);
+            HistoricalRecalculationTask::query()->create([
+                'historical_recalculation_id' => $run->id,
+                'status' => HistoricalRecalculationTask::STATUS_PENDING,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'stat_date' => '2026-07-30',
+            ]);
+
+            $job = (new RunHistoricalRecalculationTaskJob($task->id))->withFakeQueueInteractions();
+            $job->handle(app(HistoricalRecalculationModuleRegistry::class), app(HistoricalRecalculationService::class));
+            $job->assertReleased(485);
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_RUNNING, $task->refresh()->status);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_diagnose_runs_can_recover_stale_running_task_for_explicit_run(): void
+    {
+        Queue::fake();
+        config()->set('historical_recalculation.stale_running_task_seconds', 60);
+        Carbon::setTestNow(Carbon::parse('2026-08-02 12:00:00', 'Asia/Baku'));
+
+        try {
+            $run = HistoricalRecalculation::query()->create([
+                'uuid' => 'cfce5fd0-7baa-47f2-aa14-9c104623a48d',
+                'signature' => 'diagnose-stale-running-test',
+                'status' => HistoricalRecalculation::STATUS_RUNNING,
+                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-30',
+                'timezone' => 'Asia/Baku',
+                'force' => false,
+                'project_ids' => [],
+            ]);
+            $first = HistoricalRecalculationTask::query()->create([
+                'historical_recalculation_id' => $run->id,
+                'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'stat_date' => '2026-07-29',
+                'attempts' => 1,
+                'last_heartbeat_at' => now(config('app.timezone'))->subMinutes(5),
+            ]);
+            $second = HistoricalRecalculationTask::query()->create([
+                'historical_recalculation_id' => $run->id,
+                'status' => HistoricalRecalculationTask::STATUS_PENDING,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'stat_date' => '2026-07-30',
+            ]);
+
+            $this->artisan('historical:diagnose-runs', [
+                '--run' => [$run->id],
+                '--recover-stale-running' => true,
+                '--force' => true,
+            ])->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_FAILED, $first->refresh()->status);
+        $this->assertStringContainsString('Stale running task recovered', (string) $first->error_message);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, fn ($job): bool => $job->taskId === $second->id);
+    }
+
     private function equipment(
         Project $project,
         ProjectWialonGroup $group,
