@@ -36,6 +36,6 @@ COPY docker/php.ini /usr/local/etc/php/conf.d/fleet.ini
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD php -r '$cmd = @file_get_contents("/proc/1/cmdline"); if ($cmd !== false && str_contains(str_replace(chr(0), " ", $cmd), "artisan queue:work")) { exit(0); } exit(@file_get_contents("http://127.0.0.1:8080/health") === false ? 1 : 0);'
+    CMD php -r '$cmd = str_replace(chr(0), " ", (string) @file_get_contents("/proc/1/cmdline")); if (str_contains($cmd, "artisan queue:work") || str_contains($cmd, "artisan schedule:work")) { exit(0); } exit(@file_get_contents("http://127.0.0.1:8080/health") === false ? 1 : 0);'
 
 ENTRYPOINT ["/var/www/html/docker-entrypoint.sh"]
