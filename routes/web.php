@@ -18,6 +18,7 @@ use App\Http\Controllers\GeofenceViolationsDashboardController;
 use App\Http\Controllers\GeofenceViolationsDrilldownController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LanguageController;
+use App\Http\Controllers\NighttimeEfficiencyDashboardController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectDashboardController;
 use App\Http\Controllers\SettingsController;
@@ -59,6 +60,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/api/dashboard/daytime-efficiency/projects', [DaytimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.daytime-efficiency.projects');
     Route::get('/api/dashboard/daytime-efficiency/units', [DaytimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.daytime-efficiency.units');
     Route::get('/api/dashboard/daytime-efficiency/export', [DaytimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.daytime-efficiency.export');
+    Route::get('/api/dashboard/nighttime-efficiency/summary', [NighttimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.nighttime-efficiency.summary');
+    Route::get('/api/dashboard/nighttime-efficiency/projects', [NighttimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.nighttime-efficiency.projects');
+    Route::get('/api/dashboard/nighttime-efficiency/units', [NighttimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.nighttime-efficiency.units');
+    Route::get('/api/dashboard/nighttime-efficiency/export', [NighttimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.nighttime-efficiency.export');
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
     Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');

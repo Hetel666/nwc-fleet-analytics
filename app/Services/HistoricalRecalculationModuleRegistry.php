@@ -17,6 +17,7 @@ class HistoricalRecalculationModuleRegistry
         private WialonReportStatsSyncService $dailyStats,
         private EfficiencyRecalculationHandler $efficiency,
         private DaytimeEfficiencyRecalculationHandler $daytimeEfficiency,
+        private NighttimeEfficiencyRecalculationHandler $nighttimeEfficiency,
     ) {}
 
     /** @return array<string, array<string, mixed>> */
@@ -53,6 +54,19 @@ class HistoricalRecalculationModuleRegistry
                     'daytime_efficiency_daily_facts',
                     'daytime_efficiency_sync_runs',
                     'daytime_efficiency_sync_tasks',
+                ],
+                'aliases' => [],
+            ],
+            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY => [
+                'label' => 'Effektivlik gecə',
+                'handler' => 'executeNighttimeEfficiency',
+                'service' => NighttimeEfficiencyRecalculationHandler::class,
+                'job' => RunHistoricalRecalculationTaskJob::class,
+                'queue' => $queue,
+                'result_tables' => [
+                    'nighttime_efficiency_daily_facts',
+                    'nighttime_efficiency_sync_runs',
+                    'nighttime_efficiency_sync_tasks',
                 ],
                 'aliases' => [],
             ],
@@ -146,6 +160,11 @@ class HistoricalRecalculationModuleRegistry
     private function executeDaytimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
         return $this->daytimeEfficiency->execute($run, $task);
+    }
+
+    private function executeNighttimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
+    {
+        return $this->nighttimeEfficiency->execute($run, $task);
     }
 
     private function executeGeofenceOutside(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int

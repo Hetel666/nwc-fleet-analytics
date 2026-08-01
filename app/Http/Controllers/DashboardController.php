@@ -8,6 +8,7 @@ use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
+use App\Services\NighttimeEfficiencyDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
@@ -18,10 +19,11 @@ class DashboardController extends Controller
         Request $request,
         DashboardService $dashboard,
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
+        NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $layout, $geofenceViolations);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $geofenceViolations);
     }
 
     public function tab(
@@ -29,19 +31,21 @@ class DashboardController extends Controller
         string $tab,
         DashboardService $dashboard,
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
+        NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $layout, $geofenceViolations, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $geofenceViolations, $selectedTab, true);
     }
 
     private function renderDashboard(
         Request $request,
         DashboardService $dashboard,
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
+        NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations,
         ?string $selectedTab = null,
@@ -71,6 +75,14 @@ class DashboardController extends Controller
             $data['daytimeEfficiencyByOwnership'] = [
                 'NWC' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'NWC'),
                 'ICARE' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'ICARE'),
+            ];
+            $nighttimeFilters = [
+                ...$filters,
+                'search' => trim((string) $request->query('nighttime_search', '')),
+            ];
+            $data['nighttimeEfficiencyByOwnership'] = [
+                'NWC' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'NWC'),
+                'ICARE' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'ICARE'),
             ];
         }
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);

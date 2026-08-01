@@ -482,6 +482,7 @@ class HistoricalRecalculationTest extends TestCase
             HistoricalRecalculation::SECTION_DAILY_AVERAGES,
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,

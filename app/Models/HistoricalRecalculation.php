@@ -32,6 +32,8 @@ class HistoricalRecalculation extends Model
 
     public const SECTION_DAYTIME_EFFICIENCY = 'daytime_efficiency';
 
+    public const SECTION_NIGHTTIME_EFFICIENCY = 'nighttime_efficiency';
+
     public const SECTION_TOP_WORKING_UNITS = 'top_working_units';
 
     public const SECTION_GEOFENCE_OUTSIDE = 'geofence_outside';

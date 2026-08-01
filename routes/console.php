@@ -16,3 +16,8 @@ Schedule::command('daytime-efficiency:sync-yesterday')
     ->dailyAt('19:00')
     ->timezone(config('app.timezone', 'Asia/Baku'))
     ->withoutOverlapping(180);
+
+Schedule::command('nighttime-efficiency:sync-last-completed-shift')
+    ->dailyAt('08:30')
+    ->timezone(config('app.timezone', 'Asia/Baku'))
+    ->withoutOverlapping(180);
