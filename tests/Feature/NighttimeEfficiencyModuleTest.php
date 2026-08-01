@@ -271,6 +271,13 @@ class NighttimeEfficiencyModuleTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'is_active' => true,
         ]);
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '9902',
+            'name' => 'Night auto project - ICARE',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => true,
+        ]);
         Equipment::query()->create([
             'name' => 'Auto unit',
             'wialon_unit_id' => '99001',
@@ -294,7 +301,9 @@ class NighttimeEfficiencyModuleTest extends TestCase
             'historical_recalculation_id' => $run->id,
             'project_id' => $project->id,
             'stat_date' => $expectedShiftDate.' 00:00:00',
+            'ownership_type' => null,
         ]);
+        $this->assertSame(1, $run->tasks()->count());
     }
 
     /** @return array{NighttimeEfficiencyRecalculationHandler, HistoricalRecalculation, HistoricalRecalculationTask, Project} */
