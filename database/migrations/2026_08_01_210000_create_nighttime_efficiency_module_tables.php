@@ -8,23 +8,43 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('nighttime_efficiency_sync_runs', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('historical_recalculation_id')->nullable()->unique()->constrained()->nullOnDelete();
-            $table->date('date_from');
-            $table->date('date_to');
-            $table->string('status', 32)->default('pending')->index();
-            $table->unsignedInteger('total_tasks')->default(0);
-            $table->unsignedInteger('pending_tasks')->default(0);
-            $table->unsignedInteger('running_tasks')->default(0);
-            $table->unsignedInteger('completed_tasks')->default(0);
-            $table->unsignedInteger('failed_tasks')->default(0);
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('completed_at')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->text('error_message')->nullable();
-            $table->timestamps();
-        });
+        if (! Schema::hasTable('nighttime_efficiency_sync_runs')) {
+            Schema::create('nighttime_efficiency_sync_runs', function (Blueprint $table): void {
+                $table->id();
+                $table->foreignId('historical_recalculation_id')->nullable()->unique()->constrained()->nullOnDelete();
+                $table->date('date_from');
+                $table->date('date_to');
+                $table->string('status', 32)->default('pending')->index();
+                $table->unsignedInteger('total_tasks')->default(0);
+                $table->unsignedInteger('pending_tasks')->default(0);
+                $table->unsignedInteger('running_tasks')->default(0);
+                $table->unsignedInteger('completed_tasks')->default(0);
+                $table->unsignedInteger('failed_tasks')->default(0);
+                $table->timestamp('started_at')->nullable();
+                $table->timestamp('completed_at')->nullable();
+                $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+                $table->text('error_message')->nullable();
+                $table->timestamps();
+            });
+        } else {
+            $indexes = collect(Schema::getIndexes('nighttime_efficiency_sync_runs'))->pluck('name');
+            $foreignKeys = collect(Schema::getForeignKeys('nighttime_efficiency_sync_runs'))->pluck('name');
+
+            Schema::table('nighttime_efficiency_sync_runs', function (Blueprint $table) use ($indexes, $foreignKeys): void {
+                if (! $indexes->contains('nighttime_efficiency_sync_runs_historical_recalculation_id_unique')) {
+                    $table->unique('historical_recalculation_id');
+                }
+                if (! $indexes->contains('nighttime_efficiency_sync_runs_status_index')) {
+                    $table->index('status');
+                }
+                if (! $foreignKeys->contains('nighttime_efficiency_sync_runs_historical_recalculation_id_foreign')) {
+                    $table->foreign('historical_recalculation_id')->references('id')->on('historical_recalculations')->nullOnDelete();
+                }
+                if (! $foreignKeys->contains('nighttime_efficiency_sync_runs_created_by_foreign')) {
+                    $table->foreign('created_by')->references('id')->on('users')->nullOnDelete();
+                }
+            });
+        }
 
         Schema::create('nighttime_efficiency_sync_tasks', function (Blueprint $table): void {
             $table->id();
