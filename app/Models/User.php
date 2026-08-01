@@ -3,16 +3,20 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Schema;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
     public const ROLE_ADMIN = 'admin';
+
     public const ROLE_VIEWER = 'viewer';
 
     /**
@@ -60,5 +64,20 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return (bool) $this->active;
+    }
+
+    public function dashboardPreference(): HasOne
+    {
+        return $this->hasOne(UserDashboardPreference::class);
+    }
+
+    /** @return array<string, string> */
+    public function resolvedDashboardPreferences(): array
+    {
+        if (! Schema::hasTable('user_dashboard_preferences')) {
+            return UserDashboardPreference::defaults();
+        }
+
+        return $this->dashboardPreference?->settings() ?? UserDashboardPreference::defaults();
     }
 }

@@ -1,5 +1,14 @@
+@php
+    $resolvedDashboardPreferences = auth()->check()
+        ? auth()->user()->resolvedDashboardPreferences()
+        : \App\Models\UserDashboardPreference::defaults();
+@endphp
 <!doctype html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html
+    lang="{{ str_replace('_', '-', app()->getLocale()) }}"
+    data-theme-preference="{{ $resolvedDashboardPreferences['theme'] }}"
+    data-sidebar-state="{{ $resolvedDashboardPreferences['sidebar_state'] }}"
+>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,9 +16,14 @@
     <title>@yield('title', __('app.app_name'))</title>
     <script>
         (() => {
-            const storedTheme = localStorage.getItem('fleet-theme');
+            const preferences = @json($resolvedDashboardPreferences);
             const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            document.documentElement.dataset.theme = storedTheme || (prefersDark ? 'dark' : 'light');
+            const theme = preferences.theme === 'system'
+                ? (prefersDark ? 'dark' : 'light')
+                : preferences.theme;
+
+            window.fleetDashboardPreferences = preferences;
+            document.documentElement.dataset.theme = theme;
         })();
     </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -416,6 +430,67 @@
                 display: inline-grid;
             }
         }
+        @media (min-width: 992px) {
+            html[data-sidebar-state="expanded"] .sidebar {
+                width: var(--fleet-sidebar-width);
+            }
+            html[data-sidebar-state="expanded"] .content {
+                margin-left: var(--fleet-sidebar-width);
+            }
+            html[data-sidebar-state="expanded"] .sidebar-inner {
+                padding: 18px 14px 14px;
+            }
+            html[data-sidebar-state="expanded"] .sidebar-logo-area {
+                justify-content: flex-start;
+                padding: 0 4px 16px;
+            }
+            html[data-sidebar-state="expanded"] .brand-logo {
+                width: 86px;
+            }
+            html[data-sidebar-state="expanded"] .brand-title,
+            html[data-sidebar-state="expanded"] .sidebar-search,
+            html[data-sidebar-state="expanded"] .sidebar-section-title,
+            html[data-sidebar-state="expanded"] .nav-link span,
+            html[data-sidebar-state="expanded"] .sidebar-user-meta,
+            html[data-sidebar-state="expanded"] .sidebar-version {
+                display: initial !important;
+            }
+            html[data-sidebar-state="expanded"] .sidebar-search {
+                display: block !important;
+            }
+            html[data-sidebar-state="expanded"] .nav-link {
+                justify-content: flex-start;
+                padding-inline: .75rem;
+            }
+            html[data-sidebar-state="collapsed"] .sidebar {
+                width: var(--fleet-sidebar-collapsed-width);
+            }
+            html[data-sidebar-state="collapsed"] .content {
+                margin-left: var(--fleet-sidebar-collapsed-width);
+            }
+            html[data-sidebar-state="collapsed"] .sidebar-inner {
+                padding-inline: 10px;
+            }
+            html[data-sidebar-state="collapsed"] .sidebar-logo-area,
+            html[data-sidebar-state="collapsed"] .sidebar-user-panel .d-flex {
+                justify-content: center;
+            }
+            html[data-sidebar-state="collapsed"] .brand-logo {
+                width: 46px;
+            }
+            html[data-sidebar-state="collapsed"] .brand-title,
+            html[data-sidebar-state="collapsed"] .sidebar-search,
+            html[data-sidebar-state="collapsed"] .sidebar-section-title,
+            html[data-sidebar-state="collapsed"] .nav-link span,
+            html[data-sidebar-state="collapsed"] .sidebar-user-meta,
+            html[data-sidebar-state="collapsed"] .sidebar-version {
+                display: none !important;
+            }
+            html[data-sidebar-state="collapsed"] .nav-link {
+                justify-content: center;
+                padding-inline: 0;
+            }
+        }
     </style>
     @stack('styles')
 </head>
@@ -444,8 +519,14 @@
             <nav class="sidebar-scroll">
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Dashboard</div>
-                    <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}">
-                        <i data-lucide="layout-dashboard"></i><span>{{ __('app.dashboard') }}</span>
+                    <a class="nav-link {{ request()->routeIs('dashboard') && request('tab', 'overview') === 'overview' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'overview', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Ümumi baxış">
+                        <i data-lucide="layout-dashboard"></i><span>Ümumi baxış</span>
+                    </a>
+                    <a class="nav-link {{ request()->routeIs('dashboard') && request('tab') === 'efficiency' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'efficiency', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Effektivlik">
+                        <i data-lucide="gauge"></i><span>Effektivlik</span>
+                    </a>
+                    <a class="nav-link {{ request()->routeIs('dashboard') && request('tab') === 'geozones' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'geozones', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Geozonalar">
+                        <i data-lucide="map-pinned"></i><span>Geozonalar</span>
                     </a>
                     @if (auth()->user()?->isAdmin())
                         <a class="nav-link {{ request()->routeIs('admin.dashboard-analytics.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-analytics.index') }}">
@@ -574,16 +655,54 @@
         }));
     };
 
-    document.getElementById('themeToggle')?.addEventListener('click', () => {
-        const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-        document.documentElement.dataset.theme = nextTheme;
-        localStorage.setItem('fleet-theme', nextTheme);
+    const resolveFleetTheme = preference => preference === 'system'
+        ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : preference;
+
+    window.applyFleetThemePreference = (preference, notify = true) => {
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.dataset.theme = resolveFleetTheme(preference);
+        window.fleetDashboardPreferences.theme = preference;
         refreshThemeIcon();
-        notifyThemeChange();
+        if (notify) {
+            notifyThemeChange();
+        }
+    };
+
+    const persistFleetPreference = async payload => {
+        const response = await fetch(@json(route('api.user.dashboard-preferences.update')), {
+            method: 'PUT',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Dashboard preferences request failed with ${response.status}.`);
+        }
+
+        return response.json();
+    };
+
+    window.persistFleetPreference = persistFleetPreference;
+
+    document.getElementById('themeToggle')?.addEventListener('click', async () => {
+        const previousTheme = window.fleetDashboardPreferences.theme;
+        const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        window.applyFleetThemePreference(nextTheme);
+
+        try {
+            window.fleetDashboardPreferences = await persistFleetPreference({ theme: nextTheme });
+        } catch (error) {
+            window.applyFleetThemePreference(previousTheme);
+        }
     });
 
     window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', event => {
-        if (localStorage.getItem('fleet-theme') !== null) {
+        if (window.fleetDashboardPreferences.theme !== 'system') {
             return;
         }
 

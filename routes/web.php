@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardDrilldownController;
 use App\Http\Controllers\DashboardExportController;
 use App\Http\Controllers\DashboardLayoutController;
 use App\Http\Controllers\DashboardOwnershipExportController;
+use App\Http\Controllers\DashboardPreferencesController;
 use App\Http\Controllers\DashboardTopWorkingUnitsExportController;
 use App\Http\Controllers\DaytimeEfficiencyDashboardController;
 use App\Http\Controllers\EfficiencyDashboardController;
@@ -38,6 +39,9 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'show'])->name('api.user.dashboard-preferences.show');
+    Route::put('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'update'])->name('api.user.dashboard-preferences.update');
+    Route::delete('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'destroy'])->name('api.user.dashboard-preferences.destroy');
     Route::get('/geofence-violations', GeofenceViolationsDashboardController::class)
         ->name('geofence-violations.index');
     Route::get('/dashboard/geofence-violations/drilldown', GeofenceViolationsDrilldownController::class)

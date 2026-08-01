@@ -86,6 +86,7 @@ class DashboardController extends Controller
             ];
         }
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+        $dashboardPreferences = $request->user()->resolvedDashboardPreferences();
 
         Log::info('Dashboard generated', [
             'elapsed_ms' => $elapsedMs,
@@ -106,6 +107,7 @@ class DashboardController extends Controller
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
             'dashboardTabs' => config('dashboard.tabs', []),
             'selectedDashboardTab' => $selectedTab,
+            'dashboardPreferences' => $dashboardPreferences,
             'dashboardTabFragment' => $fragment,
             'geofenceViolationDashboardWidget' => $selectedTab === 'geozones'
                 ? $geofenceViolations->getDashboardWidget($filters)

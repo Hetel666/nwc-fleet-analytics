@@ -1795,6 +1795,386 @@
     [data-theme="dark"] .table thead th {
         background: var(--fleet-card-soft);
     }
+    .dashboard-active-filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin: -8px 0 18px;
+    }
+    .dashboard-active-filters-label,
+    .dashboard-filter-chip {
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border-radius: 8px;
+        font-size: .78rem;
+        font-weight: 700;
+    }
+    .dashboard-active-filters-label {
+        color: var(--fleet-muted);
+    }
+    .dashboard-active-filters-label .lucide,
+    .dashboard-filter-chip .lucide {
+        width: 14px;
+        height: 14px;
+    }
+
+    .dashboard-efficiency-subnav {
+        display: none;
+        align-items: center;
+        gap: .35rem;
+        margin-bottom: 1rem;
+        overflow-x: auto;
+        padding-bottom: .2rem;
+        scrollbar-width: thin;
+    }
+
+    .dashboard-efficiency-subnav .btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .dashboard-page[data-dashboard-layout-variant="compact"] .dashboard-efficiency-subnav,
+    .dashboard-page[data-dashboard-layout-variant="side_filters"] .dashboard-efficiency-subnav,
+    .dashboard-page[data-dashboard-layout-variant="dark_analytics"] .dashboard-efficiency-subnav {
+        display: flex;
+    }
+
+    .dashboard-page:is([data-dashboard-layout-variant="compact"], [data-dashboard-layout-variant="side_filters"], [data-dashboard-layout-variant="dark_analytics"])
+        [data-efficiency-group][hidden] {
+        display: none !important;
+    }
+    .dashboard-filter-chip {
+        padding: 5px 9px;
+        border: 1px solid color-mix(in srgb, var(--fleet-blue) 28%, var(--fleet-line));
+        color: var(--fleet-blue);
+        background: color-mix(in srgb, var(--fleet-blue) 8%, var(--fleet-card));
+        text-decoration: none;
+    }
+    .dashboard-filter-chip:hover,
+    .dashboard-filter-chip:focus-visible {
+        border-color: var(--fleet-blue);
+        color: var(--fleet-blue);
+        background: color-mix(in srgb, var(--fleet-blue) 13%, var(--fleet-card));
+    }
+    .dashboard-design-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1080;
+        background: rgba(15, 23, 42, .42);
+        backdrop-filter: blur(2px);
+    }
+    .dashboard-design-drawer {
+        position: fixed;
+        inset: 0 0 0 auto;
+        z-index: 1090;
+        width: min(520px, 100vw);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto auto;
+        color: var(--fleet-ink);
+        background: var(--fleet-card);
+        border-left: 1px solid var(--fleet-line);
+        box-shadow: -24px 0 60px rgba(15, 23, 42, .2);
+    }
+    .dashboard-design-header,
+    .dashboard-design-footer {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 20px;
+        border-color: var(--fleet-line);
+    }
+    .dashboard-design-header {
+        justify-content: space-between;
+        border-bottom: 1px solid var(--fleet-line);
+    }
+    .dashboard-design-footer {
+        border-top: 1px solid var(--fleet-line);
+    }
+    .dashboard-design-footer .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+    }
+    .dashboard-design-footer .lucide,
+    .dashboard-design-icon-button .lucide {
+        width: 17px;
+        height: 17px;
+    }
+    .dashboard-design-icon-button {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        color: var(--fleet-muted);
+        background: var(--fleet-card);
+    }
+    .dashboard-design-form {
+        overflow-y: auto;
+        padding: 20px;
+    }
+    .dashboard-design-section {
+        border: 0;
+        padding: 0;
+        margin: 0 0 26px;
+    }
+    .dashboard-design-section legend {
+        float: none;
+        width: auto;
+        margin-bottom: 12px;
+        color: var(--fleet-ink);
+        font-size: .82rem;
+        font-weight: 800;
+    }
+    .dashboard-layout-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .dashboard-layout-option {
+        position: relative;
+        display: grid;
+        grid-template-rows: 88px auto;
+        gap: 9px;
+        min-width: 0;
+        padding: 10px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: var(--fleet-card);
+        cursor: pointer;
+        transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+    .dashboard-layout-option:has(input:checked) {
+        border-color: var(--fleet-blue);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--fleet-blue) 18%, transparent);
+        background: color-mix(in srgb, var(--fleet-blue) 4%, var(--fleet-card));
+    }
+    .dashboard-layout-option > input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .dashboard-layout-copy {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+    }
+    .dashboard-layout-copy strong {
+        font-size: .8rem;
+    }
+    .dashboard-layout-copy small {
+        color: var(--fleet-muted);
+        font-size: .68rem;
+        line-height: 1.35;
+    }
+    .dashboard-layout-selected {
+        position: absolute;
+        top: 7px;
+        right: 7px;
+        display: none;
+        padding: 2px 6px;
+        border-radius: 6px;
+        color: #fff;
+        background: var(--fleet-blue);
+        font-size: .62rem;
+        font-weight: 800;
+    }
+    .dashboard-layout-option:has(input:checked) .dashboard-layout-selected {
+        display: inline-flex;
+    }
+    .dashboard-layout-preview {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        border: 1px solid color-mix(in srgb, var(--fleet-line) 86%, transparent);
+        border-radius: 6px;
+        background: var(--fleet-card-soft);
+    }
+    .dashboard-layout-preview span,
+    .dashboard-layout-preview i {
+        position: absolute;
+        display: block;
+        border-radius: 2px;
+        background: color-mix(in srgb, var(--fleet-muted) 16%, var(--fleet-card));
+    }
+    .preview-sidebar { inset: 0 auto 0 0; width: 14%; background: color-mix(in srgb, var(--fleet-blue) 32%, var(--fleet-card)) !important; }
+    .preview-filter { inset: 8px 7px auto 19%; height: 13px; }
+    .preview-kpis { inset: 27px 7px auto 19%; height: 14px; background: transparent !important; }
+    .preview-kpis i { top: 0; bottom: 0; width: 29%; }
+    .preview-kpis i:nth-child(2) { left: 35%; }
+    .preview-kpis i:nth-child(3) { right: 0; }
+    .preview-donut { left: 19%; bottom: 8px; width: 29px; height: 29px; border-radius: 50% !important; border: 7px solid color-mix(in srgb, var(--fleet-blue) 55%, var(--fleet-card)); background: transparent !important; }
+    .preview-table { inset: auto 7px 8px 47%; height: 29px; }
+    .preview-table i { left: 4px; right: 4px; height: 3px; background: var(--fleet-card) !important; }
+    .preview-table i:nth-child(1) { top: 5px; } .preview-table i:nth-child(2) { top: 13px; } .preview-table i:nth-child(3) { top: 21px; }
+    .dashboard-layout-preview--compact .preview-filter { height: 8px; }
+    .dashboard-layout-preview--compact .preview-kpis { top: 21px; height: 10px; }
+    .dashboard-layout-preview--compact .preview-donut,
+    .dashboard-layout-preview--compact .preview-table { bottom: 6px; height: 43px; }
+    .dashboard-layout-preview--compact .preview-donut { width: 43px; }
+    .dashboard-layout-preview--card_grid .preview-filter { height: 8px; }
+    .dashboard-layout-preview--card_grid .preview-donut { left: 19%; bottom: 6px; width: 37%; height: 43px; border-radius: 3px !important; border-width: 0; background: color-mix(in srgb, var(--fleet-blue) 22%, var(--fleet-card)) !important; }
+    .dashboard-layout-preview--card_grid .preview-table { left: 59%; height: 43px; }
+    .dashboard-layout-preview--side_filters .preview-sidebar { width: 27%; background: color-mix(in srgb, var(--fleet-muted) 17%, var(--fleet-card)) !important; }
+    .dashboard-layout-preview--side_filters .preview-filter { inset: 8px auto 8px 5%; width: 17%; height: auto; background: color-mix(in srgb, var(--fleet-blue) 22%, var(--fleet-card)) !important; }
+    .dashboard-layout-preview--side_filters .preview-kpis { left: 32%; }
+    .dashboard-layout-preview--side_filters .preview-donut { left: 32%; }
+    .dashboard-layout-preview--side_filters .preview-table { left: 58%; }
+    .dashboard-layout-preview--dark_analytics { background: #111827; }
+    .dashboard-layout-preview--dark_analytics span:not(.preview-kpis),
+    .dashboard-layout-preview--dark_analytics i { background-color: #334155; }
+    .dashboard-preference-field {
+        display: grid;
+        grid-template-columns: minmax(145px, 1fr) minmax(190px, 1.35fr);
+        align-items: center;
+        gap: 14px;
+        padding: 11px 0;
+        border-bottom: 1px solid var(--fleet-line);
+    }
+    .dashboard-preference-field > span {
+        font-size: .78rem;
+        font-weight: 700;
+    }
+    .dashboard-segmented-control {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 1fr;
+        padding: 3px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: var(--fleet-card-soft);
+    }
+    .dashboard-segmented-control label { cursor: pointer; }
+    .dashboard-segmented-control input { position: absolute; opacity: 0; }
+    .dashboard-segmented-control span {
+        min-height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        color: var(--fleet-muted);
+        font-size: .7rem;
+        font-weight: 800;
+    }
+    .dashboard-segmented-control input:checked + span {
+        color: var(--fleet-blue);
+        background: var(--fleet-card);
+        box-shadow: 0 1px 4px rgba(15, 23, 42, .1);
+    }
+    .dashboard-design-status {
+        min-height: 28px;
+        padding: 6px 20px;
+        color: var(--fleet-muted);
+    }
+    body.dashboard-design-open { overflow: hidden; }
+    .dashboard-page[data-dashboard-density="compact"] { --dashboard-density-padding: 12px; }
+    .dashboard-page[data-dashboard-density="dense"] { --dashboard-density-padding: 9px; }
+    .dashboard-page[data-dashboard-density="compact"] #dashboardFilterForm,
+    .dashboard-page[data-dashboard-density="compact"] .dashboard-card,
+    .dashboard-page[data-dashboard-density="compact"] .metric-card { padding: 12px !important; }
+    .dashboard-page[data-dashboard-density="dense"] #dashboardFilterForm,
+    .dashboard-page[data-dashboard-density="dense"] .dashboard-card,
+    .dashboard-page[data-dashboard-density="dense"] .metric-card { padding: 9px !important; }
+    .dashboard-page[data-dashboard-density="compact"] #dashboardGrid { --bs-gutter-x: .75rem; --bs-gutter-y: .75rem; }
+    .dashboard-page[data-dashboard-density="dense"] #dashboardGrid { --bs-gutter-x: .5rem; --bs-gutter-y: .5rem; }
+    .dashboard-page[data-dashboard-table-density="compact"] .table > :not(caption) > * > * { padding-block: .3rem; }
+    .dashboard-page[data-dashboard-table-density="dense"] .table > :not(caption) > * > * { padding-block: .2rem; font-size: .74rem; }
+    .dashboard-page .table-responsive thead th,
+    .dashboard-page .dashboard-scroll-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--fleet-card-soft);
+    }
+    .dashboard-page[data-dashboard-kpi-size="small"] .metric-card { min-height: 96px; }
+    .dashboard-page[data-dashboard-kpi-size="small"] .metric-icon { width: 44px; height: 44px; font-size: 1.25rem; }
+    .dashboard-page[data-dashboard-kpi-size="small"] .metric-value { font-size: 1.35rem; }
+    .dashboard-page[data-dashboard-kpi-size="large"] .metric-card { min-height: 146px; }
+    .dashboard-page[data-dashboard-kpi-size="large"] .metric-icon { width: 66px; height: 66px; font-size: 1.85rem; }
+    .dashboard-page[data-dashboard-kpi-size="large"] .metric-value { font-size: 2rem; }
+    .dashboard-page[data-dashboard-legend-position="bottom"] .dashboard-donut-layout,
+    .dashboard-page[data-dashboard-legend-position="bottom"] .dashboard-work-status-layout,
+    .dashboard-page[data-dashboard-legend-position="bottom"] .foreign-geofence-donut-layout {
+        grid-template-columns: 1fr;
+    }
+    .dashboard-page[data-dashboard-legend-position="hidden"] .dashboard-donut-layout > :last-child,
+    .dashboard-page[data-dashboard-legend-position="hidden"] .dashboard-work-status-table,
+    .dashboard-page[data-dashboard-legend-position="hidden"] .dashboard-work-status-legend,
+    .dashboard-page[data-dashboard-legend-position="hidden"] .foreign-geofence-legend {
+        display: none !important;
+    }
+    .dashboard-page[data-dashboard-layout-variant="dark_analytics"] .dashboard-card,
+    .dashboard-page[data-dashboard-layout-variant="dark_analytics"] .metric-card,
+    .dashboard-page[data-dashboard-layout-variant="dark_analytics"] #dashboardFilterForm {
+        border-color: color-mix(in srgb, var(--fleet-blue) 20%, var(--fleet-line)) !important;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
+    }
+    @media (min-width: 1200px) {
+        .dashboard-page[data-dashboard-layout-variant="compact"] #dashboardGrid > .dashboard-widget {
+            width: 33.333333%;
+        }
+        .dashboard-page[data-dashboard-layout-variant="card_grid"] #dashboardGrid > .dashboard-widget {
+            width: 50%;
+        }
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] {
+            display: grid;
+            grid-template-columns: 260px minmax(0, 1fr);
+            column-gap: 18px;
+            align-items: start;
+        }
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] > :not(#dashboardFilterForm):not(.dashboard-loading-overlay):not(.dashboard-design-backdrop):not(.dashboard-design-drawer) {
+            grid-column: 2;
+        }
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] > #dashboardFilterForm {
+            grid-column: 1;
+            grid-row: 1 / span 8;
+            position: sticky;
+            top: 88px;
+            margin-bottom: 0 !important;
+        }
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] #dashboardFilterForm .row > * {
+            width: 100%;
+        }
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] #dashboardFilterForm .dashboard-period-button {
+            flex: 1 1 100%;
+        }
+    }
+    @media (max-width: 1199.98px) {
+        .dashboard-page {
+            overflow-x: clip;
+        }
+
+        .dashboard-scroll-table {
+            contain: inline-size;
+            max-width: 100%;
+        }
+    }
+    @media (max-width: 1199.98px) and (min-width: 768px) {
+        .dashboard-page[data-dashboard-layout-variant="compact"] #dashboardGrid > .dashboard-widget,
+        .dashboard-page[data-dashboard-layout-variant="card_grid"] #dashboardGrid > .dashboard-widget {
+            width: 50%;
+        }
+    }
+    @media (max-width: 767.98px) {
+        .dashboard-design-drawer {
+            width: 100vw;
+            border-left: 0;
+        }
+        .dashboard-design-form { padding: 16px; }
+        .dashboard-design-header,
+        .dashboard-design-footer { padding: 14px 16px; }
+        .dashboard-design-footer { flex-wrap: wrap; }
+        .dashboard-design-footer > .btn { width: 100%; justify-content: center; }
+        .dashboard-design-footer > .d-flex { width: 100%; margin-left: 0 !important; }
+        .dashboard-design-footer > .d-flex .btn { flex: 1 1 0; }
+        .dashboard-layout-options { grid-template-columns: 1fr; }
+        .dashboard-preference-field { grid-template-columns: 1fr; gap: 7px; }
+        .dashboard-page #dashboardGrid > .dashboard-widget { width: 100% !important; }
+        .dashboard-active-filters { margin-top: 0; }
+    }
 </style>
 @endpush
 
@@ -1817,6 +2197,14 @@
         data-dashboard-saved-layout="{{ json_encode($dashboardLayout ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
         data-dashboard-default-titles="{{ json_encode($dashboardWidgetDefaultTitles, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
         data-dashboard-layout-revision="{{ (int) ($dashboardLayoutRevision ?? 0) }}"
+        data-dashboard-preferences='@json($dashboardPreferences)'
+        data-dashboard-preferences-update-url="{{ route('api.user.dashboard-preferences.update') }}"
+        data-dashboard-preferences-reset-url="{{ route('api.user.dashboard-preferences.destroy') }}"
+        data-dashboard-layout-variant="{{ $dashboardPreferences['layout'] }}"
+        data-dashboard-density="{{ $dashboardPreferences['density'] }}"
+        data-dashboard-table-density="{{ $dashboardPreferences['table_density'] }}"
+        data-dashboard-legend-position="{{ $dashboardPreferences['donut_legend_position'] }}"
+        data-dashboard-kpi-size="{{ $dashboardPreferences['kpi_size'] }}"
     >
         @unless ($dashboardTabFragment ?? false)
         <div class="dashboard-loading-overlay" id="dashboardLoadingOverlay" aria-hidden="true">
@@ -1899,6 +2287,33 @@
             </div>
         </form>
 
+        @php
+            $filterQueryWithout = fn (array $keys): array => collect(request()->query())->except($keys)->all();
+            $activeOwnershipLabel = $filters['ownership_type'] === $nwc
+                ? __('app.ownership_nwc')
+                : ($filters['ownership_type'] === $icare ? __('app.ownership_icare') : null);
+        @endphp
+        @if ($selectedProject || $filters['equipment_type_id'] || $activeOwnershipLabel || $selectedPeriod === 'custom')
+            <div class="dashboard-active-filters" aria-label="Aktiv filtrlər">
+                <span class="dashboard-active-filters-label"><i data-lucide="list-filter"></i> Aktiv filtrlər</span>
+                @if ($selectedProject)
+                    <a class="dashboard-filter-chip" href="{{ route('dashboard', $filterQueryWithout(['project_id'])) }}">Layihə: {{ $selectedProject->name }} <i data-lucide="x"></i></a>
+                @endif
+                @if ($filters['equipment_type_id'])
+                    @php
+                        $selectedEquipmentType = $equipmentTypeOptions->firstWhere('id', $filters['equipment_type_id']);
+                    @endphp
+                    <a class="dashboard-filter-chip" href="{{ route('dashboard', $filterQueryWithout(['equipment_type_id'])) }}">Növ: {{ $selectedEquipmentType?->name ?? $filters['equipment_type_id'] }} <i data-lucide="x"></i></a>
+                @endif
+                @if ($activeOwnershipLabel)
+                    <a class="dashboard-filter-chip" href="{{ route('dashboard', $filterQueryWithout(['ownership_type'])) }}">Sahiblik: {{ $activeOwnershipLabel }} <i data-lucide="x"></i></a>
+                @endif
+                @if ($selectedPeriod === 'custom')
+                    <a class="dashboard-filter-chip" href="{{ route('dashboard', $filterQueryWithout(['period', 'date_from', 'date_to'])) }}">Dövr: {{ $filters['from'] }} – {{ $filters['to'] }} <i data-lucide="x"></i></a>
+                @endif
+            </div>
+        @endif
+
         <div class="row g-3 mb-4">
             @foreach ($kpis as $kpi)
                 <div class="col-12 col-md-6 col-xxl">
@@ -1972,9 +2387,12 @@
             <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
                 <i class="bi bi-download"></i><span>Excel</span>
             </a>
+            <button type="button" class="btn btn-outline-primary btn-sm btn-icon" id="openDashboardDesign">
+                <i data-lucide="sliders-horizontal"></i><span>Düzülüşü dəyiş</span>
+            </button>
             @if ($canManageDashboardLayout)
                 <button type="button" class="btn btn-outline-primary btn-sm btn-icon" id="editDashboardLayout">
-                    <i class="bi bi-layout-three-columns"></i><span>Düzülüşü dəyiş</span>
+                    <i class="bi bi-layout-three-columns"></i><span>Kartları düzənlə</span>
                 </button>
                 <button type="button" class="btn btn-primary btn-sm btn-icon d-none" id="saveDashboardLayout">
                     <i class="bi bi-check2"></i><span>Yadda saxla</span>
@@ -1987,7 +2405,16 @@
             </button>
             @endif
         </div>
+        @include('dashboard.partials.design-preferences')
         @endunless
+
+        <nav class="dashboard-efficiency-subnav" id="dashboardEfficiencySubnav" aria-label="Effektivlik bölmələri" @hidden($selectedDashboardTab !== 'efficiency')>
+            <button type="button" class="btn btn-sm btn-primary" data-efficiency-section="general">Ümumi</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="averages">Orta göstəricilər</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="ranking">Ən az / ən çox</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="daytime">Gündüz</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="nighttime">Gecə</button>
+        </nav>
 
         <div
             class="row g-3 dashboard-grid"
@@ -2092,7 +2519,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-xl-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesNwc',
                     'ownershipCode' => $nwc,
@@ -2110,7 +2537,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-icare', 'col-12 col-xl-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesIcare',
                     'ownershipCode' => $icare,
@@ -2128,7 +2555,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-xl-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'engine_hours',
                     'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
@@ -2143,7 +2570,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-mileage', 'col-12 col-xl-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'mileage',
                     'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
@@ -2158,7 +2585,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-xl-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="ranking" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
@@ -2168,14 +2595,14 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-xl-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="ranking" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
                 </section>
             </div>
 
-            <section class="col-12 mt-4" style="order: 1000" aria-labelledby="daytime-efficiency-title">
+            <section class="col-12 mt-4" data-efficiency-group="daytime" style="order: 1000" aria-labelledby="daytime-efficiency-title">
                 <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
                     <div>
                         <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
@@ -2231,7 +2658,7 @@
                 </div>
             </section>
 
-            <section class="col-12 mt-4" style="order: 1001" aria-labelledby="nighttime-efficiency-title">
+            <section class="col-12 mt-4" data-efficiency-group="nighttime" style="order: 1001" aria-labelledby="nighttime-efficiency-title">
                 <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
                     <div>
                         <h2 class="h4 fw-bold mb-1" id="nighttime-efficiency-title">Gecə növbəsi üzrə effektivlik</h2>
@@ -2841,6 +3268,216 @@ const applyDashboardChartData = data => {
 applyDashboardChartData(@json($dashboardChartData));
 const dashboardPage = document.querySelector('.dashboard-page');
 const dashboardGrid = document.getElementById('dashboardGrid');
+const dashboardPreferenceDefaults = {
+    layout: 'standard',
+    theme: 'system',
+    density: 'comfortable',
+    sidebar_state: 'expanded',
+    donut_legend_position: 'right',
+    table_density: 'comfortable',
+    kpi_size: 'medium',
+};
+const dashboardDesignDrawer = document.getElementById('dashboardDesignDrawer');
+const dashboardDesignBackdrop = document.getElementById('dashboardDesignBackdrop');
+const dashboardDesignForm = document.getElementById('dashboardDesignForm');
+const dashboardDesignStatus = document.getElementById('dashboardDesignStatus');
+let savedDashboardPreferences = {
+    ...dashboardPreferenceDefaults,
+    ...JSON.parse(dashboardPage?.dataset.dashboardPreferences || '{}'),
+};
+let activeEfficiencySection = 'general';
+
+function syncEfficiencySections() {
+    const groupedLayout = ['compact', 'side_filters', 'dark_analytics']
+        .includes(dashboardPage?.dataset.dashboardLayoutVariant || 'standard');
+
+    document.querySelectorAll('[data-efficiency-group]').forEach(section => {
+        section.hidden = groupedLayout && section.dataset.efficiencyGroup !== activeEfficiencySection;
+    });
+
+    document.querySelectorAll('[data-efficiency-section]').forEach(button => {
+        const active = button.dataset.efficiencySection === activeEfficiencySection;
+        button.classList.toggle('btn-primary', active);
+        button.classList.toggle('btn-outline-secondary', !active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+const applyDashboardPreferences = preferences => {
+    const resolved = { ...dashboardPreferenceDefaults, ...preferences };
+
+    if (dashboardPage) {
+        dashboardPage.dataset.dashboardLayoutVariant = resolved.layout;
+        dashboardPage.dataset.dashboardDensity = resolved.density;
+        dashboardPage.dataset.dashboardTableDensity = resolved.table_density;
+        dashboardPage.dataset.dashboardLegendPosition = resolved.donut_legend_position;
+        dashboardPage.dataset.dashboardKpiSize = resolved.kpi_size;
+    }
+
+    document.documentElement.dataset.sidebarState = resolved.sidebar_state;
+    window.applyFleetThemePreference?.(resolved.theme);
+    syncEfficiencySections();
+    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
+
+    return resolved;
+};
+
+const fillDashboardPreferenceForm = preferences => {
+    if (!dashboardDesignForm) {
+        return;
+    }
+
+    Object.entries(preferences).forEach(([name, value]) => {
+        const controls = dashboardDesignForm.elements.namedItem(name);
+        if (!controls) {
+            return;
+        }
+
+        if (typeof RadioNodeList !== 'undefined' && controls instanceof RadioNodeList) {
+            controls.value = value;
+        } else {
+            controls.value = value;
+        }
+    });
+};
+
+const readDashboardPreferenceForm = () => dashboardDesignForm
+    ? { ...dashboardPreferenceDefaults, ...Object.fromEntries(new FormData(dashboardDesignForm).entries()) }
+    : { ...savedDashboardPreferences };
+
+const setDashboardDesignOpen = open => {
+    if (!dashboardDesignDrawer || !dashboardDesignBackdrop) {
+        return;
+    }
+
+    dashboardDesignDrawer.hidden = !open;
+    dashboardDesignBackdrop.hidden = !open;
+    document.body.classList.toggle('dashboard-design-open', open);
+    if (open) {
+        dashboardDesignDrawer.querySelector('button')?.focus();
+    }
+};
+
+const requestDashboardPreferences = async (method, url, payload = null) => {
+    const response = await fetch(url, {
+        method,
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+        },
+        body: payload === null ? null : JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Dashboard preferences request failed with ${response.status}.`);
+    }
+
+    return response.json();
+};
+
+document.getElementById('openDashboardDesign')?.addEventListener('click', () => {
+    savedDashboardPreferences = {
+        ...savedDashboardPreferences,
+        ...window.fleetDashboardPreferences,
+    };
+    fillDashboardPreferenceForm(savedDashboardPreferences);
+    if (dashboardDesignStatus) {
+        dashboardDesignStatus.textContent = '';
+    }
+    setDashboardDesignOpen(true);
+    window.lucide?.createIcons();
+});
+
+dashboardDesignForm?.addEventListener('change', event => {
+    if (event.target?.name === 'layout' && event.target.value === 'dark_analytics') {
+        dashboardDesignForm.elements.namedItem('theme').value = 'dark';
+    }
+    applyDashboardPreferences(readDashboardPreferenceForm());
+});
+
+const cancelDashboardPreferencePreview = () => {
+    fillDashboardPreferenceForm(savedDashboardPreferences);
+    applyDashboardPreferences(savedDashboardPreferences);
+    setDashboardDesignOpen(false);
+};
+
+document.getElementById('dashboardDesignClose')?.addEventListener('click', cancelDashboardPreferencePreview);
+document.getElementById('dashboardDesignCancel')?.addEventListener('click', cancelDashboardPreferencePreview);
+dashboardDesignBackdrop?.addEventListener('click', cancelDashboardPreferencePreview);
+
+document.getElementById('dashboardDesignApply')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const draft = readDashboardPreferenceForm();
+    button.disabled = true;
+    if (dashboardDesignStatus) {
+        dashboardDesignStatus.textContent = 'Yadda saxlanılır…';
+    }
+
+    try {
+        const saved = await requestDashboardPreferences(
+            'PUT',
+            dashboardPage.dataset.dashboardPreferencesUpdateUrl,
+            draft,
+        );
+        savedDashboardPreferences = { ...dashboardPreferenceDefaults, ...saved };
+        window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+        applyDashboardPreferences(savedDashboardPreferences);
+        setDashboardDesignOpen(false);
+    } catch (error) {
+        applyDashboardPreferences(savedDashboardPreferences);
+        fillDashboardPreferenceForm(savedDashboardPreferences);
+        if (dashboardDesignStatus) {
+            dashboardDesignStatus.textContent = 'Dizayn saxlanılmadı. Əvvəlki görünüş bərpa edildi.';
+        }
+    } finally {
+        button.disabled = false;
+    }
+});
+
+document.getElementById('dashboardDesignReset')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+
+    try {
+        const defaults = await requestDashboardPreferences(
+            'DELETE',
+            dashboardPage.dataset.dashboardPreferencesResetUrl,
+        );
+        savedDashboardPreferences = { ...dashboardPreferenceDefaults, ...defaults };
+        window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+        fillDashboardPreferenceForm(savedDashboardPreferences);
+        applyDashboardPreferences(savedDashboardPreferences);
+        if (dashboardDesignStatus) {
+            dashboardDesignStatus.textContent = 'Standart görünüş bərpa edildi.';
+        }
+    } catch (error) {
+        if (dashboardDesignStatus) {
+            dashboardDesignStatus.textContent = 'Standart görünüş bərpa edilmədi.';
+        }
+    } finally {
+        button.disabled = false;
+    }
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && dashboardDesignDrawer && !dashboardDesignDrawer.hidden) {
+        cancelDashboardPreferencePreview();
+    }
+});
+
+document.getElementById('dashboardEfficiencySubnav')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-efficiency-section]');
+    if (!button) {
+        return;
+    }
+
+    activeEfficiencySection = button.dataset.efficiencySection;
+    syncEfficiencySections();
+    document.getElementById('dashboardGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+applyDashboardPreferences(savedDashboardPreferences);
 const dashboardTabButtons = Array.from(document.querySelectorAll('[data-dashboard-tab]'));
 const dashboardTabUrlTemplate = dashboardPage?.dataset.dashboardTabUrlTemplate || '';
 const dashboardSelectedTabInput = document.getElementById('dashboardSelectedTabInput');
@@ -3654,6 +4291,15 @@ const setActiveDashboardTab = tab => {
     if (dashboardSelectedTabInput) {
         dashboardSelectedTabInput.value = tab;
     }
+
+    const efficiencySubnav = document.getElementById('dashboardEfficiencySubnav');
+    if (efficiencySubnav) {
+        efficiencySubnav.hidden = tab !== 'efficiency';
+    }
+    if (tab === 'efficiency') {
+        activeEfficiencySection = 'general';
+        syncEfficiencySections();
+    }
 };
 
 const dashboardTabRequestUrl = tab => {
@@ -3678,7 +4324,7 @@ const dashboardTabRequestUrl = tab => {
 
 const replaceDashboardTabWidgets = remoteGrid => {
     const widgets = Array.from(remoteGrid.children)
-        .filter(node => node.classList?.contains('dashboard-widget'));
+        .filter(node => node.classList?.contains('dashboard-widget') || node.dataset?.efficiencyGroup);
     let chartData = {};
 
     try {
@@ -3698,6 +4344,7 @@ const replaceDashboardTabWidgets = remoteGrid => {
     disableDashboardDragging();
     bindDashboardWidgetControls();
     initializeDashboardCharts();
+    syncEfficiencySections();
 
 };
 
