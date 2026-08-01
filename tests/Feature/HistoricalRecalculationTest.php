@@ -481,6 +481,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame([
             HistoricalRecalculation::SECTION_DAILY_AVERAGES,
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
@@ -495,7 +496,7 @@ class HistoricalRecalculationTest extends TestCase
         foreach (array_keys($registry->definitions()) as $moduleCode) {
             $this->assertStringContainsString('value="'.$moduleCode.'"', $view);
         }
-        $this->assertStringNotContainsString('value="daytime_efficiency"', $view);
+        $this->assertStringContainsString('value="daytime_efficiency"', $view);
     }
 
     public function test_store_rejects_run_when_selected_project_has_no_executable_tasks(): void

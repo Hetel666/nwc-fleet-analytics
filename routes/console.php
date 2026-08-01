@@ -11,3 +11,8 @@ Schedule::command('fleet:prune-dashboard-exports')
     ->dailyAt('01:00')
     ->timezone(config('app.timezone', 'Asia/Baku'))
     ->withoutOverlapping();
+
+Schedule::command('daytime-efficiency:sync-yesterday')
+    ->dailyAt('19:00')
+    ->timezone(config('app.timezone', 'Asia/Baku'))
+    ->withoutOverlapping(180);

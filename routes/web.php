@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardExportController;
 use App\Http\Controllers\DashboardLayoutController;
 use App\Http\Controllers\DashboardOwnershipExportController;
 use App\Http\Controllers\DashboardTopWorkingUnitsExportController;
+use App\Http\Controllers\DaytimeEfficiencyDashboardController;
 use App\Http\Controllers\EfficiencyDashboardController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\EquipmentTypeController;
@@ -54,6 +55,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/api/dashboard/efficiency/projects', [EfficiencyDashboardController::class, 'projects'])->name('api.dashboard.efficiency.projects');
     Route::get('/api/dashboard/efficiency/units', [EfficiencyDashboardController::class, 'units'])->name('api.dashboard.efficiency.units');
     Route::get('/api/dashboard/efficiency/export', [EfficiencyDashboardController::class, 'export'])->name('api.dashboard.efficiency.export');
+    Route::get('/api/dashboard/daytime-efficiency/summary', [DaytimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.daytime-efficiency.summary');
+    Route::get('/api/dashboard/daytime-efficiency/projects', [DaytimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.daytime-efficiency.projects');
+    Route::get('/api/dashboard/daytime-efficiency/units', [DaytimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.daytime-efficiency.units');
+    Route::get('/api/dashboard/daytime-efficiency/export', [DaytimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.daytime-efficiency.export');
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
     Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');

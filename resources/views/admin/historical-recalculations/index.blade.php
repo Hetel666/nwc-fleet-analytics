@@ -45,6 +45,9 @@
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-efficiency" value="efficiency" autocomplete="off" @checked(old('dashboard_section') === 'efficiency')>
                                 <label class="btn btn-outline-primary text-start" for="section-efficiency">Effektivlik</label>
 
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-daytime-efficiency" value="daytime_efficiency" autocomplete="off" @checked(old('dashboard_section') === 'daytime_efficiency')>
+                                <label class="btn btn-outline-primary text-start" for="section-daytime-efficiency">Effektivlik gündüz</label>
+
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-top-working-units" value="top_working_units" autocomplete="off" @checked(old('dashboard_section') === 'top_working_units')>
                                 <label class="btn btn-outline-primary text-start" for="section-top-working-units">Top 20 az işləyənlər / Top 20 çox işləyənlər</label>
 
@@ -134,6 +137,7 @@
                                 <td>{{ [
                                     'daily_averages' => 'Orta göstəricilər',
                                     'efficiency' => 'Effektivlik',
+                                    'daytime_efficiency' => 'Effektivlik gündüz',
                                     'top_working_units' => 'Top 20',
                                     'geofence_outside' => 'Geofence Transferləri',
                                     'geofence_violations' => 'Geofence Pozuntuları',

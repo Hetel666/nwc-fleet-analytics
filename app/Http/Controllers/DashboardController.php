@@ -6,6 +6,7 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
+use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -16,28 +17,31 @@ class DashboardController extends Controller
     public function index(
         Request $request,
         DashboardService $dashboard,
+        DaytimeEfficiencyDashboardService $daytimeEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
-        return $this->renderDashboard($request, $dashboard, $layout, $geofenceViolations);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $layout, $geofenceViolations);
     }
 
     public function tab(
         Request $request,
         string $tab,
         DashboardService $dashboard,
+        DaytimeEfficiencyDashboardService $daytimeEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $layout, $geofenceViolations, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $layout, $geofenceViolations, $selectedTab, true);
     }
 
     private function renderDashboard(
         Request $request,
         DashboardService $dashboard,
+        DaytimeEfficiencyDashboardService $daytimeEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations,
         ?string $selectedTab = null,
@@ -58,6 +62,17 @@ class DashboardController extends Controller
 
         $startedAt = microtime(true);
         $data = $dashboard->getDashboardTab($filters, $selectedTab);
+
+        if ($selectedTab === 'efficiency') {
+            $daytimeFilters = [
+                ...$filters,
+                'search' => trim((string) $request->query('daytime_search', '')),
+            ];
+            $data['daytimeEfficiencyByOwnership'] = [
+                'NWC' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'NWC'),
+                'ICARE' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'ICARE'),
+            ];
+        }
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         Log::info('Dashboard generated', [

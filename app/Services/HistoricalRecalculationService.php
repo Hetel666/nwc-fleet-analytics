@@ -435,7 +435,10 @@ class HistoricalRecalculationService
     {
         $projectIds = $this->selectedProjectIds($payload);
 
-        if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_EFFICIENCY) {
+        if (in_array(($payload['dashboard_section'] ?? null), [
+            HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        ], true)) {
             return Project::query()
                 ->where('active', true)
                 ->excludeFromOperationalDashboard()
@@ -498,7 +501,10 @@ class HistoricalRecalculationService
 
     private function needsFetch(string $operation, ?string $dashboardSection = null): bool
     {
-        if ($dashboardSection === HistoricalRecalculation::SECTION_EFFICIENCY
+        if (in_array($dashboardSection, [
+            HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        ], true)
             && $operation === HistoricalRecalculation::OPERATION_RECALCULATE) {
             return true;
         }
@@ -522,6 +528,7 @@ class HistoricalRecalculationService
     {
         if (in_array(($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES), [
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,

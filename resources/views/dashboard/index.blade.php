@@ -86,6 +86,9 @@
     };
     $projectWorkCategorySummaryNwc = $projectWorkCategorySummaryFor($projectWorkCategoryRowsNwc);
     $projectWorkCategorySummaryIcare = $projectWorkCategorySummaryFor($projectWorkCategoryRowsIcare);
+    $daytimeEfficiencyGroups = $data['daytimeEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
+    $daytimeEfficiencySummaryNwc = collect($daytimeEfficiencyGroups[$nwc] ?? [])->merge(['total' => (int) ($daytimeEfficiencyGroups[$nwc]['total'] ?? 0)]);
+    $daytimeEfficiencySummaryIcare = collect($daytimeEfficiencyGroups[$icare] ?? [])->merge(['total' => (int) ($daytimeEfficiencyGroups[$icare]['total'] ?? 0)]);
     $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
     $projectComparisonTotals = [
         $nwc => (float) $projectComparisonRows->sum($nwc),
@@ -229,6 +232,8 @@
         'typeIcareTotal' => (int) $typeIcare->sum('total'),
         'projectWorkCategoryNwcCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values()->all(),
         'projectWorkCategoryIcareCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
+        'daytimeEfficiencyNwcCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
+        'daytimeEfficiencyIcareCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
         'utilizationTrend' => $utilizationTrendByOwnership,
         'projectComparisonLabels' => $projectComparisonTop->pluck('name')->values()->all(),
         'projectComparisonIds' => $projectComparisonTop->pluck('id')->values()->all(),
@@ -2164,6 +2169,62 @@
                     @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
                 </section>
             </div>
+
+            <section class="col-12 mt-4" style="order: 1000" aria-labelledby="daytime-efficiency-title">
+                <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+                    <div>
+                        <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
+                        <div class="text-secondary">08:00-17:59 intervalı üzrə Engine hours</div>
+                    </div>
+                    <form method="GET" action="{{ route('dashboard') }}" class="d-flex align-items-end gap-2">
+                        <input type="hidden" name="tab" value="efficiency">
+                        <input type="hidden" name="date_from" value="{{ $filters['from'] }}">
+                        <input type="hidden" name="date_to" value="{{ $filters['to'] }}">
+                        @if ($filters['project_id'])<input type="hidden" name="project_id" value="{{ $filters['project_id'] }}">@endif
+                        @if ($filters['equipment_type_id'])<input type="hidden" name="equipment_type_id" value="{{ $filters['equipment_type_id'] }}">@endif
+                        @if ($filters['ownership_type'])<input type="hidden" name="ownership_type" value="{{ $filters['ownership_type'] }}">@endif
+                        <div>
+                            <label class="form-label small mb-1" for="daytime-efficiency-search">Axtarış</label>
+                            <input id="daytime-efficiency-search" type="search" name="daytime_search" class="form-control form-control-sm" value="{{ request('daytime_search') }}" maxlength="120">
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" type="submit" title="Axtar"><i class="bi bi-search"></i></button>
+                    </form>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-xl-6">
+                        @include('dashboard.partials.daytime-efficiency-card', [
+                            'chartId' => 'daytimeEfficiencyNwc',
+                            'ownershipCode' => $nwc,
+                            'summary' => $daytimeEfficiencySummaryNwc,
+                            'categoryLabels' => $actualWorkCategoryLabels,
+                            'categoryColors' => $actualWorkCategoryColors,
+                            'filters' => $filters,
+                            'title' => 'Effektivlik gündüz: NWC üzrə',
+                            'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
+                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
+                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
+                                'search' => request('daytime_search'),
+                            ], fn ($value) => $value !== null && $value !== '')),
+                        ])
+                    </div>
+                    <div class="col-12 col-xl-6">
+                        @include('dashboard.partials.daytime-efficiency-card', [
+                            'chartId' => 'daytimeEfficiencyIcare',
+                            'ownershipCode' => $icare,
+                            'summary' => $daytimeEfficiencySummaryIcare,
+                            'categoryLabels' => $actualWorkCategoryLabels,
+                            'categoryColors' => $actualWorkCategoryColors,
+                            'filters' => $filters,
+                            'title' => 'Effektivlik gündüz: İcarə üzrə',
+                            'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
+                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
+                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
+                                'search' => request('daytime_search'),
+                            ], fn ($value) => $value !== null && $value !== '')),
+                        ])
+                    </div>
+                </div>
+            </section>
             @endif
 
             @if ($selectedDashboardTab === 'geozones')
@@ -2666,6 +2727,8 @@ let projectWorkCategoryNwcCounts = [];
 let projectWorkCategoryIcareCounts = [];
 let projectWorkCategoryNwcDonutCounts = [];
 let projectWorkCategoryIcareDonutCounts = [];
+let daytimeEfficiencyNwcCounts = [];
+let daytimeEfficiencyIcareCounts = [];
 let utilizationTrend = { labels: [], dates: [], series: {}, has_data: false };
 let projectComparisonLabels = [];
 let projectComparisonIds = [];
@@ -2694,6 +2757,8 @@ const applyDashboardChartData = data => {
     projectWorkCategoryIcareCounts = data?.projectWorkCategoryIcareCounts || [];
     projectWorkCategoryNwcDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryNwcCounts[index] || 0);
     projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
+    daytimeEfficiencyNwcCounts = data?.daytimeEfficiencyNwcCounts || [];
+    daytimeEfficiencyIcareCounts = data?.daytimeEfficiencyIcareCounts || [];
     utilizationTrend = data?.utilizationTrend || { labels: [], dates: [], series: {}, has_data: false };
     projectComparisonLabels = data?.projectComparisonLabels || [];
     projectComparisonIds = data?.projectComparisonIds || [];
@@ -3799,6 +3864,8 @@ let drilldownState = {
     meta: null,
     columns: {},
     endpointUrl: '',
+    unitsEndpointUrl: '',
+    exportUrl: '',
     exportEnabled: true,
     mode: 'fleet',
     parent: null,
@@ -4160,7 +4227,7 @@ const renderDrilldownRows = rows => {
             tr.title = `${row.vehicle_type || 'Texnika növü'} siyahısını aç`;
         }
 
-        if (drilldownState.mode === 'efficiency_projects' && row.project_id) {
+        if (['efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
             tr.className = 'dashboard-project-type-row';
             tr.setAttribute('role', 'button');
             tr.tabIndex = 0;
@@ -4179,15 +4246,15 @@ const renderDrilldownRows = rows => {
             const value = key === 'number'
                 ? rowNumber
                 : (formattedDurationKey && row[formattedDurationKey] !== undefined ? row[formattedDurationKey] : row[key]);
-            const isSummaryNumber = ['project_types', 'efficiency_projects'].includes(drilldownState.mode)
+            const isSummaryNumber = ['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode)
                 && ['nwc_count', 'icare_count', 'count'].includes(key);
             const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-                || (drilldownState.mode === 'efficiency_projects' && key === 'project');
+                || (['efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode) && key === 'project');
 
             td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
             td.classList.toggle('dashboard-project-type-name', isSummaryName);
             td.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects'].includes(drilldownState.mode) && key === 'count');
+            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
             tr.appendChild(td);
         });
 
@@ -4206,7 +4273,7 @@ const renderDrilldownColumns = columns => {
     if (drilldownColgroup) {
         drilldownColgroup.textContent = '';
 
-        if (['project_types', 'efficiency_projects'].includes(drilldownState.mode)) {
+        if (['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode)) {
             Object.keys(drilldownState.columns).forEach(key => {
                 const col = document.createElement('col');
                 col.classList.toggle('dashboard-project-type-name', key === 'vehicle_type' || key === 'project');
@@ -4218,16 +4285,16 @@ const renderDrilldownColumns = columns => {
 
     Object.entries(drilldownState.columns).forEach(([key, label]) => {
         const th = document.createElement('th');
-        const isSummaryNumber = ['project_types', 'efficiency_projects'].includes(drilldownState.mode)
+        const isSummaryNumber = ['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode)
             && ['nwc_count', 'icare_count', 'count'].includes(key);
         const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-            || (drilldownState.mode === 'efficiency_projects' && key === 'project');
+            || (['efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode) && key === 'project');
 
         th.classList.toggle('dashboard-project-type-name', isSummaryName);
         th.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects'].includes(drilldownState.mode) && key === 'count');
+        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
 
-        if (drilldownSortableColumns.has(key) && drilldownState.mode !== 'efficiency_projects') {
+        if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'daytime_efficiency_projects'].includes(drilldownState.mode)) {
             const button = document.createElement('button');
             const isActive = drilldownState.filters.sort === key;
             const direction = drilldownState.filters.direction === 'desc' ? 'descending' : 'ascending';
@@ -4290,8 +4357,10 @@ const updateDrilldownExportUrl = () => {
 
     drilldownExport.classList.toggle('d-none', !drilldownState.exportEnabled);
 
-    if (drilldownState.exportEnabled && dashboardPage?.dataset.dashboardDrilldownExportUrl) {
-        drilldownExport.href = drilldownUrl(dashboardPage.dataset.dashboardDrilldownExportUrl, drilldownState.filters);
+    const exportUrl = drilldownState.exportUrl || dashboardPage?.dataset.dashboardDrilldownExportUrl;
+
+    if (drilldownState.exportEnabled && exportUrl) {
+        drilldownExport.href = drilldownUrl(exportUrl, drilldownState.filters);
     } else {
         drilldownExport.href = '#';
     }
@@ -4317,6 +4386,8 @@ const resetDashboardDrilldownState = (options = {}) => {
         meta: null,
         columns: defaultDrilldownColumns(),
         endpointUrl: dashboardPage?.dataset.dashboardDrilldownUrl || '',
+        unitsEndpointUrl: '',
+        exportUrl: '',
         exportEnabled: true,
         mode: 'fleet',
         parent: null,
@@ -4442,9 +4513,9 @@ const loadDashboardDrilldown = async () => {
 const configureDrilldownMode = (mode, filters = {}) => {
     const isEfficiencyDrilldown = Boolean(filters.work_category || filters.day_status);
     const isMetricDrilldown = Boolean(filters.metric);
-    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects'].includes(mode);
+    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(mode);
 
-    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects'].includes(mode));
+    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(mode));
     drilldownFilterToggle?.classList.toggle('d-none', isRestrictedMode || !(isEfficiencyDrilldown || isMetricDrilldown));
     drilldownFilterTab?.classList.toggle('d-none', isRestrictedMode);
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
@@ -4462,11 +4533,15 @@ const openDashboardDrilldown = (filters = {}) => {
     resetDashboardDrilldownState({ abortRequest: true, clearTitle: false });
     const nextFilters = cleanDrilldownFilters(filters);
     const endpointUrl = nextFilters.endpoint_url || dashboardPage?.dataset.dashboardDrilldownUrl || '';
+    const unitsEndpointUrl = nextFilters.units_endpoint_url || '';
+    const exportUrl = nextFilters.export_url || '';
     const mode = nextFilters.drilldown_mode
         || (nextFilters.view === 'equipment_types' ? 'project_types' : (nextFilters.view === 'projects' ? 'efficiency_projects' : 'fleet'));
-    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects'].includes(mode);
+    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects', 'daytime_efficiency_projects'].includes(mode);
 
     delete nextFilters.endpoint_url;
+    delete nextFilters.units_endpoint_url;
+    delete nextFilters.export_url;
     delete nextFilters.export_enabled;
     delete nextFilters.drilldown_mode;
 
@@ -4476,7 +4551,7 @@ const openDashboardDrilldown = (filters = {}) => {
         data_status: nextFilters.data_status || 'all',
         has_overtime: nextFilters.has_overtime || 'all',
         page: 1,
-        search: '',
+        search: nextFilters.search || '',
     };
     if ((initialFilters.work_category || initialFilters.day_status) && !initialFilters.sort) {
         initialFilters.sort = 'date';
@@ -4495,6 +4570,8 @@ const openDashboardDrilldown = (filters = {}) => {
     drilldownState.initialized = false;
     drilldownState.title = nextFilters.title || '';
     drilldownState.endpointUrl = endpointUrl;
+    drilldownState.unitsEndpointUrl = unitsEndpointUrl;
+    drilldownState.exportUrl = exportUrl;
     drilldownState.exportEnabled = exportEnabled;
     drilldownState.mode = mode;
     drilldownState.parent = null;
@@ -4504,7 +4581,7 @@ const openDashboardDrilldown = (filters = {}) => {
     configureDrilldownMode(mode, initialFilters);
 
     if (drilldownSearch) {
-        drilldownSearch.value = '';
+        drilldownSearch.value = initialFilters.search;
     }
 
     if (drilldownTitle) {
@@ -4523,8 +4600,9 @@ const openDashboardDrilldown = (filters = {}) => {
 const openSummaryUnits = trigger => {
     const isProjectTypeSummary = drilldownState.mode === 'project_types' && trigger?.dataset.equipmentTypeId;
     const isEfficiencyProjectSummary = drilldownState.mode === 'efficiency_projects' && trigger?.dataset.projectId;
+    const isDaytimeEfficiencyProjectSummary = drilldownState.mode === 'daytime_efficiency_projects' && trigger?.dataset.projectId;
 
-    if (!isProjectTypeSummary && !isEfficiencyProjectSummary) {
+    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isDaytimeEfficiencyProjectSummary) {
         return;
     }
 
@@ -4533,6 +4611,8 @@ const openSummaryUnits = trigger => {
         filters: { ...drilldownState.filters },
         baseFilters: { ...drilldownState.baseFilters },
         endpointUrl: drilldownState.endpointUrl,
+        unitsEndpointUrl: drilldownState.unitsEndpointUrl,
+        exportUrl: drilldownState.exportUrl,
         exportEnabled: drilldownState.exportEnabled,
         mode: drilldownState.mode,
     };
@@ -4540,14 +4620,14 @@ const openSummaryUnits = trigger => {
         ...drilldownState.filters,
         view: 'units',
         page: 1,
-        search: '',
-        sort: isEfficiencyProjectSummary ? 'date' : 'name',
+        search: drilldownState.filters.search || '',
+        sort: (isEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary) ? 'date' : 'name',
         direction: 'asc',
     };
     if (isProjectTypeSummary) {
         nextFilters.equipment_type_id = trigger.dataset.equipmentTypeId;
     }
-    if (isEfficiencyProjectSummary) {
+    if (isEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary) {
         nextFilters.project_id = trigger.dataset.projectId;
     }
 
@@ -4559,18 +4639,21 @@ const openSummaryUnits = trigger => {
     drilldownState.meta = null;
     drilldownState.columns = defaultDrilldownColumns();
     drilldownState.title = `${parent.title} - ${
-        isEfficiencyProjectSummary
+        (isEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary)
             ? (trigger.dataset.projectName || 'Layihə')
             : (trigger.dataset.equipmentTypeName || 'Texnika növü')
     }`;
     drilldownState.exportEnabled = true;
-    drilldownState.mode = 'fleet';
+    if (isDaytimeEfficiencyProjectSummary) {
+        drilldownState.endpointUrl = drilldownState.unitsEndpointUrl;
+    }
+    drilldownState.mode = isDaytimeEfficiencyProjectSummary ? 'daytime_efficiency_units' : 'fleet';
     drilldownState.parent = parent;
     drilldownBack?.classList.remove('d-none');
     if (drilldownSearch) {
-        drilldownSearch.value = '';
+        drilldownSearch.value = nextFilters.search;
     }
-    configureDrilldownMode('fleet', nextFilters);
+    configureDrilldownMode(drilldownState.mode, nextFilters);
     renderDrilldownColumns(null);
     renderDrilldownRows([]);
     syncDrilldownFilterControls();
@@ -4595,12 +4678,14 @@ const restoreDrilldownSummary = () => {
     drilldownState.meta = null;
     drilldownState.title = parent.title;
     drilldownState.endpointUrl = parent.endpointUrl;
+    drilldownState.unitsEndpointUrl = parent.unitsEndpointUrl;
+    drilldownState.exportUrl = parent.exportUrl;
     drilldownState.exportEnabled = parent.exportEnabled;
     drilldownState.mode = parent.mode;
     drilldownState.parent = null;
     drilldownBack?.classList.add('d-none');
     if (drilldownSearch) {
-        drilldownSearch.value = '';
+        drilldownSearch.value = drilldownState.filters.search || '';
     }
     configureDrilldownMode(parent.mode, drilldownState.filters);
     renderDrilldownColumns(null);
@@ -4663,6 +4748,7 @@ document.addEventListener('click', event => {
         vehicle_types: trigger.dataset.drilldownVehicleTypes ? [trigger.dataset.drilldownVehicleTypes] : undefined,
         work_category: trigger.dataset.drilldownWorkCategory || undefined,
         status: trigger.dataset.drilldownStatus || trigger.dataset.drilldownWorkCategory || undefined,
+        search: trigger.dataset.drilldownSearch || undefined,
         date_from: trigger.dataset.drilldownDateFrom || undefined,
         date_to: trigger.dataset.drilldownDateTo || undefined,
         metric: trigger.dataset.drilldownMetric || undefined,
@@ -4672,6 +4758,10 @@ document.addEventListener('click', event => {
         top_working_stat_date: trigger.dataset.drilldownTopStatDate || undefined,
         top_working_ranking: trigger.dataset.drilldownTopRanking || undefined,
         geofence_violation: trigger.dataset.drilldownGeofenceViolation || undefined,
+        endpoint_url: trigger.dataset.drilldownEndpointUrl || undefined,
+        units_endpoint_url: trigger.dataset.drilldownUnitsEndpointUrl || undefined,
+        export_url: trigger.dataset.drilldownExportUrl || undefined,
+        export_enabled: trigger.dataset.drilldownExportEnabled === '0' ? false : undefined,
         current_geozone_project_id: trigger.dataset.drilldownCurrentGeozoneProjectId || undefined,
         current_geozone_id: trigger.dataset.drilldownCurrentGeozoneId || undefined,
         current_geozone_key: trigger.dataset.drilldownCurrentGeozoneKey || undefined,
@@ -4862,6 +4952,36 @@ const projectWorkCategoryIcareDonutDrilldownItems = workCategoryDonutKeys.map((k
     work_category: key,
     status: key,
 }));
+const daytimeEfficiencyEndpoints = {
+    projects: @json(route('api.dashboard.daytime-efficiency.projects')),
+    units: @json(route('api.dashboard.daytime-efficiency.units')),
+    export: @json(route('api.dashboard.daytime-efficiency.export')),
+};
+const daytimeEfficiencySearch = @json(request('daytime_search', ''));
+const daytimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
+    title: `Effektivlik gunduz: ${labels.nwc} - ${workCategoryDonutLabels[index]}`,
+    ownership: 'nwc',
+    view: 'projects',
+    drilldown_mode: 'daytime_efficiency_projects',
+    status: key,
+    search: daytimeEfficiencySearch,
+    endpoint_url: daytimeEfficiencyEndpoints.projects,
+    units_endpoint_url: daytimeEfficiencyEndpoints.units,
+    export_url: daytimeEfficiencyEndpoints.export,
+    export_enabled: false,
+}));
+const daytimeEfficiencyIcareDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
+    title: `Effektivlik gunduz: ${labels.icare} - ${workCategoryDonutLabels[index]}`,
+    ownership: 'icare',
+    view: 'projects',
+    drilldown_mode: 'daytime_efficiency_projects',
+    status: key,
+    search: daytimeEfficiencySearch,
+    endpoint_url: daytimeEfficiencyEndpoints.projects,
+    units_endpoint_url: daytimeEfficiencyEndpoints.units,
+    export_url: daytimeEfficiencyEndpoints.export,
+    export_enabled: false,
+}));
 const typeNwcDrilldownItems = () => typeNwcIds.map((id, index) => ({
     title: `${labels.nwc} - ${typeNwcLabels[index]}`,
     ownership: 'nwc',
@@ -4909,6 +5029,16 @@ const initializeDashboardCharts = () => {
         labels: workCategoryDonutLabels,
         colors: workCategoryDonutColorValues,
         drilldownItems: projectWorkCategoryIcareDonutDrilldownItems,
+    });
+    createProjectWorkCategoryChart('daytimeEfficiencyNwc', daytimeEfficiencyNwcCounts, {
+        labels: workCategoryDonutLabels,
+        colors: workCategoryDonutColorValues,
+        drilldownItems: daytimeEfficiencyNwcDrilldownItems,
+    });
+    createProjectWorkCategoryChart('daytimeEfficiencyIcare', daytimeEfficiencyIcareCounts, {
+        labels: workCategoryDonutLabels,
+        colors: workCategoryDonutColorValues,
+        drilldownItems: daytimeEfficiencyIcareDrilldownItems,
     });
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 

@@ -770,6 +770,10 @@ class DashboardService
 
     public function getDashboardExport(array $filters, string $block): array
     {
+        if (in_array($block, ['daytime_efficiency', 'daytime-efficiency'], true)) {
+            return app(DaytimeEfficiencyDashboardService::class)->export($filters);
+        }
+
         if ($block === 'efficiency') {
             return $this->efficiency->export($filters);
         }
