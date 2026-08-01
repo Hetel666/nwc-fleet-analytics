@@ -13,8 +13,8 @@ use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\DaytimeEfficiencyRecalculationHandler;
+use App\Services\WialonDaytimeEfficiencyReportParser;
 use App\Services\WialonDaytimeEfficiencyReportService;
-use App\Services\WialonEfficiencyReportParser;
 use App\Services\WialonReportSessionLock;
 use App\Services\WialonService;
 use App\Services\WialonSessionManager;
@@ -61,6 +61,8 @@ class DaytimeEfficiencyModuleTest extends TestCase
             'engine_seconds' => 27000,
             'source_report_template_id' => 10,
             'source_table_index' => 0,
+            'started_at' => '2026-07-31 08:00:00',
+            'ended_at' => '2026-07-31 17:59:00',
         ]);
         $this->assertDatabaseHas('daytime_efficiency_daily_facts', [
             'wialon_unit_id' => '6002',
@@ -216,7 +218,7 @@ class DaytimeEfficiencyModuleTest extends TestCase
         return [new DaytimeEfficiencyRecalculationHandler(
             $wialon,
             $reports,
-            app(WialonEfficiencyReportParser::class),
+            app(WialonDaytimeEfficiencyReportParser::class),
             $sessions,
         ), $run, $task, $project];
     }

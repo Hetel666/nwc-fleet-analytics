@@ -55,7 +55,6 @@ class WialonEfficiencyReportParser
                 $mileageRaw = $indexes['mileage'] === null ? null : $this->text($cells[$indexes['mileage']] ?? null);
 
                 $records[] = [
-                    'source_table_index' => (int) ($reportTable['index'] ?? 0),
                     'wialon_unit_id' => $unitId,
                     'unit_name' => $this->text($cells[$indexes['grouping']] ?? null),
                     'engine_hours_decimal' => round(max(0, $hours ?? 0), 2),

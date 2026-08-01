@@ -25,7 +25,7 @@ class DaytimeEfficiencyRecalculationHandler
     public function __construct(
         private WialonService $wialon,
         private WialonDaytimeEfficiencyReportService $reports,
-        private WialonEfficiencyReportParser $parser,
+        private WialonDaytimeEfficiencyReportParser $parser,
         private WialonSessionManager $sessions,
     ) {}
 
