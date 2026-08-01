@@ -1899,6 +1899,8 @@
         flex: 1 1 auto;
         height: 350px;
         max-height: 350px;
+        max-width: 100%;
+        contain: inline-size;
         overscroll-behavior: contain;
     }
 
@@ -2225,8 +2227,8 @@
         }
     }
     @media (min-width: 1200px) and (max-width: 1399.98px) {
-        .dashboard-page[data-dashboard-layout-variant="side_filters"] #dashboardGrid[data-dashboard-active-tab="efficiency"] > .dashboard-widget,
-        .dashboard-page[data-dashboard-layout-variant="side_filters"] .dashboard-efficiency-shift-section .row > [class*="col-"] {
+        html[data-sidebar-state="expanded"] .dashboard-page[data-dashboard-layout-variant="side_filters"] #dashboardGrid[data-dashboard-active-tab="efficiency"] > .dashboard-widget,
+        html[data-sidebar-state="expanded"] .dashboard-page[data-dashboard-layout-variant="side_filters"] .dashboard-efficiency-shift-section .row > [class*="col-"] {
             width: 100% !important;
         }
     }
