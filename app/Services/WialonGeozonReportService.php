@@ -18,7 +18,19 @@ class WialonGeozonReportService
         $resourceId = (int) config('fleet.wialon.geozon_report_resource_id');
         $templateName = $name ?: (string) config('fleet.wialon.geozon_report_template_name', 'geozon api');
 
-        return $this->wialon->findReportTemplateByName($resourceId > 0 ? $resourceId : null, $templateName);
+        $template = $this->wialon->findReportTemplateByName(
+            $resourceId > 0 ? $resourceId : null,
+            $templateName
+        );
+
+        if ($template === null && $templateName !== 'Geofence Transferləri api') {
+            return $this->wialon->findReportTemplateByName(
+                $resourceId > 0 ? $resourceId : null,
+                'Geofence Transferləri api'
+            );
+        }
+
+        return $template;
     }
 
     /**

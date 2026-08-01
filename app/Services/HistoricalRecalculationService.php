@@ -15,12 +15,19 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class HistoricalRecalculationService
 {
+    public function __construct(private HistoricalRecalculationModuleRegistry $modules) {}
+
     public function preview(array $payload): array
     {
+        $payload['dashboard_section'] = $this->modules->canonicalSection(
+            $payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES
+        );
         $dates = $this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']);
         $targets = $this->targets($payload);
         $aggregateTasks = $this->needsAggregation($payload)
@@ -42,6 +49,14 @@ class HistoricalRecalculationService
     public function createRun(array $payload, ?User $user): HistoricalRecalculation
     {
         $payload = $this->normalizePayload($payload);
+        $preview = $this->preview($payload);
+
+        if ($preview['total_tasks'] === 0) {
+            throw ValidationException::withMessages([
+                'project_ids' => 'Seçilmiş tarix və layihə üçün icra edilə bilən tapşırıq tapılmadı.',
+            ]);
+        }
+
         $signature = $this->signature($payload);
 
         $duplicate = HistoricalRecalculation::query()
@@ -51,26 +66,33 @@ class HistoricalRecalculationService
             ->first();
 
         if ($duplicate) {
-            return $duplicate;
+            $this->dispatch($duplicate);
+
+            return $duplicate->refresh();
         }
 
-        $run = HistoricalRecalculation::query()->create([
-            'uuid' => (string) Str::uuid(),
-            'signature' => $signature,
-            'status' => HistoricalRecalculation::STATUS_PENDING,
-            'dashboard_section' => $payload['dashboard_section'],
-            'operation' => $payload['operation'],
-            'scope' => $payload['scope'],
-            'date_from' => $payload['date_from'],
-            'date_to' => $payload['date_to'],
-            'timezone' => $payload['timezone'],
-            'force' => $payload['force'],
-            'project_ids' => $payload['project_ids'],
-            'requested_by' => $user?->id,
-            'last_heartbeat_at' => now(config('app.timezone')),
-        ]);
+        $run = DB::transaction(function () use ($payload, $signature, $user): HistoricalRecalculation {
+            $run = HistoricalRecalculation::query()->create([
+                'uuid' => (string) Str::uuid(),
+                'signature' => $signature,
+                'status' => HistoricalRecalculation::STATUS_PENDING,
+                'dashboard_section' => $payload['dashboard_section'],
+                'operation' => $payload['operation'],
+                'scope' => $payload['scope'],
+                'date_from' => $payload['date_from'],
+                'date_to' => $payload['date_to'],
+                'timezone' => $payload['timezone'],
+                'force' => $payload['force'],
+                'project_ids' => $payload['project_ids'],
+                'requested_by' => $user?->id,
+                'last_heartbeat_at' => now(config('app.timezone')),
+            ]);
 
-        $this->createTasks($run, $payload);
+            $this->createTasks($run, $payload);
+
+            return $run;
+        });
+
         $this->dispatch($run);
 
         return $run->refresh();
@@ -91,6 +113,7 @@ class HistoricalRecalculationService
     public function dispatchNextPendingFetchTask(HistoricalRecalculation $run): void
     {
         $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $connection = (string) config('historical_recalculation.connection', 'database');
         $lock = Cache::lock(
             'historical-recalculation-dispatch:'.$run->id,
             (int) config('historical_recalculation.lock_seconds', 7200)
@@ -133,13 +156,18 @@ class HistoricalRecalculationService
                 $delaySeconds = max(0, (int) config('historical_recalculation.report_task_delay_seconds', 5));
 
                 RunHistoricalRecalculationTaskJob::dispatch($nextTask->id)
+                    ->onConnection($connection)
                     ->onQueue($queue)
+                    ->afterCommit()
                     ->delay(now(config('app.timezone'))->addSeconds($delaySeconds));
 
                 return;
             }
 
-            FinalizeHistoricalRecalculationJob::dispatch($run->id)->onQueue($queue);
+            FinalizeHistoricalRecalculationJob::dispatch($run->id)
+                ->onConnection($connection)
+                ->onQueue($queue)
+                ->afterCommit();
         } finally {
             optional($lock)->release();
         }
@@ -219,6 +247,21 @@ class HistoricalRecalculationService
         $run = HistoricalRecalculation::query()->with('tasks')->findOrFail($runId);
 
         if ($run->status === HistoricalRecalculation::STATUS_CANCELLED) {
+            return;
+        }
+
+        $incompleteFetchTasks = $run->tasks()
+            ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+            ->whereIn('status', [
+                HistoricalRecalculationTask::STATUS_PENDING,
+                HistoricalRecalculationTask::STATUS_RUNNING,
+            ])
+            ->count();
+
+        if ($incompleteFetchTasks > 0) {
+            $this->refreshProgress($run);
+            $this->dispatchNextPendingFetchTask($run->refresh());
+
             return;
         }
 
@@ -349,7 +392,9 @@ class HistoricalRecalculationService
     private function normalizePayload(array $payload): array
     {
         $payload['timezone'] = $payload['timezone'] ?? config('historical_recalculation.timezone');
-        $payload['dashboard_section'] = $payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES;
+        $payload['dashboard_section'] = $this->modules->canonicalSection(
+            $payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES
+        );
         $payload['date_from'] = Carbon::parse($payload['date_from'], $payload['timezone'])->toDateString();
         $payload['date_to'] = Carbon::parse($payload['date_to'], $payload['timezone'])->toDateString();
         $payload['force'] = (bool) ($payload['force'] ?? false);

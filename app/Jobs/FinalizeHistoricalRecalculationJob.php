@@ -3,11 +3,12 @@
 namespace App\Jobs;
 
 use App\Services\HistoricalRecalculationService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
 
-class FinalizeHistoricalRecalculationJob implements ShouldQueue
+class FinalizeHistoricalRecalculationJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -17,7 +18,14 @@ class FinalizeHistoricalRecalculationJob implements ShouldQueue
 
     public bool $failOnTimeout = true;
 
+    public int $uniqueFor = 7200;
+
     public function __construct(public int $runId) {}
+
+    public function uniqueId(): string
+    {
+        return (string) $this->runId;
+    }
 
     public function handle(HistoricalRecalculationService $service): void
     {

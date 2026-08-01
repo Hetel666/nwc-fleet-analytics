@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\HistoricalRecalculation;
+use App\Services\HistoricalRecalculationModuleRegistry;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,13 +29,9 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date', 'after_or_equal:date_from'],
             'timezone' => ['required', 'timezone'],
-            'dashboard_section' => ['required', Rule::in([
-                HistoricalRecalculation::SECTION_DAILY_AVERAGES,
-                HistoricalRecalculation::SECTION_EFFICIENCY,
-                HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
-                HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
-                HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
-            ])],
+            'dashboard_section' => ['required', Rule::in(array_keys(
+                app(HistoricalRecalculationModuleRegistry::class)->definitions()
+            ))],
             'operation' => ['required', Rule::in([
                 HistoricalRecalculation::OPERATION_FETCH,
                 HistoricalRecalculation::OPERATION_RECALCULATE,

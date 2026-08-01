@@ -11,8 +11,8 @@ use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
+use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
-use App\Services\WialonReportStatsSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
@@ -395,7 +395,7 @@ class HistoricalRecalculationTest extends TestCase
         Artisan::shouldReceive('output')->once()->andReturn('Wialon report failed.');
 
         (new RunHistoricalRecalculationTaskJob($task->id))->handle(
-            app(WialonReportStatsSyncService::class),
+            app(HistoricalRecalculationModuleRegistry::class),
             $service
         );
 
@@ -438,7 +438,7 @@ class HistoricalRecalculationTest extends TestCase
             ->andReturn(0);
 
         (new RunHistoricalRecalculationTaskJob($task->id))->handle(
-            app(WialonReportStatsSyncService::class),
+            app(HistoricalRecalculationModuleRegistry::class),
             $service
         );
 
@@ -490,7 +490,7 @@ class HistoricalRecalculationTest extends TestCase
             ->andReturn(0);
 
         (new RunHistoricalRecalculationTaskJob($task->id))->handle(
-            app(WialonReportStatsSyncService::class),
+            app(HistoricalRecalculationModuleRegistry::class),
             $service
         );
 
@@ -509,6 +509,193 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame(3, $finalizeJob->tries);
         $this->assertSame(300, $finalizeJob->timeout);
         $this->assertTrue($finalizeJob->failOnTimeout);
+    }
+
+    public function test_registry_covers_every_ui_module_and_legacy_efficiency_alias(): void
+    {
+        $registry = app(HistoricalRecalculationModuleRegistry::class);
+
+        $this->assertSame([
+            HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+            HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+        ], array_keys($registry->definitions()));
+        $this->assertSame(
+            HistoricalRecalculation::SECTION_EFFICIENCY,
+            $registry->canonicalSection(HistoricalRecalculation::SECTION_LEGACY_EFFICIENCY)
+        );
+
+        foreach ($registry->definitions() as $definition) {
+            $this->assertSame('historical-recalculations', $definition['queue']);
+            $this->assertSame(RunHistoricalRecalculationTaskJob::class, $definition['job']);
+            $this->assertNotEmpty($definition['result_tables']);
+        }
+
+        $view = file_get_contents(resource_path('views/admin/historical-recalculations/index.blade.php'));
+        foreach (array_keys($registry->definitions()) as $moduleCode) {
+            $this->assertStringContainsString('value="'.$moduleCode.'"', $view);
+        }
+    }
+
+    public function test_store_rejects_run_when_selected_project_has_no_executable_tasks(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Empty project', 'active' => true]);
+
+        $this->actingAs($admin)
+            ->from(route('admin.historical-recalculations.index'))
+            ->post(route('admin.historical-recalculations.store'), [
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-29',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => false,
+            ])
+            ->assertRedirect(route('admin.historical-recalculations.index'))
+            ->assertSessionHasErrors('project_ids');
+
+        $this->assertDatabaseCount('historical_recalculations', 0);
+        $this->assertDatabaseCount('historical_recalculation_tasks', 0);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_historical_dispatch_uses_database_connection_and_expected_queue(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Database queue project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '610',
+            'name' => 'Database queue project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '6100');
+
+        app(HistoricalRecalculationService::class)->createRun([
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => false,
+        ], $admin);
+
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, function ($job): bool {
+            return $job->connection === 'database' && $job->queue === 'historical-recalculations';
+        });
+    }
+
+    public function test_last_terminal_task_dispatches_finalize_job(): void
+    {
+        Queue::fake();
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => 'dd9b94d7-5ed2-43ae-81b8-af400017f875',
+            'signature' => 'finalize-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+        ]);
+
+        app(HistoricalRecalculationService::class)->dispatchNextPendingFetchTask($run);
+
+        Queue::assertPushed(FinalizeHistoricalRecalculationJob::class, function ($job): bool {
+            return $job->connection === 'database' && $job->queue === 'historical-recalculations';
+        });
+    }
+
+    public function test_diagnose_runs_is_read_only_until_explicit_repair(): void
+    {
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '1ed342ca-2f62-4a92-b178-894a59c02f84',
+            'signature' => 'diagnose-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+            'total_tasks' => 1,
+            'completed_tasks' => 1,
+        ]);
+        HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+        ]);
+
+        $this->artisan('historical:diagnose-runs', ['--run' => [$run->id]])
+            ->expectsOutputToContain('FINALIZE')
+            ->assertSuccessful();
+        $this->assertSame(HistoricalRecalculation::STATUS_RUNNING, $run->refresh()->status);
+
+        $this->artisan('historical:diagnose-runs', [
+            '--run' => [$run->id],
+            '--repair' => true,
+            '--force' => true,
+        ])->assertSuccessful();
+
+        $this->assertSame(HistoricalRecalculation::STATUS_COMPLETED, $run->refresh()->status);
+    }
+
+    public function test_worker_level_failure_marks_task_failed_and_continues_chain(): void
+    {
+        Queue::fake();
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '244fcdd6-56ae-4f10-976a-b9a625612ce3',
+            'signature' => 'worker-failure-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-30',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $first = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+        ]);
+        $second = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-30',
+        ]);
+
+        (new RunHistoricalRecalculationTaskJob($first->id))->failed(new \RuntimeException('Worker timeout'));
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_FAILED, $first->refresh()->status);
+        $this->assertStringContainsString('Worker timeout', (string) $first->error_message);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, fn ($job): bool => $job->taskId === $second->id);
     }
 
     private function equipment(

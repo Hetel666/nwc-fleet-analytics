@@ -3,6 +3,7 @@
 return [
     'timezone' => env('FLEET_TIMEZONE', 'Asia/Baku'),
     'max_range_days' => (int) env('HISTORICAL_RECALCULATION_MAX_RANGE_DAYS', 365),
+    'connection' => env('HISTORICAL_RECALCULATION_CONNECTION', 'database'),
     'queue' => env('HISTORICAL_RECALCULATION_QUEUE', 'historical-recalculations'),
     'tries' => (int) env('HISTORICAL_RECALCULATION_TRIES', 3),
     'timeout' => (int) env('HISTORICAL_RECALCULATION_TIMEOUT', 900),

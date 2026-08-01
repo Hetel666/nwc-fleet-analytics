@@ -13,6 +13,7 @@ use App\Services\GeofenceReportViolationCalculator;
 use App\Services\GeofenceViolationService;
 use App\Services\WialonGeozonReportParser;
 use App\Services\WialonGeozonReportService;
+use App\Services\WialonService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery\MockInterface;
@@ -21,6 +22,25 @@ use Tests\TestCase;
 class WialonGeozonApiReportTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_report_template_lookup_falls_back_from_legacy_name(): void
+    {
+        config()->set('fleet.wialon.geozon_report_resource_id', 601701680);
+        config()->set('fleet.wialon.geozon_report_template_name', 'geozon api');
+
+        $this->mock(WialonService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('findReportTemplateByName')
+                ->once()
+                ->with(601701680, 'geozon api')
+                ->andReturnNull();
+            $mock->shouldReceive('findReportTemplateByName')
+                ->once()
+                ->with(601701680, 'Geofence Transferləri api')
+                ->andReturn(['id' => 17, 'name' => 'Geofence Transferləri api']);
+        });
+
+        $this->assertSame(17, app(WialonGeozonReportService::class)->findTemplateByName()['id']);
+    }
 
     public function test_parser_assigns_parent_geofence_to_child_rows(): void
     {

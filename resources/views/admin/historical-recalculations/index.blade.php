@@ -134,6 +134,7 @@
                                 <td>{{ [
                                     'daily_averages' => 'Orta göstəricilər',
                                     'efficiency' => 'Effektivlik',
+                                    'daytime_efficiency' => 'Effektivlik',
                                     'top_working_units' => 'Top 20',
                                     'geofence_outside' => 'Geofence Transferləri',
                                     'geofence_violations' => 'Geofence Pozuntuları',

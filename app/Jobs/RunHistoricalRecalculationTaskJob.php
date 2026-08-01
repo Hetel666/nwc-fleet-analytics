@@ -2,23 +2,19 @@
 
 namespace App\Jobs;
 
-use App\Models\GeofenceViolationSyncItem;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
-use App\Models\ProjectWialonGroup;
-use App\Models\WialonReportSyncItem;
+use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
-use App\Services\WialonReportStatsSyncService;
 use Illuminate\Bus\Batchable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
-use RuntimeException;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class RunHistoricalRecalculationTaskJob implements ShouldQueue
+class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 {
     use Batchable, Queueable;
 
@@ -28,6 +24,8 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
 
     public bool $failOnTimeout = true;
 
+    public int $uniqueFor = 7200;
+
     public function __construct(public int $taskId) {}
 
     public function backoff(): array
@@ -35,8 +33,15 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         return [60, 300];
     }
 
-    public function handle(WialonReportStatsSyncService $sync, HistoricalRecalculationService $service): void
+    public function uniqueId(): string
     {
+        return (string) $this->taskId;
+    }
+
+    public function handle(
+        HistoricalRecalculationModuleRegistry $modules,
+        HistoricalRecalculationService $service
+    ): void {
         $task = HistoricalRecalculationTask::query()->with('run')->findOrFail($this->taskId);
         $run = $task->run;
 
@@ -100,7 +105,17 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
                 'last_heartbeat_at' => now(config('app.timezone')),
             ])->save();
 
-            $equipmentCount = $this->runSectionFetch($run, $task, $sync);
+            Log::withContext([
+                'run_id' => $run->id,
+                'task_id' => $task->id,
+                'module' => $run->dashboard_section,
+                'project_id' => $task->project_id,
+                'business_date' => optional($task->stat_date)->toDateString(),
+                'job_uuid' => $this->job?->uuid(),
+                'queue' => $this->job?->getQueue(),
+            ]);
+
+            $equipmentCount = $modules->execute($run, $task);
 
             $service->markFetchTaskCompleted($task, $equipmentCount);
         } catch (Throwable $exception) {
@@ -112,104 +127,19 @@ class RunHistoricalRecalculationTaskJob implements ShouldQueue
         }
     }
 
-    private function runSectionFetch(
-        HistoricalRecalculation $run,
-        HistoricalRecalculationTask $task,
-        WialonReportStatsSyncService $sync
-    ): int {
-        $date = $task->stat_date->toDateString();
-
-        if ($run->dashboard_section === HistoricalRecalculation::SECTION_TOP_WORKING_UNITS) {
-            $this->runArtisanOrFail('fleet:sync-engine-hours-report', array_filter([
-                '--date' => $date,
-                '--project' => $task->project_id,
-                '--ownership' => $task->ownership_type,
-                '--force' => (bool) $run->force,
-                '--limit' => 50,
-            ], fn (mixed $value): bool => $value !== null && $value !== ''));
-
-            return 0;
-        }
-
-        if ($run->dashboard_section === HistoricalRecalculation::SECTION_EFFICIENCY) {
-            $group = ProjectWialonGroup::query()
-                ->where('project_id', $task->project_id)
-                ->where('ownership_type', $task->ownership_type)
-                ->firstOrFail();
-
-            $this->runArtisanOrFail('fleet:plan-shift-sync', array_filter([
-                '--from' => $date,
-                '--to' => $date,
-                '--group' => $group->wialon_group_id,
-                '--force' => (bool) $run->force,
-            ], fn (mixed $value): bool => $value !== null && $value !== ''));
-
-            $this->runArtisanOrFail('fleet:run-shift-sync', array_filter([
-                '--date' => $date,
-                '--group' => $group->wialon_group_id,
-                '--limit' => 1,
-                '--retry-failed' => (bool) $run->force,
-            ], fn (mixed $value): bool => $value !== null && $value !== ''));
-
-            return (int) WialonReportSyncItem::query()
-                ->where('sync_type', WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY)
-                ->where('report_date', $date)
-                ->where('wialon_group_id', $group->wialon_group_id)
-                ->value('rows_saved');
-        }
-
-        if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE) {
-            $this->runArtisanOrFail('fleet:sync-geozon-api', array_filter([
-                '--from' => $date.' 00:00:00',
-                '--to' => $date.' 23:59:59',
-                '--project' => $task->project_id,
-                '--force' => (bool) $run->force,
-            ], fn (mixed $value): bool => $value !== null && $value !== ''));
-
-            return 0;
-        }
-
-        if ($run->dashboard_section === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
-            $from = $run->date_from->toDateString().' 00:00:00';
-            $to = $run->date_to->toDateString().' 23:59:59';
-            $this->runArtisanOrFail('fleet:sync-geofence-violations-report', array_filter([
-                '--from' => $from,
-                '--to' => $to,
-                '--project' => $task->project_id,
-                '--force' => (bool) $run->force,
-            ], fn (mixed $value): bool => $value !== null && $value !== ''));
-
-            return (int) GeofenceViolationSyncItem::query()
-                ->where('project_id', $task->project_id)
-                ->where('report_period_from', Carbon::parse($from, $run->timezone))
-                ->where('report_period_to', Carbon::parse($to, $run->timezone))
-                ->where('status', GeofenceViolationSyncItem::STATUS_COMPLETED)
-                ->sum('imported_rows');
-        }
-
-        $result = $sync->syncDailyEngineHoursReport([
-            'date_from' => $date,
-            'date_to' => $date,
-            'project_id' => $task->project_id,
-            'ownership_type' => $task->ownership_type,
-        ], (bool) $run->force);
-
-        return (int) ($result['equipment_count'] ?? 0);
-    }
-
-    private function runArtisanOrFail(string $command, array $parameters): void
+    public function failed(?Throwable $exception): void
     {
-        $exitCode = Artisan::call($command, $parameters);
+        $task = HistoricalRecalculationTask::query()->with('run')->find($this->taskId);
 
-        if ($exitCode !== 0) {
-            $output = trim(Artisan::output());
-            $message = "Command {$command} failed with exit code {$exitCode}.";
-
-            if ($output !== '') {
-                $message .= ' '.$output;
-            }
-
-            throw new RuntimeException($message);
+        if (! $task || ! in_array($task->status, [
+            HistoricalRecalculationTask::STATUS_PENDING,
+            HistoricalRecalculationTask::STATUS_RUNNING,
+        ], true)) {
+            return;
         }
+
+        $service = app(HistoricalRecalculationService::class);
+        $service->markTaskFailed($task, $exception?->getMessage() ?: 'Queue worker failed before task completion.');
+        $service->dispatchNextPendingFetchTask($task->run->refresh());
     }
 }
