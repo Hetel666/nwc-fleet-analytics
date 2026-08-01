@@ -526,6 +526,14 @@ class EngineHoursTop20SyncService
     {
         $limit = max(1, min(50, (int) ($filters['limit'] ?? 10)));
         $statuses = [WialonReportSyncItem::STATUS_PENDING, WialonReportSyncItem::STATUS_RETRY];
+        $scopedGroupIds = null;
+
+        if (! empty($filters['project']) || $this->ownership($filters['ownership'] ?? $filters['ownership_type'] ?? null) !== null) {
+            $scopedGroupIds = $this->groups($filters)
+                ->pluck('wialon_group_id')
+                ->map(fn (mixed $groupId): string => (string) $groupId)
+                ->all();
+        }
 
         return WialonReportSyncItem::query()
             ->where('sync_type', WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20)
@@ -535,6 +543,7 @@ class EngineHoursTop20SyncService
             })
             ->when(! empty($filters['date']), fn (Builder $query) => $query->where('report_date', $filters['date']))
             ->when(! empty($filters['group']), fn (Builder $query) => $query->where('wialon_group_id', trim((string) $filters['group'])))
+            ->when($scopedGroupIds !== null, fn (Builder $query) => $query->whereIn('wialon_group_id', $scopedGroupIds))
             ->orderBy('report_date')
             ->orderBy('wialon_group_id')
             ->limit($limit)
