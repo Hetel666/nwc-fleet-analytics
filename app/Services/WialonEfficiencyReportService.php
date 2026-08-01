@@ -70,10 +70,15 @@ class WialonEfficiencyReportService
                     false,
                     $settings['timeout'],
                 );
+                $reportResult = $result['reportResult'] ?? null;
+
+                if (! is_array($reportResult) || ! is_array($reportResult['tables'] ?? null)) {
+                    throw new RuntimeException('Wialon efficiency report returned an invalid result structure.');
+                }
 
                 $tables = [];
 
-                foreach (($result['reportResult']['tables'] ?? []) as $index => $table) {
+                foreach ($reportResult['tables'] as $index => $table) {
                     if (! is_array($table)) {
                         continue;
                     }
@@ -88,7 +93,8 @@ class WialonEfficiencyReportService
                     $tables[] = ['index' => (int) $index, 'table' => $table, 'rows' => $rows];
                 }
 
-                if (! collect($tables)->contains(fn (array $item): bool => in_array('duration', $item['table']['header_type'] ?? [], true))) {
+                if ($reportResult['tables'] !== []
+                    && ! collect($tables)->contains(fn (array $item): bool => in_array('duration', $item['table']['header_type'] ?? [], true))) {
                     throw new RuntimeException('Wialon efficiency report did not return the Engine hours table.');
                 }
 

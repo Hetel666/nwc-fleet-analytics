@@ -90,6 +90,23 @@ class NewEfficiencyModuleTest extends TestCase
         $this->assertDatabaseHas('efficiency_sync_tasks', ['status' => 'failed']);
     }
 
+    public function test_confirmed_empty_report_creates_no_data_for_full_group_membership(): void
+    {
+        [$handler, $run, $task] = $this->handlerScenario([
+            'tables' => [],
+            'result' => ['reportResult' => ['tables' => []]],
+        ]);
+
+        $this->assertSame(2, $handler->execute($run, $task));
+        $this->assertSame(2, EfficiencyDailyFact::query()->count());
+        $this->assertSame(2, EfficiencyDailyFact::query()->where('efficiency_status', EfficiencyStatus::NO_DATA)->count());
+        $this->assertDatabaseHas('efficiency_sync_tasks', [
+            'status' => 'completed',
+            'report_rows_received' => 0,
+            'missing_units_count' => 2,
+        ]);
+    }
+
     public function test_incomplete_report_columns_do_not_create_mass_no_data(): void
     {
         $report = $this->report('6001', '7,50', '4,25 km');

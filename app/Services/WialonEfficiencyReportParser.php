@@ -14,8 +14,19 @@ class WialonEfficiencyReportParser
         $records = [];
         $rowsReceived = 0;
         $matchedTable = false;
+        $reportTables = $report['tables'] ?? null;
 
-        foreach (($report['tables'] ?? []) as $reportTable) {
+        if ($reportTables === []
+            && is_array($report['result']['reportResult'] ?? null)
+            && ($report['result']['reportResult']['tables'] ?? null) === []) {
+            return ['records' => [], 'rows_received' => 0];
+        }
+
+        if (! is_array($reportTables)) {
+            throw new RuntimeException('Wialon efficiency report tables are missing.');
+        }
+
+        foreach ($reportTables as $reportTable) {
             $table = $reportTable['table'] ?? [];
             $headers = array_map(fn ($value): string => trim((string) $value), $table['header'] ?? []);
             $types = $table['header_type'] ?? [];
