@@ -33,7 +33,7 @@ class HistoricalRecalculationModuleRegistry
                 'job' => RunHistoricalRecalculationTaskJob::class,
                 'queue' => $queue,
                 'result_tables' => ['equipment_daily_stats', 'daily_unit_aggregates'],
-                'aliases' => [],
+                'aliases' => ['average_engine_hours', 'average_mileage'],
             ],
             HistoricalRecalculation::SECTION_EFFICIENCY => [
                 'label' => 'Effektivlik',
@@ -77,7 +77,7 @@ class HistoricalRecalculationModuleRegistry
                 'job' => RunHistoricalRecalculationTaskJob::class,
                 'queue' => $queue,
                 'result_tables' => ['engine_hours_report_unit_days', 'wialon_report_sync_items'],
-                'aliases' => [],
+                'aliases' => ['top_20', 'top20'],
             ],
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE => [
                 'label' => 'Geofence Transferləri',
@@ -86,7 +86,7 @@ class HistoricalRecalculationModuleRegistry
                 'job' => RunHistoricalRecalculationTaskJob::class,
                 'queue' => $queue,
                 'result_tables' => ['unit_foreign_geofence_intervals'],
-                'aliases' => [],
+                'aliases' => ['geofence_transfers'],
             ],
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS => [
                 'label' => 'Geofence Pozuntuları',

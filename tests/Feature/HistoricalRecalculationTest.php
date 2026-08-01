@@ -15,6 +15,7 @@ use App\Services\EfficiencyRecalculationHandler;
 use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -531,6 +532,47 @@ class HistoricalRecalculationTest extends TestCase
             $this->assertStringContainsString('value="'.$moduleCode.'"', $view);
         }
         $this->assertStringContainsString('value="daytime_efficiency"', $view);
+    }
+
+    public function test_dashboard_reports_daily_queue_uses_completed_baku_periods(): void
+    {
+        Queue::fake();
+        Carbon::setTestNow(Carbon::parse('2026-08-02 00:00:00', 'Asia/Baku'));
+
+        try {
+            $project = Project::query()->create(['name' => 'Daily dashboard sync', 'active' => true]);
+            ProjectWialonGroup::query()->create([
+                'project_id' => $project->id,
+                'wialon_group_id' => '710',
+                'name' => 'Daily dashboard sync - NWC',
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+            ]);
+
+            $this->artisan('dashboard-reports:queue-sync', [
+                '--daily' => true,
+                '--module' => [
+                    HistoricalRecalculation::SECTION_EFFICIENCY,
+                    HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+                ],
+                '--force' => true,
+            ])->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $this->assertDatabaseHas('historical_recalculations', [
+            'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+            'date_from' => '2026-08-01 00:00:00',
+            'date_to' => '2026-08-01 00:00:00',
+            'force' => 1,
+        ]);
+        $this->assertDatabaseHas('historical_recalculations', [
+            'dashboard_section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            'date_from' => '2026-07-31 00:00:00',
+            'date_to' => '2026-07-31 00:00:00',
+            'force' => 1,
+        ]);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
     }
 
     public function test_store_rejects_run_when_selected_project_has_no_executable_tasks(): void

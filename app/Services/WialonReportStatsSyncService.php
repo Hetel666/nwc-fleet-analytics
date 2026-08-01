@@ -23,6 +23,7 @@ class WialonReportStatsSyncService
     public function __construct(
         private WialonService $wialon,
         private DashboardDateRangePolicy $dateRangePolicy,
+        private ?WialonReportSessionLock $reportSessionLock = null,
     ) {}
 
     public function syncDailyEngineHoursReport(array $filters, bool $force = false): array
@@ -282,16 +283,18 @@ class WialonReportStatsSyncService
                 $day = Carbon::parse($date->toDateString(), config('app.timezone'));
 
                 try {
-                    $report = $this->wialon->getReportTablesRows(
-                        $settings['resource_id'],
-                        $settings['template_id'],
-                        $group->wialon_group_id,
-                        $day->copy()->startOfDay()->timestamp,
-                        $day->copy()->endOfDay()->timestamp,
-                        500,
-                        16777216,
-                        false,
-                        max(5, $requestTimeout ?? (int) config('fleet.wialon.daily_engine_hours_report_timeout', 30))
+                    $report = ($this->reportSessionLock ?? app(WialonReportSessionLock::class))->run(
+                        fn (): array => $this->wialon->getReportTablesRows(
+                            $settings['resource_id'],
+                            $settings['template_id'],
+                            $group->wialon_group_id,
+                            $day->copy()->startOfDay()->timestamp,
+                            $day->copy()->endOfDay()->timestamp,
+                            500,
+                            16777216,
+                            false,
+                            max(5, $requestTimeout ?? (int) config('fleet.wialon.daily_engine_hours_report_timeout', 30))
+                        )
                     );
                 } catch (Throwable $exception) {
                     Log::warning('Wialon daily engine hours report failed', [
