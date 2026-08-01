@@ -11,10 +11,10 @@ return new class extends Migration
         if (! Schema::hasTable('nighttime_efficiency_sync_runs')) {
             Schema::create('nighttime_efficiency_sync_runs', function (Blueprint $table): void {
                 $table->id();
-                $table->foreignId('historical_recalculation_id')->nullable()->unique()->constrained()->nullOnDelete();
+                $table->foreignId('historical_recalculation_id')->nullable();
                 $table->date('date_from');
                 $table->date('date_to');
-                $table->string('status', 32)->default('pending')->index();
+                $table->string('status', 32)->default('pending');
                 $table->unsignedInteger('total_tasks')->default(0);
                 $table->unsignedInteger('pending_tasks')->default(0);
                 $table->unsignedInteger('running_tasks')->default(0);
@@ -22,26 +22,35 @@ return new class extends Migration
                 $table->unsignedInteger('failed_tasks')->default(0);
                 $table->timestamp('started_at')->nullable();
                 $table->timestamp('completed_at')->nullable();
-                $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
+                $table->foreignId('created_by')->nullable();
                 $table->text('error_message')->nullable();
                 $table->timestamps();
+
+                $table->unique('historical_recalculation_id', 'night_eff_run_history_unique');
+                $table->index('status', 'night_eff_run_status_idx');
+                $table->foreign('historical_recalculation_id', 'night_eff_run_history_fk')
+                    ->references('id')->on('historical_recalculations')->nullOnDelete();
+                $table->foreign('created_by', 'night_eff_run_creator_fk')
+                    ->references('id')->on('users')->nullOnDelete();
             });
         } else {
             $indexes = collect(Schema::getIndexes('nighttime_efficiency_sync_runs'))->pluck('name');
             $foreignKeys = collect(Schema::getForeignKeys('nighttime_efficiency_sync_runs'))->pluck('name');
 
             Schema::table('nighttime_efficiency_sync_runs', function (Blueprint $table) use ($indexes, $foreignKeys): void {
-                if (! $indexes->contains('nighttime_efficiency_sync_runs_historical_recalculation_id_unique')) {
-                    $table->unique('historical_recalculation_id');
+                if (! $indexes->contains('night_eff_run_history_unique')) {
+                    $table->unique('historical_recalculation_id', 'night_eff_run_history_unique');
                 }
-                if (! $indexes->contains('nighttime_efficiency_sync_runs_status_index')) {
-                    $table->index('status');
+                if (! $indexes->contains('night_eff_run_status_idx')) {
+                    $table->index('status', 'night_eff_run_status_idx');
                 }
-                if (! $foreignKeys->contains('nighttime_efficiency_sync_runs_historical_recalculation_id_foreign')) {
-                    $table->foreign('historical_recalculation_id')->references('id')->on('historical_recalculations')->nullOnDelete();
+                if (! $foreignKeys->contains('night_eff_run_history_fk')) {
+                    $table->foreign('historical_recalculation_id', 'night_eff_run_history_fk')
+                        ->references('id')->on('historical_recalculations')->nullOnDelete();
                 }
-                if (! $foreignKeys->contains('nighttime_efficiency_sync_runs_created_by_foreign')) {
-                    $table->foreign('created_by')->references('id')->on('users')->nullOnDelete();
+                if (! $foreignKeys->contains('night_eff_run_creator_fk')) {
+                    $table->foreign('created_by', 'night_eff_run_creator_fk')
+                        ->references('id')->on('users')->nullOnDelete();
                 }
             });
         }
