@@ -1,4 +1,4 @@
-<div class="dashboard-scroll-table">
+<div class="dashboard-scroll-table dashboard-ranking-table">
     @php
         $showDate = collect($rows)->contains(fn ($row) => (bool) ($row['show_date'] ?? false));
         $ranking = $ranking ?? 'least';

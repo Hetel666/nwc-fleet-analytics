@@ -43,8 +43,6 @@
         </div>
     </div>
 
-    <div class="dashboard-work-status-note mb-2">Hesablama vahidi: Texnika-gün</div>
-
     @if ($hasRows)
         <div class="dashboard-work-status-layout flex-grow-1">
             <div class="dashboard-work-status-chart">
@@ -122,6 +120,6 @@
             </div>
         </div>
     @else
-        <div class="dashboard-empty flex-grow-1">{{ __('app.no_data') }}</div>
+        <div class="dashboard-empty flex-grow-1">Seçilmiş dövr üçün məlumat yoxdur</div>
     @endif
 </section>

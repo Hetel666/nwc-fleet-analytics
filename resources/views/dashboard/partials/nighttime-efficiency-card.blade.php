@@ -7,19 +7,11 @@
 <section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column">
     <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
         <div class="min-w-0">
-            <h3 class="h5 dashboard-work-status-title fw-bold mb-1 dashboard-card-title-text">{{ $title }}</h3>
-            <div class="small text-secondary">18:00-07:59 intervalı üzrə Engine hours</div>
+            <h3 class="h5 dashboard-work-status-title fw-bold mb-0 dashboard-card-title-text">{{ $title }}</h3>
         </div>
         <a href="{{ $exportUrl }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
             <i class="bi bi-download"></i>
         </a>
-    </div>
-
-    <div class="dashboard-work-status-note mb-2">
-        Hesablama vahidi: Texnika-növbə<br>
-        İş vaxtı: 18:00-07:59<br>
-        Mənbə: night report Engine hours (api)<br>
-        Növbə tarixi başlanğıc gününə görə hesablanır
     </div>
 
     @if ($total > 0)
@@ -57,6 +49,6 @@
             </div>
         </div>
     @else
-        <div class="dashboard-empty flex-grow-1">{{ __('app.no_data') }}</div>
+        <div class="dashboard-empty flex-grow-1">Seçilmiş dövr üçün gecə növbəsi məlumatı yoxdur</div>
     @endif
 </section>

@@ -1822,12 +1822,20 @@
     }
 
     .dashboard-efficiency-subnav {
-        display: none;
+        position: sticky;
+        top: 76px;
+        z-index: 20;
+        display: flex;
         align-items: center;
         gap: .35rem;
         margin-bottom: 1rem;
         overflow-x: auto;
-        padding-bottom: .2rem;
+        padding: .45rem;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--fleet-card) 94%, transparent);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, .06);
+        backdrop-filter: blur(10px);
         scrollbar-width: thin;
     }
 
@@ -1836,15 +1844,75 @@
         white-space: nowrap;
     }
 
-    .dashboard-page[data-dashboard-layout-variant="compact"] .dashboard-efficiency-subnav,
-    .dashboard-page[data-dashboard-layout-variant="side_filters"] .dashboard-efficiency-subnav,
-    .dashboard-page[data-dashboard-layout-variant="dark_analytics"] .dashboard-efficiency-subnav {
+    .dashboard-efficiency-section-heading,
+    .dashboard-efficiency-shift-section {
+        scroll-margin-top: 142px;
+    }
+
+    .dashboard-efficiency-section-heading {
+        padding-top: .35rem;
+    }
+
+    .dashboard-efficiency-section-heading h2,
+    .dashboard-efficiency-shift-section h2 {
+        letter-spacing: 0;
+    }
+
+    .dashboard-efficiency-section-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .25rem .9rem;
+        color: var(--fleet-muted);
+        font-size: .82rem;
+    }
+
+    .dashboard-efficiency-section-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+    }
+
+    #efficiency-general { order: 100 !important; }
+    [data-widget-key="project-work-categories-nwc"] { order: 110 !important; }
+    [data-widget-key="project-work-categories-icare"] { order: 111 !important; }
+    #efficiency-daytime { order: 200 !important; }
+    #efficiency-nighttime { order: 300 !important; }
+    #efficiency-averages { order: 400 !important; }
+    [data-widget-key="average-engine-hours"] { order: 410 !important; }
+    [data-widget-key="average-mileage"] { order: 411 !important; }
+    #efficiency-top20 { order: 500 !important; }
+    [data-widget-key="least-working"] { order: 510 !important; }
+    [data-widget-key="most-working"] { order: 511 !important; }
+
+    .dashboard-ranking-card {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        min-height: 420px;
+    }
+
+    .dashboard-ranking-card .dashboard-panel-header {
+        min-height: 32px;
+    }
+
+    .dashboard-ranking-card .dashboard-ranking-table {
+        flex: 1 1 auto;
+        height: 350px;
+        max-height: 350px;
+        overscroll-behavior: contain;
+    }
+
+    .dashboard-efficiency-pair-widget,
+    .dashboard-top-widget,
+    .dashboard-efficiency-shift-section .row > [class*="col-"] {
         display: flex;
     }
 
-    .dashboard-page:is([data-dashboard-layout-variant="compact"], [data-dashboard-layout-variant="side_filters"], [data-dashboard-layout-variant="dark_analytics"])
-        [data-efficiency-group][hidden] {
-        display: none !important;
+    .dashboard-efficiency-pair-widget > .dashboard-card,
+    .dashboard-top-widget > .dashboard-card,
+    .dashboard-efficiency-shift-section .row > [class*="col-"] > .dashboard-card {
+        width: 100%;
+        height: 100%;
     }
     .dashboard-filter-chip {
         padding: 5px 9px;
@@ -2113,6 +2181,10 @@
         box-shadow: 0 12px 30px rgba(0, 0, 0, .18) !important;
     }
     @media (min-width: 1200px) {
+        #dashboardGrid[data-dashboard-active-tab="efficiency"] > .dashboard-widget {
+            width: 50% !important;
+        }
+
         .dashboard-page[data-dashboard-layout-variant="compact"] #dashboardGrid > .dashboard-widget {
             width: 33.333333%;
         }
@@ -2152,6 +2224,12 @@
             max-width: 100%;
         }
     }
+    @media (min-width: 1200px) and (max-width: 1399.98px) {
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] #dashboardGrid[data-dashboard-active-tab="efficiency"] > .dashboard-widget,
+        .dashboard-page[data-dashboard-layout-variant="side_filters"] .dashboard-efficiency-shift-section .row > [class*="col-"] {
+            width: 100% !important;
+        }
+    }
     @media (max-width: 1199.98px) and (min-width: 768px) {
         .dashboard-page[data-dashboard-layout-variant="compact"] #dashboardGrid > .dashboard-widget,
         .dashboard-page[data-dashboard-layout-variant="card_grid"] #dashboardGrid > .dashboard-widget {
@@ -2159,6 +2237,24 @@
         }
     }
     @media (max-width: 767.98px) {
+        .dashboard-efficiency-subnav {
+            top: 64px;
+        }
+
+        .dashboard-efficiency-section-heading,
+        .dashboard-efficiency-shift-section {
+            scroll-margin-top: 128px;
+        }
+
+        .dashboard-ranking-card {
+            min-height: 390px;
+        }
+
+        .dashboard-ranking-card .dashboard-ranking-table {
+            height: 320px;
+            max-height: 320px;
+        }
+
         .dashboard-design-drawer {
             width: 100vw;
             border-left: 0;
@@ -2409,11 +2505,11 @@
         @endunless
 
         <nav class="dashboard-efficiency-subnav" id="dashboardEfficiencySubnav" aria-label="Effektivlik bölmələri" @hidden($selectedDashboardTab !== 'efficiency')>
-            <button type="button" class="btn btn-sm btn-primary" data-efficiency-section="general">Ümumi</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="averages">Orta göstəricilər</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="ranking">Ən az / ən çox</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="daytime">Gündüz</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="nighttime">Gecə</button>
+            <button type="button" class="btn btn-sm btn-primary" data-efficiency-section="general" aria-pressed="true">Ümumi</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="daytime" aria-pressed="false">Gündüz</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="nighttime" aria-pressed="false">Gecə</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="averages" aria-pressed="false">Orta göstəricilər</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="top20" aria-pressed="false">Top 20</button>
         </nav>
 
         <div
@@ -2516,10 +2612,23 @@
             @endif
 
             @if ($selectedDashboardTab === 'efficiency')
+            <section
+                id="efficiency-general"
+                class="col-12 dashboard-efficiency-section-heading"
+                data-efficiency-group="general"
+                aria-labelledby="efficiency-general-title"
+            >
+                <h2 class="h4 fw-bold mb-1" id="efficiency-general-title">Ümumi effektivlik</h2>
+                <div class="dashboard-efficiency-section-meta">
+                    <span><i class="bi bi-database"></i>Mənbə: Qrup report Engine hours (api)</span>
+                    <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
+                </div>
+            </section>
+
             @php
-                $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-xl-6', 6);
+                $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: 110" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesNwc',
                     'ownershipCode' => $nwc,
@@ -2535,9 +2644,9 @@
             </div>
 
             @php
-                $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-icare', 'col-12 col-xl-6', 6);
+                $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-icare', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: 111" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesIcare',
                     'ownershipCode' => $icare,
@@ -2552,61 +2661,15 @@
                 ])
             </div>
 
-            @php
-                $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-xl-6', 6);
-            @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
-                @include('dashboard.partials.daily-average-dashboard-card', [
-                    'metric' => 'engine_hours',
-                    'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
-                    'title' => $dashboardWidgetTitleFor('average-engine-hours', 'Orta motosaat göstəricisi'),
-                    'subtitle' => 'Hər gün üzrə orta motosaat (saat)',
-                    'exportUrl' => $exportUrl('average-engine-hours'),
-                    'filters' => $filters,
-                    'selectedProject' => $selectedProject,
-                ])
-            </div>
-
-            @php
-                $widgetLayout = $dashboardWidgetLayoutFor('average-mileage', 'col-12 col-xl-6', 6);
-            @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
-                @include('dashboard.partials.daily-average-dashboard-card', [
-                    'metric' => 'mileage',
-                    'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
-                    'title' => $dashboardWidgetTitleFor('average-mileage', 'Orta yürüş göstəricisi'),
-                    'subtitle' => 'Hər gün üzrə orta yürüş (km)',
-                    'exportUrl' => $exportUrl('average-mileage'),
-                    'filters' => $filters,
-                    'selectedProject' => $selectedProject,
-                ])
-            </div>
-
-            @php
-                $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-xl-6', 6);
-            @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="ranking" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
-                <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
-                </section>
-            </div>
-
-            @php
-                $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-xl-6', 6);
-            @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="ranking" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
-                <section class="panel p-3 dashboard-card">
-                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
-                </section>
-            </div>
-
-            <section class="col-12 mt-4" data-efficiency-group="daytime" style="order: 1000" aria-labelledby="daytime-efficiency-title">
+            <section id="efficiency-daytime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="daytime" style="order: 200" aria-labelledby="daytime-efficiency-title">
                 <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
                     <div>
                         <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
-                        <div class="text-secondary">08:00-17:59 intervalı üzrə Engine hours</div>
+                        <div class="dashboard-efficiency-section-meta">
+                            <span><i class="bi bi-clock"></i>08:00–17:59 intervalı üzrə Engine hours</span>
+                            <span><i class="bi bi-database"></i>Mənbə: day report Engine hours (api)</span>
+                            <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
+                        </div>
                     </div>
                     <form method="GET" action="{{ route('dashboard') }}" class="d-flex align-items-end gap-2">
                         <input type="hidden" name="tab" value="efficiency">
@@ -2623,7 +2686,7 @@
                     </form>
                 </div>
                 <div class="row g-3">
-                    <div class="col-12 col-xl-6">
+                    <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.daytime-efficiency-card', [
                             'chartId' => 'daytimeEfficiencyNwc',
                             'ownershipCode' => $nwc,
@@ -2639,7 +2702,7 @@
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
-                    <div class="col-12 col-xl-6">
+                    <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.daytime-efficiency-card', [
                             'chartId' => 'daytimeEfficiencyIcare',
                             'ownershipCode' => $icare,
@@ -2658,12 +2721,16 @@
                 </div>
             </section>
 
-            <section class="col-12 mt-4" data-efficiency-group="nighttime" style="order: 1001" aria-labelledby="nighttime-efficiency-title">
+            <section id="efficiency-nighttime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="nighttime" style="order: 300" aria-labelledby="nighttime-efficiency-title">
                 <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
                     <div>
                         <h2 class="h4 fw-bold mb-1" id="nighttime-efficiency-title">Gecə növbəsi üzrə effektivlik</h2>
-                        <div class="text-secondary" title="31.07 18:00-01.08 07:59 növbəsi 31.07 tarixinə aiddir">18:00-07:59 intervalı üzrə Engine hours</div>
-                        <div class="small text-secondary">Növbə tarixi başlanğıc gününə görə hesablanır</div>
+                        <div class="dashboard-efficiency-section-meta">
+                            <span title="31.07 18:00-01.08 07:59 növbəsi 31.07 tarixinə aiddir"><i class="bi bi-moon-stars"></i>18:00–07:59 intervalı üzrə Engine hours</span>
+                            <span><i class="bi bi-database"></i>Mənbə: night report Engine hours (api)</span>
+                            <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-növbə</span>
+                        </div>
+                        <div class="small text-secondary mt-1">Növbə tarixi başlanğıc gününə görə hesablanır</div>
                     </div>
                     <form method="GET" action="{{ route('dashboard') }}" class="d-flex align-items-end gap-2">
                         <input type="hidden" name="tab" value="efficiency">
@@ -2680,7 +2747,7 @@
                     </form>
                 </div>
                 <div class="row g-3">
-                    <div class="col-12 col-xl-6">
+                    <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.nighttime-efficiency-card', [
                             'chartId' => 'nighttimeEfficiencyNwc',
                             'ownershipCode' => $nwc,
@@ -2696,7 +2763,7 @@
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
-                    <div class="col-12 col-xl-6">
+                    <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.nighttime-efficiency-card', [
                             'chartId' => 'nighttimeEfficiencyIcare',
                             'ownershipCode' => $icare,
@@ -2714,6 +2781,64 @@
                     </div>
                 </div>
             </section>
+
+            <section id="efficiency-averages" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="averages" style="order: 400" aria-labelledby="efficiency-averages-title">
+                <h2 class="h4 fw-bold mb-1" id="efficiency-averages-title">Orta göstəricilər</h2>
+            </section>
+
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-md-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: 410" draggable="false">
+                @include('dashboard.partials.daily-average-dashboard-card', [
+                    'metric' => 'engine_hours',
+                    'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
+                    'title' => $dashboardWidgetTitleFor('average-engine-hours', 'Orta motosaat göstəricisi'),
+                    'subtitle' => 'Hər gün üzrə orta motosaat (saat)',
+                    'exportUrl' => $exportUrl('average-engine-hours'),
+                    'filters' => $filters,
+                    'selectedProject' => $selectedProject,
+                ])
+            </div>
+
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('average-mileage', 'col-12 col-md-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: 411" draggable="false">
+                @include('dashboard.partials.daily-average-dashboard-card', [
+                    'metric' => 'mileage',
+                    'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
+                    'title' => $dashboardWidgetTitleFor('average-mileage', 'Orta yürüş göstəricisi'),
+                    'subtitle' => 'Hər gün üzrə orta yürüş (km)',
+                    'exportUrl' => $exportUrl('average-mileage'),
+                    'filters' => $filters,
+                    'selectedProject' => $selectedProject,
+                ])
+            </div>
+
+            <section id="efficiency-top20" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="top20" style="order: 500" aria-labelledby="efficiency-top20-title">
+                <h2 class="h4 fw-bold mb-1" id="efficiency-top20-title">Top göstəricilər</h2>
+            </section>
+
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-md-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: 510" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-ranking-card">
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
+                </section>
+            </div>
+
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-md-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: 511" draggable="false">
+                <section class="panel p-3 dashboard-card dashboard-ranking-card">
+                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
+                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
+                </section>
+            </div>
             @endif
 
             @if ($selectedDashboardTab === 'geozones')
@@ -3285,18 +3410,9 @@ let savedDashboardPreferences = {
     ...dashboardPreferenceDefaults,
     ...JSON.parse(dashboardPage?.dataset.dashboardPreferences || '{}'),
 };
-let activeEfficiencySection = 'general';
-
-function syncEfficiencySections() {
-    const groupedLayout = ['compact', 'side_filters', 'dark_analytics']
-        .includes(dashboardPage?.dataset.dashboardLayoutVariant || 'standard');
-
-    document.querySelectorAll('[data-efficiency-group]').forEach(section => {
-        section.hidden = groupedLayout && section.dataset.efficiencyGroup !== activeEfficiencySection;
-    });
-
+function setActiveEfficiencyNavigation(activeSection = 'general') {
     document.querySelectorAll('[data-efficiency-section]').forEach(button => {
-        const active = button.dataset.efficiencySection === activeEfficiencySection;
+        const active = button.dataset.efficiencySection === activeSection;
         button.classList.toggle('btn-primary', active);
         button.classList.toggle('btn-outline-secondary', !active);
         button.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -3316,7 +3432,6 @@ const applyDashboardPreferences = preferences => {
 
     document.documentElement.dataset.sidebarState = resolved.sidebar_state;
     window.applyFleetThemePreference?.(resolved.theme);
-    syncEfficiencySections();
     window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
 
     return resolved;
@@ -3472,9 +3587,14 @@ document.getElementById('dashboardEfficiencySubnav')?.addEventListener('click', 
         return;
     }
 
-    activeEfficiencySection = button.dataset.efficiencySection;
-    syncEfficiencySections();
-    document.getElementById('dashboardGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const section = button.dataset.efficiencySection;
+    const target = document.getElementById(`efficiency-${section}`);
+    if (!target) {
+        return;
+    }
+
+    setActiveEfficiencyNavigation(section);
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 applyDashboardPreferences(savedDashboardPreferences);
@@ -3998,7 +4118,7 @@ const setDashboardLayoutStatus = (message, tone = 'muted') => {
 };
 
 const sortWidgetsByServerOrder = () => {
-    if (!dashboardGrid) {
+    if (!dashboardGrid || dashboardGrid.dataset.dashboardActiveTab === 'efficiency') {
         return;
     }
 
@@ -4297,8 +4417,7 @@ const setActiveDashboardTab = tab => {
         efficiencySubnav.hidden = tab !== 'efficiency';
     }
     if (tab === 'efficiency') {
-        activeEfficiencySection = 'general';
-        syncEfficiencySections();
+        setActiveEfficiencyNavigation();
     }
 };
 
@@ -4344,7 +4463,7 @@ const replaceDashboardTabWidgets = remoteGrid => {
     disableDashboardDragging();
     bindDashboardWidgetControls();
     initializeDashboardCharts();
-    syncEfficiencySections();
+    setActiveEfficiencyNavigation();
 
 };
 
