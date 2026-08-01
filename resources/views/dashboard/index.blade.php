@@ -350,47 +350,21 @@
         .dashboard-project-type-table col.dashboard-project-type-number {
             width: 72px;
         }
+        #dashboardDrilldownSearch {
+            width: 100%;
+            max-width: none !important;
+            margin-left: 0 !important;
+        }
     }
     .dashboard-drilldown-status {
-        min-height: 24px;
-    }
-    .dashboard-drilldown-filter-panel {
-        border: 1px solid var(--fleet-line);
-        border-radius: 14px;
-        background: var(--fleet-card-soft);
-        box-shadow: 0 18px 45px rgba(15, 31, 58, .08);
-        padding: 14px;
-        margin-bottom: 12px;
-    }
-    .dashboard-drilldown-filter-panel .form-label {
-        font-size: 11px;
         font-weight: 700;
-        color: var(--fleet-muted);
-        margin-bottom: 4px;
+        line-height: 1.25;
     }
-    .dashboard-drilldown-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        margin-bottom: 10px;
-    }
-    .dashboard-drilldown-chip {
-        border: 1px solid color-mix(in srgb, var(--fleet-blue) 28%, var(--fleet-line));
-        background: color-mix(in srgb, var(--fleet-blue) 10%, var(--fleet-card));
-        color: var(--fleet-blue);
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 700;
-        line-height: 1;
-        padding: 7px 10px;
-    }
-    .dashboard-drilldown-chip button {
-        border: 0;
-        background: transparent;
-        color: inherit;
-        font-weight: 900;
-        margin-left: 6px;
-        padding: 0;
+    #dashboardDrilldownFilters {
+        display: grid;
+        gap: 2px;
+        margin-top: 4px;
+        line-height: 1.25;
     }
     .dashboard-drilldown-sort {
         border: 0;
@@ -1028,34 +1002,6 @@
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .dashboard-drilldown-formula {
-        border: 1px solid #d9e6fb;
-        border-radius: 12px;
-        background: #f7fbff;
-        padding: 12px;
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 10px;
-        margin-bottom: 12px;
-    }
-    .dashboard-drilldown-formula-item {
-        min-width: 0;
-        display: grid;
-        gap: 3px;
-    }
-    .dashboard-drilldown-formula-item span {
-        color: var(--fleet-muted);
-        font-size: .74rem;
-        line-height: 1.15;
-    }
-    .dashboard-drilldown-formula-item strong {
-        color: var(--fleet-ink);
-        font-size: .92rem;
-        line-height: 1.2;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
     .dashboard-loading-overlay {
         position: fixed;
         inset: 0;
@@ -1146,13 +1092,6 @@
         .dashboard-type-chart-box {
             flex-basis: auto;
         }
-        .dashboard-drilldown-filter-panel {
-            position: fixed;
-            inset: 10px;
-            z-index: 1065;
-            overflow: auto;
-            margin: 0;
-        }
         .dashboard-average-insight-header {
             align-items: stretch !important;
         }
@@ -1185,9 +1124,6 @@
         }
         .dashboard-average-type-value {
             justify-self: start;
-        }
-        .dashboard-drilldown-formula {
-            grid-template-columns: 1fr 1fr;
         }
     }
     .geofence-paired-widget .foreign-geofence-shell {
@@ -3110,12 +3046,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Bağla"></button>
                 </div>
                 <div class="modal-body" id="dashboardDrilldownBody" aria-busy="false">
-                    <div class="nav nav-tabs mb-3" role="tablist" aria-label="{{ __('app.equipment_details') }}">
-                        <button type="button" class="nav-link active" id="dashboardDrilldownTabData" role="tab" aria-selected="true" aria-controls="dashboardDrilldownDataControls dashboardDrilldownTable dashboardDrilldownPagination" data-drilldown-tab-target="data">{{ __('app.modal_tab_data') }}</button>
-                        <button type="button" class="nav-link" id="dashboardDrilldownTabSummary" role="tab" aria-selected="false" aria-controls="dashboardDrilldownChips dashboardDrilldownStatus dashboardDrilldownFormula" data-drilldown-tab-target="summary" tabindex="-1">{{ __('app.modal_tab_summary') }}</button>
-                        <button type="button" class="nav-link" id="dashboardDrilldownTabFilters" role="tab" aria-selected="false" aria-controls="dashboardDrilldownFilterPanel" data-drilldown-tab-target="filters" tabindex="-1">{{ __('app.modal_tab_filters') }}</button>
-                    </div>
-                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3" id="dashboardDrilldownDataControls" data-drilldown-tab-section="data">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="dashboardDrilldownDataControls">
                         <div class="btn-group btn-group-sm" role="group" aria-label="Mənsubiyyət">
                             <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="all" aria-pressed="false">Hamısı</button>
                             <button type="button" class="btn btn-outline-primary dashboard-drilldown-filter" data-filter-name="ownership" data-filter-value="nwc" aria-pressed="false">NWC</button>
@@ -3126,139 +3057,16 @@
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="available" aria-pressed="false">Məlumat var</button>
                             <button type="button" class="btn btn-outline-secondary dashboard-drilldown-filter" data-filter-name="data_status" data-filter-value="missing" aria-pressed="false">Məlumat yoxdur</button>
                         </div>
-                        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="dashboardDrilldownFilterToggle" aria-expanded="false" aria-controls="dashboardDrilldownFilterPanel">
-                            <i class="bi bi-funnel"></i> Filtrlər
-                        </button>
                         <select class="form-select form-select-sm d-none" id="dashboardDrilldownGroupMode" aria-label="Qruplaşdırma" style="max-width: 190px;">
                             <option value="details">Gündəlik detallar</option>
                             <option value="day">Gün üzrə</option>
                             <option value="unit">Texnika üzrə</option>
                         </select>
                         <label class="visually-hidden" for="dashboardDrilldownSearch">{{ __('app.search_equipment') }}</label>
-                        <input type="search" class="form-control form-control-sm" id="dashboardDrilldownSearch" placeholder="Axtarış..." aria-label="{{ __('app.search_equipment') }}" style="max-width: 260px;">
+                        <input type="search" class="form-control form-control-sm ms-auto" id="dashboardDrilldownSearch" placeholder="Axtarış..." aria-label="{{ __('app.search_equipment') }}" style="max-width: 260px;">
                     </div>
-                    <div class="dashboard-drilldown-filter-panel d-none" id="dashboardDrilldownFilterPanel" role="tabpanel" aria-labelledby="dashboardDrilldownTabFilters" data-drilldown-tab-section="filters">
-                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                            <strong>Əlavə filtrlər</strong>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardDrilldownFilterClose">Bağla</button>
-                        </div>
-                        <div class="row g-2">
-                            <div class="col-6 col-lg-3">
-                                <label class="form-label" for="dashboardDrilldownDateFrom">Tarixdən</label>
-                                <input type="date" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDateFrom" data-filter-name="date_from">
-                            </div>
-                            <div class="col-6 col-lg-3">
-                                <label class="form-label" for="dashboardDrilldownDateTo">Tarixədək</label>
-                                <input type="date" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDateTo" data-filter-name="date_to">
-                            </div>
-                            <div class="col-6 col-lg-3">
-                                <label class="form-label" for="dashboardDrilldownOwnershipSelect">Mənsubiyyət</label>
-                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownOwnershipSelect" data-filter-name="ownership">
-                                    <option value="all">Hamısı</option>
-                                    <option value="nwc">NWC</option>
-                                    <option value="icare">İCARƏ</option>
-                                </select>
-                            </div>
-                            <div class="col-6 col-lg-3 dashboard-legacy-shift-filter-group">
-                                <label class="form-label" for="dashboardDrilldownDataStatusSelect">Məlumat statusu</label>
-                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDataStatusSelect" data-filter-name="data_status">
-                                    <option value="all">Hamısı</option>
-                                    <option value="available">Məlumat var</option>
-                                    <option value="missing">Məlumat yoxdur</option>
-                                </select>
-                            </div>
-                            <div class="col-12 col-lg-4 dashboard-efficiency-filter-group">
-                                <label class="form-label" for="dashboardDrilldownProjects">Layihə</label>
-                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownProjects" data-filter-name="project_ids" multiple size="4">
-                                    @foreach ($projects as $project)
-                                        <option value="{{ $project->id }}">{{ $project->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-12 col-lg-4">
-                                <label class="form-label" for="dashboardDrilldownVehicleTypes">Texnika növü</label>
-                                <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownVehicleTypes" data-filter-name="vehicle_types" multiple size="4">
-                                    @foreach ($efficiencyVehicleTypes as $value => $label)
-                                        <option value="{{ $value }}">{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-12 col-lg-4 dashboard-legacy-shift-filter-group">
-                                <div class="row g-2">
-                                    <div class="col-6">
-                                        <label class="form-label" for="dashboardDrilldownDayStatus">Gündüz statusu</label>
-                                        <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDayStatus" data-filter-name="day_status">
-                                            <option value="">Hamısı</option>
-                                            <option value="less_than_1_hour">{{ __('app.worked_less_than_1_hour') }}</option>
-                                            <option value="less_than_7_hours">{{ __('app.worked_less_than_7_hours') }}</option>
-                                            <option value="between_7_and_10_hours">{{ __('app.worked_7_to_10_hours') }}</option>
-                                            <option value="over_10_hours">{{ __('app.worked_over_10_hours') }}</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label" for="dashboardDrilldownOvertime">Overtime</label>
-                                        <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownOvertime" data-filter-name="has_overtime">
-                                            <option value="all">Hamısı</option>
-                                            <option value="yes">Var</option>
-                                            <option value="no">Yoxdur</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label" for="dashboardDrilldownDurationFormat">Müddət formatı</label>
-                                        <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDurationFormat" data-filter-name="duration_format">
-                                            <option value="decimal_hours">saat (yüzdə bir dəqiqliklə)</option>
-                                            <option value="hours_hms">saat:dəqiqə:saniyə</option>
-                                            <option value="days_hms">gün saat:dəqiqə:saniyə</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="form-label" for="dashboardDrilldownDayMin">Gündüz min</label>
-                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDayMin" data-filter-name="day_hours_min">
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="form-label" for="dashboardDrilldownOvertimeMin">Overtime min</label>
-                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownOvertimeMin" data-filter-name="overtime_hours_min">
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="form-label" for="dashboardDrilldownTotalMin">Ümumi min</label>
-                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownTotalMin" data-filter-name="total_hours_min">
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="form-label" for="dashboardDrilldownDayMax">Gündüz max</label>
-                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownDayMax" data-filter-name="day_hours_max">
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="form-label" for="dashboardDrilldownOvertimeMax">Overtime max</label>
-                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownOvertimeMax" data-filter-name="overtime_hours_max">
-                                    </div>
-                                    <div class="col-4">
-                                        <label class="form-label" for="dashboardDrilldownTotalMax">Ümumi max</label>
-                                        <input type="number" min="0" step="0.1" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownTotalMax" data-filter-name="total_hours_max">
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-12 col-lg-4">
-                                <label class="form-label" for="dashboardDrilldownUnitName">Texnikanın adı</label>
-                                <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownUnitName" data-filter-name="unit_name">
-                            </div>
-                            <div class="col-6 col-lg-4 dashboard-legacy-shift-filter-group">
-                                <label class="form-label" for="dashboardDrilldownRegistration">Qeydiyyat nişanı</label>
-                                <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownRegistration" data-filter-name="registration_number">
-                            </div>
-                            <div class="col-6 col-lg-4 dashboard-legacy-shift-filter-group">
-                                <label class="form-label" for="dashboardDrilldownWialonId">Wialon ID</label>
-                                <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownWialonId" data-filter-name="wialon_id">
-                            </div>
-                        </div>
-                        <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardDrilldownClearFilters">Təmizlə</button>
-                            <button type="button" class="btn btn-sm btn-primary" id="dashboardDrilldownApplyFilters">Filtrləri tətbiq et</button>
-                        </div>
-                    </div>
-                    <div class="dashboard-drilldown-chips d-none" id="dashboardDrilldownChips" role="tabpanel" aria-labelledby="dashboardDrilldownTabSummary" data-drilldown-tab-section="summary"></div>
-                    <div class="dashboard-drilldown-status small text-secondary mb-2 d-none" id="dashboardDrilldownStatus" aria-live="polite" data-drilldown-tab-section="summary">Məlumatlar yüklənir...</div>
-                    <div class="dashboard-drilldown-formula d-none" id="dashboardDrilldownFormula" data-drilldown-tab-section="summary"></div>
-                    <div class="dashboard-drilldown-table-wrapper border rounded" id="dashboardDrilldownTable" role="tabpanel" aria-labelledby="dashboardDrilldownTabData" data-drilldown-tab-section="data">
+                    <div class="dashboard-drilldown-status small text-secondary mb-1" id="dashboardDrilldownStatus" aria-live="polite">Məlumatlar yüklənir...</div>
+                    <div class="dashboard-drilldown-table-wrapper" id="dashboardDrilldownTable">
                         <table class="table table-sm align-middle mb-0 dashboard-drilldown-table">
                             <colgroup id="dashboardDrilldownColgroup"></colgroup>
                             <caption class="visually-hidden">{{ __('app.equipment_details') }}</caption>
@@ -3275,7 +3083,7 @@
                             <tbody id="dashboardDrilldownRows"></tbody>
                         </table>
                     </div>
-                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3" id="dashboardDrilldownPagination" data-drilldown-tab-section="data">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3" id="dashboardDrilldownPagination">
                         <div class="small text-secondary" id="dashboardDrilldownPageInfo" aria-live="polite"></div>
                         <div class="d-flex align-items-center gap-2">
                             <select class="form-select form-select-sm" id="dashboardDrilldownPageSize" aria-label="{{ __('app.pagination') }}" style="width: auto;">
@@ -4630,8 +4438,6 @@ dashboardResetButton?.addEventListener('click', () => {
 const drilldownModalElement = document.getElementById('dashboardDrilldownModal');
 const drilldownModal = drilldownModalElement && window.bootstrap ? new bootstrap.Modal(drilldownModalElement) : null;
 const drilldownBody = document.getElementById('dashboardDrilldownBody');
-const drilldownTabButtons = Array.from(document.querySelectorAll('[data-drilldown-tab-target]'));
-const drilldownTabSections = Array.from(document.querySelectorAll('[data-drilldown-tab-section]'));
 const drilldownTitle = document.getElementById('dashboardDrilldownTitle');
 const drilldownFilters = document.getElementById('dashboardDrilldownFilters');
 const drilldownBack = document.getElementById('dashboardDrilldownBack');
@@ -4641,25 +4447,14 @@ const drilldownHeader = document.getElementById('dashboardDrilldownHeader');
 const drilldownTable = drilldownHeader?.closest('table');
 const drilldownColgroup = document.getElementById('dashboardDrilldownColgroup');
 const drilldownSearch = document.getElementById('dashboardDrilldownSearch');
-const drilldownFilterToggle = document.getElementById('dashboardDrilldownFilterToggle');
-const drilldownFilterTab = document.getElementById('dashboardDrilldownTabFilters');
 const drilldownDataStatusGroup = document.getElementById('dashboardDrilldownDataStatusGroup');
 const drilldownGroupMode = document.getElementById('dashboardDrilldownGroupMode');
-const drilldownFilterPanel = document.getElementById('dashboardDrilldownFilterPanel');
-const drilldownFilterClose = document.getElementById('dashboardDrilldownFilterClose');
-const drilldownApplyFilters = document.getElementById('dashboardDrilldownApplyFilters');
-const drilldownClearFilters = document.getElementById('dashboardDrilldownClearFilters');
-const drilldownFilterControls = Array.from(document.querySelectorAll('.dashboard-drilldown-control'));
-const drilldownEfficiencyFilterGroups = Array.from(document.querySelectorAll('.dashboard-efficiency-filter-group'));
-const drilldownLegacyShiftFilterGroups = Array.from(document.querySelectorAll('.dashboard-legacy-shift-filter-group'));
-const drilldownChips = document.getElementById('dashboardDrilldownChips');
 const drilldownPageInfo = document.getElementById('dashboardDrilldownPageInfo');
 const drilldownPageSize = document.getElementById('dashboardDrilldownPageSize');
 const drilldownPrev = document.getElementById('dashboardDrilldownPrev');
 const drilldownNext = document.getElementById('dashboardDrilldownNext');
 const drilldownExport = document.getElementById('dashboardDrilldownExport');
 const drilldownRetry = document.getElementById('dashboardDrilldownRetry');
-const drilldownFormula = document.getElementById('dashboardDrilldownFormula');
 const efficiencyDurationFormatKey = 'efficiency_duration_format';
 const efficiencyDurationFormats = new Set(['days_hms', 'hours_hms', 'decimal_hours']);
 
@@ -4670,18 +4465,6 @@ const readEfficiencyDurationFormat = () => {
         return efficiencyDurationFormats.has(value) ? value : 'decimal_hours';
     } catch (error) {
         return 'decimal_hours';
-    }
-};
-
-const saveEfficiencyDurationFormat = value => {
-    if (!efficiencyDurationFormats.has(value)) {
-        return;
-    }
-
-    try {
-        window.localStorage?.setItem(efficiencyDurationFormatKey, value);
-    } catch (error) {
-        // localStorage can be unavailable in private or restricted browser modes.
     }
 };
 
@@ -4708,12 +4491,8 @@ let drilldownState = {
 const setDrilldownControlsDisabled = disabled => {
     [
         ...document.querySelectorAll('.dashboard-drilldown-filter'),
-        ...drilldownFilterControls,
         drilldownSearch,
-        drilldownFilterToggle,
         drilldownGroupMode,
-        drilldownApplyFilters,
-        drilldownClearFilters,
         drilldownPageSize,
         drilldownPrev,
         drilldownNext,
@@ -4721,49 +4500,6 @@ const setDrilldownControlsDisabled = disabled => {
         control.disabled = disabled;
     });
 };
-
-const activateDrilldownTab = (tab, { focus = false } = {}) => {
-    drilldownTabButtons.forEach(button => {
-        const selected = button.dataset.drilldownTabTarget === tab;
-        button.classList.toggle('active', selected);
-        button.setAttribute('aria-selected', selected ? 'true' : 'false');
-        button.tabIndex = selected ? 0 : -1;
-
-        if (selected && focus) {
-            button.focus();
-        }
-    });
-
-    drilldownTabSections.forEach(section => {
-        const selected = section.dataset.drilldownTabSection === tab;
-        section.hidden = !selected;
-
-        if (section.id === 'dashboardDrilldownFilterPanel') {
-            section.classList.toggle('d-none', !selected);
-        } else if (section.id !== 'dashboardDrilldownFormula' || selected) {
-            section.classList.toggle('d-none', !selected);
-        }
-    });
-
-    drilldownFilterToggle?.setAttribute('aria-expanded', tab === 'filters' ? 'true' : 'false');
-};
-
-drilldownTabButtons.forEach((button, index) => {
-    button.addEventListener('click', () => activateDrilldownTab(button.dataset.drilldownTabTarget));
-    button.addEventListener('keydown', event => {
-        let nextIndex = null;
-
-        if (event.key === 'ArrowRight') nextIndex = (index + 1) % drilldownTabButtons.length;
-        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + drilldownTabButtons.length) % drilldownTabButtons.length;
-        if (event.key === 'Home') nextIndex = 0;
-        if (event.key === 'End') nextIndex = drilldownTabButtons.length - 1;
-
-        if (nextIndex !== null) {
-            event.preventDefault();
-            activateDrilldownTab(drilldownTabButtons[nextIndex].dataset.drilldownTabTarget, { focus: true });
-        }
-    });
-});
 
 const baseDrilldownFilters = () => ({
     date_from: dashboardPage?.dataset.dashboardDateFrom || '',
@@ -4799,40 +4535,6 @@ const drilldownSortableColumns = new Set([
     'data_status',
     'wialon_id',
 ]);
-const drilldownFilterLabels = {
-    date_from: 'Tarixdən',
-    date_to: 'Tarixədək',
-    ownership: 'Mənsubiyyət',
-    data_status: 'Məlumat statusu',
-    group_by: 'Qruplaşdırma',
-    project_ids: 'Layihə',
-    vehicle_types: 'Texnika növü',
-    work_category: 'İş statusu',
-    day_status: 'Gündüz statusu',
-    has_overtime: 'Overtime',
-    day_hours_min: 'Gündüz min',
-    day_hours_max: 'Gündüz max',
-    overtime_hours_min: 'Overtime min',
-    overtime_hours_max: 'Overtime max',
-    total_hours_min: 'Ümumi min',
-    total_hours_max: 'Ümumi max',
-    duration_format: 'Müddət formatı',
-    unit_name: 'Texnika',
-    registration_number: 'Qeydiyyat nişanı',
-    wialon_id: 'Wialon ID',
-    search: 'Axtarış',
-};
-const drilldownValueLabels = {
-    ownership: { all: 'Hamısı', nwc: 'NWC', icare: 'İCARƏ' },
-    data_status: { all: 'Hamısı', available: 'Məlumat var', missing: 'Məlumat yoxdur' },
-    group_by: { details: 'Gündəlik detallar', day: 'Gün üzrə', unit: 'Texnika üzrə' },
-    work_category: { less_than_1_hour: @json(__('app.worked_less_than_1_hour')), less_than_7_hours: @json(__('app.worked_less_than_7_hours')), between_7_and_10_hours: @json(__('app.worked_7_to_10_hours')), night_shift_only: @json(__('app.worked_night_shift_only')), over_10_hours: @json(__('app.worked_over_10_hours')), overtime: @json(__('app.worked_overtime_hours')), no_data: @json(__('app.equipment_without_data')) },
-    day_status: { less_than_1_hour: @json(__('app.worked_less_than_1_hour')), less_than_7_hours: @json(__('app.worked_less_than_7_hours')), between_7_and_10_hours: @json(__('app.worked_7_to_10_hours')), night_shift_only: @json(__('app.worked_night_shift_only')), over_10_hours: @json(__('app.worked_over_10_hours')) },
-    has_overtime: { all: 'Hamısı', yes: 'Var', no: 'Yoxdur' },
-    duration_format: { decimal_hours: 'saat (yüzdə bir dəqiqliklə)', hours_hms: 'saat:dəqiqə:saniyə', days_hms: 'gün saat:dəqiqə:saniyə' },
-    vehicle_types: @json($efficiencyVehicleTypes),
-};
-
 const cleanDrilldownFilters = filters => Object.fromEntries(
     Object.entries(filters).filter(([, value]) => {
         if (Array.isArray(value)) {
@@ -4868,164 +4570,16 @@ const setDrilldownStatus = (message, tone = 'muted') => {
     drilldownStatus.classList.toggle('text-success', tone === 'success');
 };
 
-const renderDrilldownFormula = formula => {
-    if (!drilldownFormula) {
-        return;
-    }
-
-    drilldownFormula.textContent = '';
-
-    if (!formula) {
-        drilldownFormula.classList.add('d-none');
-        return;
-    }
-
-    const items = [
-        ['Texnika növü', formula.vehicle_type || '-'],
-        [formula.total_label || 'Ümumi', formula.total_value || '-'],
-        ['Texnika sayı', Number(formula.units_count || 0).toLocaleString()],
-        ['Gün sayı', Number(formula.days_count || 0).toLocaleString()],
-        ['Məlumatlı texnika-gün', Number(formula.valid_unit_days || 0).toLocaleString()],
-        ['Orta göstərici', formula.average_value || '-'],
-        ['Məlumatsız', Number(formula.units_without_data || 0).toLocaleString()],
-    ];
-
-    items.forEach(([label, value]) => {
-        const item = document.createElement('div');
-        item.className = 'dashboard-drilldown-formula-item';
-
-        const labelElement = document.createElement('span');
-        labelElement.textContent = label;
-
-        const valueElement = document.createElement('strong');
-        valueElement.textContent = value;
-
-        item.append(labelElement, valueElement);
-        drilldownFormula.appendChild(item);
-    });
-
-    drilldownFormula.classList.remove('d-none');
-};
-
 const renderDrilldownFilters = filters => {
     if (!drilldownFilters) {
         return;
     }
 
-    drilldownFilters.textContent = Object.entries(filters || {})
-        .map(([label, value]) => `${label}: ${value}`)
-        .join(' | ');
-};
-
-const drilldownSelectLabels = (filterName, values) => {
-    const valueList = Array.isArray(values) ? values : [values];
-    const control = drilldownFilterControls.find(item => item.dataset.filterName === filterName);
-
-    if (control?.tagName === 'SELECT') {
-        return Array.from(control.options)
-            .filter(option => valueList.map(String).includes(String(option.value)))
-            .map(option => option.textContent.trim())
-            .join(', ');
-    }
-
-    return valueList
-        .map(value => drilldownValueLabels[filterName]?.[value] || value)
-        .join(', ');
-};
-
-const syncDrilldownFilterControls = () => {
-    drilldownFilterControls.forEach(control => {
-        const name = control.dataset.filterName;
-        const value = drilldownState.filters[name];
-
-        if (control.multiple) {
-            const selected = Array.isArray(value) ? value.map(String) : [];
-            Array.from(control.options).forEach(option => {
-                option.selected = selected.includes(String(option.value));
-            });
-            return;
-        }
-
-        control.value = value ?? '';
-    });
-
-    if (drilldownSearch) {
-        drilldownSearch.value = drilldownState.filters.search || '';
-    }
-
-    if (drilldownPageSize) {
-        drilldownPageSize.value = String(drilldownState.filters.per_page || 20);
-    }
-};
-
-const collectDrilldownControlFilters = () => {
-    const filters = {};
-
-    drilldownFilterControls.forEach(control => {
-        const name = control.dataset.filterName;
-
-        if (control.multiple) {
-            filters[name] = Array.from(control.selectedOptions).map(option => option.value);
-            return;
-        }
-
-        filters[name] = control.value;
-    });
-
-    if (filters.duration_format) {
-        saveEfficiencyDurationFormat(filters.duration_format);
-    }
-
-    return cleanDrilldownFilters(filters);
-};
-
-const renderDrilldownChips = () => {
-    if (!drilldownChips) {
-        return;
-    }
-
-    drilldownChips.textContent = '';
-    const hidden = new Set(['page', 'per_page', 'sort', 'direction', 'title', 'view', 'date_from', 'date_to', 'ownership', 'geofence_violation', 'current_geozone_project_id', 'current_geozone_id', 'current_geozone_key', 'top_working_equipment_id', 'top_working_stat_date', 'top_working_ranking', 'metric']);
-    const defaultValues = { ownership: 'all', data_status: 'all', has_overtime: 'all', group_by: 'details', duration_format: 'decimal_hours' };
-
-    Object.entries(cleanDrilldownFilters(drilldownState.filters)).forEach(([name, value]) => {
-        if (name === 'work_category' && drilldownState.filters.day_status === value) {
-            return;
-        }
-
-        if (hidden.has(name) || String(defaultValues[name] ?? '') === String(value)) {
-            return;
-        }
-
-        const label = drilldownFilterLabels[name];
-
-        if (!label) {
-            return;
-        }
-
-        const chip = document.createElement('span');
-        chip.className = 'dashboard-drilldown-chip';
-        chip.textContent = `${label}: ${drilldownSelectLabels(name, value)}`;
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.setAttribute('aria-label', `${label} filtrini sil`);
-        button.textContent = '×';
-        button.addEventListener('click', () => {
-            if (name === 'day_status' && drilldownState.filters.work_category === value) {
-                delete drilldownState.filters.work_category;
-            }
-            if (name === 'work_category' && drilldownState.filters.day_status === value) {
-                delete drilldownState.filters.day_status;
-            }
-            delete drilldownState.filters[name];
-            drilldownState.filters.page = 1;
-            syncDrilldownFilterControls();
-            loadDashboardDrilldown();
-        });
-
-        chip.appendChild(button);
-        drilldownChips.appendChild(chip);
+    drilldownFilters.textContent = '';
+    Object.entries(filters || {}).forEach(([label, value]) => {
+        const item = document.createElement('div');
+        item.textContent = `${label}: ${value}`;
+        drilldownFilters.appendChild(item);
     });
 };
 
@@ -5179,9 +4733,6 @@ const updateDrilldownFilterButtons = () => {
         button.classList.toggle('active', selected);
         button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
-
-    syncDrilldownFilterControls();
-    renderDrilldownChips();
 };
 
 const updateDrilldownExportUrl = () => {
@@ -5244,7 +4795,6 @@ const resetDashboardDrilldownState = (options = {}) => {
     }
 
     setDrilldownStatus('');
-    renderDrilldownFormula(null);
     renderDrilldownColumns(null);
     renderDrilldownRows([]);
     updateDrilldownPagination();
@@ -5256,15 +4806,8 @@ const resetDashboardDrilldownState = (options = {}) => {
         drilldownExport.classList.remove('d-none');
     }
 
-    drilldownFilterPanel?.classList.add('d-none');
-    drilldownFilterToggle?.classList.add('d-none');
-    drilldownFilterTab?.classList.remove('d-none');
     drilldownDataStatusGroup?.classList.remove('d-none');
     drilldownBack?.classList.add('d-none');
-    drilldownEfficiencyFilterGroups.forEach(group => group.classList.remove('d-none'));
-    drilldownLegacyShiftFilterGroups.forEach(group => group.classList.remove('d-none'));
-    syncDrilldownFilterControls();
-    renderDrilldownChips();
 };
 
 const loadDashboardDrilldown = async () => {
@@ -5317,7 +4860,6 @@ const loadDashboardDrilldown = async () => {
         }
 
         renderDrilldownFilters(payload.filters || {});
-        renderDrilldownFormula(payload.summary?.average_formula || null);
         renderDrilldownRows(payload.data || []);
         updateDrilldownPagination();
         const filteredTotal = Number(payload.summary?.total ?? 0);
@@ -5345,17 +4887,12 @@ const loadDashboardDrilldown = async () => {
 };
 
 const configureDrilldownMode = (mode, filters = {}) => {
-    const isEfficiencyDrilldown = Boolean(filters.work_category || filters.day_status);
     const isMetricDrilldown = Boolean(filters.metric);
     const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects'].includes(mode);
 
     drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects'].includes(mode));
-    drilldownFilterToggle?.classList.toggle('d-none', isRestrictedMode || !(isEfficiencyDrilldown || isMetricDrilldown));
-    drilldownFilterTab?.classList.toggle('d-none', isRestrictedMode);
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
     drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
-    drilldownEfficiencyFilterGroups.forEach(group => group.classList.toggle('d-none', isMetricDrilldown && !isEfficiencyDrilldown));
-    drilldownLegacyShiftFilterGroups.forEach(group => group.classList.toggle('d-none', isEfficiencyDrilldown));
 
     if (drilldownGroupMode) {
         drilldownGroupMode.value = filters.group_by || 'details';
@@ -5422,10 +4959,7 @@ const openDashboardDrilldown = (filters = {}) => {
         drilldownTitle.textContent = drilldownState.title || 'Texnika siyahısı';
     }
 
-    syncDrilldownFilterControls();
-    renderDrilldownChips();
     updateDrilldownExportUrl();
-    activateDrilldownTab('data');
     setDrilldownControlsDisabled(true);
     drilldownModal?.show();
     loadDashboardDrilldown();
@@ -5493,8 +5027,6 @@ const openSummaryUnits = trigger => {
     configureDrilldownMode(drilldownState.mode, nextFilters);
     renderDrilldownColumns(null);
     renderDrilldownRows([]);
-    syncDrilldownFilterControls();
-    renderDrilldownChips();
     updateDrilldownExportUrl();
     setDrilldownControlsDisabled(true);
     loadDashboardDrilldown();
@@ -5527,8 +5059,6 @@ const restoreDrilldownSummary = () => {
     configureDrilldownMode(parent.mode, drilldownState.filters);
     renderDrilldownColumns(null);
     renderDrilldownRows([]);
-    syncDrilldownFilterControls();
-    renderDrilldownChips();
     updateDrilldownExportUrl();
     setDrilldownControlsDisabled(true);
     loadDashboardDrilldown();
@@ -5651,38 +5181,6 @@ document.querySelectorAll('.dashboard-drilldown-filter').forEach(button => {
     });
 });
 
-drilldownFilterToggle?.addEventListener('click', () => {
-    activateDrilldownTab('filters', { focus: true });
-});
-
-drilldownFilterClose?.addEventListener('click', () => {
-    activateDrilldownTab('data', { focus: true });
-});
-
-drilldownApplyFilters?.addEventListener('click', () => {
-    const controlNames = drilldownFilterControls.map(control => control.dataset.filterName);
-    const panelFilters = collectDrilldownControlFilters();
-
-    controlNames.forEach(name => {
-        delete drilldownState.filters[name];
-    });
-
-    drilldownState.filters = {
-        ...drilldownState.filters,
-        ...panelFilters,
-        page: 1,
-    };
-
-    activateDrilldownTab('data');
-    loadDashboardDrilldown();
-});
-
-drilldownClearFilters?.addEventListener('click', () => {
-    drilldownState.filters = { ...drilldownState.baseFilters, duration_format: readEfficiencyDurationFormat(), page: 1 };
-    syncDrilldownFilterControls();
-    loadDashboardDrilldown();
-});
-
 let drilldownSearchTimer = null;
 drilldownSearch?.addEventListener('input', () => {
     window.clearTimeout(drilldownSearchTimer);
@@ -5704,18 +5202,6 @@ drilldownGroupMode?.addEventListener('change', () => {
     drilldownState.filters.page = 1;
     loadDashboardDrilldown();
 });
-
-drilldownFilterControls
-    .filter(control => control.dataset.filterName === 'duration_format')
-    .forEach(control => {
-        control.addEventListener('change', () => {
-            const value = efficiencyDurationFormats.has(control.value) ? control.value : 'decimal_hours';
-            saveEfficiencyDurationFormat(value);
-            drilldownState.filters.duration_format = value;
-            drilldownState.filters.page = 1;
-            loadDashboardDrilldown();
-        });
-    });
 
 drilldownPrev?.addEventListener('click', () => {
     const currentPage = Number(drilldownState.meta?.current_page || 1);

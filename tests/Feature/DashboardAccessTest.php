@@ -30,6 +30,43 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($admin)->get('/equipment')->assertOk();
     }
 
+    public function test_equipment_drilldown_shows_data_without_unused_tabs(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $admin = User::where('email', 'admin@example.com')->firstOrFail();
+        $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
+
+        foreach ([
+            'dashboardDrilldownTabData',
+            'dashboardDrilldownTabSummary',
+            'dashboardDrilldownTabFilters',
+            'dashboardDrilldownFilterPanel',
+            'dashboardDrilldownChips',
+            'dashboardDrilldownFormula',
+            'data-drilldown-tab-target',
+            'data-drilldown-tab-section',
+        ] as $unusedTabElement) {
+            $this->assertStringNotContainsString($unusedTabElement, $html);
+        }
+
+        foreach ([
+            'id="dashboardDrilldownBack"',
+            'id="dashboardDrilldownSearch"',
+            'id="dashboardDrilldownStatus"',
+            'id="dashboardDrilldownTable"',
+            'id="dashboardDrilldownPagination"',
+            'id="dashboardDrilldownExport"',
+        ] as $preservedElement) {
+            $this->assertStringContainsString($preservedElement, $html);
+        }
+
+        $this->assertLessThan(
+            strpos($html, 'id="dashboardDrilldownTable"'),
+            strpos($html, 'id="dashboardDrilldownStatus"')
+        );
+    }
+
     public function test_viewer_can_open_dashboard_but_not_admin_pages(): void
     {
         $this->seed(DemoSeeder::class);
