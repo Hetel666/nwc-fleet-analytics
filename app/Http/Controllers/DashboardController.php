@@ -70,7 +70,7 @@ class DashboardController extends Controller
         if ($selectedTab === 'efficiency') {
             $daytimeFilters = [
                 ...$filters,
-                'search' => trim((string) $request->query('daytime_search', '')),
+                'search' => '',
             ];
             $data['daytimeEfficiencyByOwnership'] = [
                 'NWC' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'NWC'),
@@ -78,7 +78,7 @@ class DashboardController extends Controller
             ];
             $nighttimeFilters = [
                 ...$filters,
-                'search' => trim((string) $request->query('nighttime_search', '')),
+                'search' => '',
             ];
             $data['nighttimeEfficiencyByOwnership'] = [
                 'NWC' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'NWC'),

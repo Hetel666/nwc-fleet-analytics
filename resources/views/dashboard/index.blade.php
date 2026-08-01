@@ -2322,7 +2322,10 @@
         </form>
 
         @php
-            $filterQueryWithout = fn (array $keys): array => collect(request()->query())->except($keys)->all();
+            $removedEfficiencySearchKeys = ['daytime_search', 'nighttime_search'];
+            $filterQueryWithout = fn (array $keys): array => collect(request()->query())
+                ->except([...$keys, ...$removedEfficiencySearchKeys])
+                ->all();
             $activeOwnershipLabel = $filters['ownership_type'] === $nwc
                 ? __('app.ownership_nwc')
                 : ($filters['ownership_type'] === $icare ? __('app.ownership_icare') : null);
@@ -2600,28 +2603,13 @@
             </div>
 
             <section id="efficiency-daytime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="daytime" style="order: 200" aria-labelledby="daytime-efficiency-title">
-                <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
-                    <div>
-                        <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
-                        <div class="dashboard-efficiency-section-meta">
-                            <span><i class="bi bi-clock"></i>08:00–17:59 intervalı üzrə Engine hours</span>
-                            <span><i class="bi bi-database"></i>Mənbə: day report Engine hours (api)</span>
-                            <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
-                        </div>
+                <div class="mb-3">
+                    <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
+                    <div class="dashboard-efficiency-section-meta">
+                        <span><i class="bi bi-clock"></i>08:00–17:59 intervalı üzrə Engine hours</span>
+                        <span><i class="bi bi-database"></i>Mənbə: day report Engine hours (api)</span>
+                        <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
                     </div>
-                    <form method="GET" action="{{ route('dashboard') }}" class="d-flex align-items-end gap-2">
-                        <input type="hidden" name="tab" value="efficiency">
-                        <input type="hidden" name="date_from" value="{{ $filters['from'] }}">
-                        <input type="hidden" name="date_to" value="{{ $filters['to'] }}">
-                        @if ($filters['project_id'])<input type="hidden" name="project_id" value="{{ $filters['project_id'] }}">@endif
-                        @if ($filters['equipment_type_id'])<input type="hidden" name="equipment_type_id" value="{{ $filters['equipment_type_id'] }}">@endif
-                        @if ($filters['ownership_type'])<input type="hidden" name="ownership_type" value="{{ $filters['ownership_type'] }}">@endif
-                        <div>
-                            <label class="form-label small mb-1" for="daytime-efficiency-search">Axtarış</label>
-                            <input id="daytime-efficiency-search" type="search" name="daytime_search" class="form-control form-control-sm" value="{{ request('daytime_search') }}" maxlength="120">
-                        </div>
-                        <button class="btn btn-sm btn-outline-primary" type="submit" title="Axtar"><i class="bi bi-search"></i></button>
-                    </form>
                 </div>
                 <div class="row g-3">
                     <div class="col-12 col-md-6 d-flex">
@@ -2636,7 +2624,6 @@
                             'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
                                 'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                                'search' => request('daytime_search'),
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
@@ -2652,7 +2639,6 @@
                             'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
                                 'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                                'search' => request('daytime_search'),
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
@@ -2660,29 +2646,14 @@
             </section>
 
             <section id="efficiency-nighttime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="nighttime" style="order: 300" aria-labelledby="nighttime-efficiency-title">
-                <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
-                    <div>
-                        <h2 class="h4 fw-bold mb-1" id="nighttime-efficiency-title">Gecə növbəsi üzrə effektivlik</h2>
-                        <div class="dashboard-efficiency-section-meta">
-                            <span title="31.07 18:00-01.08 07:59 növbəsi 31.07 tarixinə aiddir"><i class="bi bi-moon-stars"></i>18:00–07:59 intervalı üzrə Engine hours</span>
-                            <span><i class="bi bi-database"></i>Mənbə: night report Engine hours (api)</span>
-                            <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-növbə</span>
-                        </div>
-                        <div class="small text-secondary mt-1">Növbə tarixi başlanğıc gününə görə hesablanır</div>
+                <div class="mb-3">
+                    <h2 class="h4 fw-bold mb-1" id="nighttime-efficiency-title">Gecə növbəsi üzrə effektivlik</h2>
+                    <div class="dashboard-efficiency-section-meta">
+                        <span title="31.07 18:00-01.08 07:59 növbəsi 31.07 tarixinə aiddir"><i class="bi bi-moon-stars"></i>18:00–07:59 intervalı üzrə Engine hours</span>
+                        <span><i class="bi bi-database"></i>Mənbə: night report Engine hours (api)</span>
+                        <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-növbə</span>
                     </div>
-                    <form method="GET" action="{{ route('dashboard') }}" class="d-flex align-items-end gap-2">
-                        <input type="hidden" name="tab" value="efficiency">
-                        <input type="hidden" name="date_from" value="{{ $filters['from'] }}">
-                        <input type="hidden" name="date_to" value="{{ $filters['to'] }}">
-                        @if ($filters['project_id'])<input type="hidden" name="project_id" value="{{ $filters['project_id'] }}">@endif
-                        @if ($filters['equipment_type_id'])<input type="hidden" name="equipment_type_id" value="{{ $filters['equipment_type_id'] }}">@endif
-                        @if ($filters['ownership_type'])<input type="hidden" name="ownership_type" value="{{ $filters['ownership_type'] }}">@endif
-                        <div>
-                            <label class="form-label small mb-1" for="nighttime-efficiency-search">Axtarış</label>
-                            <input id="nighttime-efficiency-search" type="search" name="nighttime_search" class="form-control form-control-sm" value="{{ request('nighttime_search') }}" maxlength="120">
-                        </div>
-                        <button class="btn btn-sm btn-outline-primary" type="submit" title="Axtar"><i class="bi bi-search"></i></button>
-                    </form>
+                    <div class="small text-secondary mt-1">Növbə tarixi başlanğıc gününə görə hesablanır</div>
                 </div>
                 <div class="row g-3">
                     <div class="col-12 col-md-6 d-flex">
@@ -2697,7 +2668,6 @@
                             'exportUrl' => route('api.dashboard.nighttime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
                                 'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                                'search' => request('nighttime_search'),
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
@@ -2713,7 +2683,6 @@
                             'exportUrl' => route('api.dashboard.nighttime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
                                 'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                                'search' => request('nighttime_search'),
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
@@ -5280,14 +5249,12 @@ const daytimeEfficiencyEndpoints = {
     units: @json(route('api.dashboard.daytime-efficiency.units')),
     export: @json(route('api.dashboard.daytime-efficiency.export')),
 };
-const daytimeEfficiencySearch = @json(request('daytime_search', ''));
 const daytimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
     title: `Effektivlik gunduz: ${labels.nwc} - ${workCategoryDonutLabels[index]}`,
     ownership: 'nwc',
     view: 'projects',
     drilldown_mode: 'daytime_efficiency_projects',
     status: key,
-    search: daytimeEfficiencySearch,
     endpoint_url: daytimeEfficiencyEndpoints.projects,
     units_endpoint_url: daytimeEfficiencyEndpoints.units,
     export_url: daytimeEfficiencyEndpoints.export,
@@ -5299,7 +5266,6 @@ const daytimeEfficiencyIcareDrilldownItems = workCategoryDonutKeys.map((key, ind
     view: 'projects',
     drilldown_mode: 'daytime_efficiency_projects',
     status: key,
-    search: daytimeEfficiencySearch,
     endpoint_url: daytimeEfficiencyEndpoints.projects,
     units_endpoint_url: daytimeEfficiencyEndpoints.units,
     export_url: daytimeEfficiencyEndpoints.export,
@@ -5310,14 +5276,12 @@ const nighttimeEfficiencyEndpoints = {
     units: @json(route('api.dashboard.nighttime-efficiency.units')),
     export: @json(route('api.dashboard.nighttime-efficiency.export')),
 };
-const nighttimeEfficiencySearch = @json(request('nighttime_search', ''));
 const nighttimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
     title: `Effektivlik gecə: ${labels.nwc} - ${workCategoryDonutLabels[index]}`,
     ownership: 'nwc',
     view: 'projects',
     drilldown_mode: 'nighttime_efficiency_projects',
     status: key,
-    search: nighttimeEfficiencySearch,
     endpoint_url: nighttimeEfficiencyEndpoints.projects,
     units_endpoint_url: nighttimeEfficiencyEndpoints.units,
     export_url: nighttimeEfficiencyEndpoints.export,
@@ -5329,7 +5293,6 @@ const nighttimeEfficiencyIcareDrilldownItems = workCategoryDonutKeys.map((key, i
     view: 'projects',
     drilldown_mode: 'nighttime_efficiency_projects',
     status: key,
-    search: nighttimeEfficiencySearch,
     endpoint_url: nighttimeEfficiencyEndpoints.projects,
     units_endpoint_url: nighttimeEfficiencyEndpoints.units,
     export_url: nighttimeEfficiencyEndpoints.export,

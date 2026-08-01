@@ -66,7 +66,7 @@ class DashboardEfficiencyOrderTest extends TestCase
         }
     }
 
-    public function test_filters_exports_and_drilldown_contracts_are_preserved(): void
+    public function test_efficiency_top_search_is_removed_without_affecting_exports_and_drilldown(): void
     {
         $user = User::factory()->create(['active' => true]);
         $html = $this->actingAs($user)->get(route('dashboard', [
@@ -81,15 +81,27 @@ class DashboardEfficiencyOrderTest extends TestCase
         foreach ([
             'name="date_from" value="2026-07-31"',
             'name="date_to" value="2026-07-31"',
-            'name="ownership_type" value="NWC"',
-            'name="daytime_search"',
-            'value="10-AF-106"',
+            'name="ownership_type"',
             '/api/dashboard/daytime-efficiency/export',
             '/api/dashboard/nighttime-efficiency/export',
+            'id="dashboardDrilldownSearch"',
             'block=least-working',
             'block=most-working',
         ] as $marker) {
             $this->assertTrue(str_contains($html, $marker), 'Missing preserved dashboard contract: '.$marker);
+        }
+
+        foreach ([
+            'id="daytime-efficiency-search"',
+            'id="nighttime-efficiency-search"',
+            'name="daytime_search"',
+            'name="nighttime_search"',
+            'data-drilldown-search=',
+            'daytimeEfficiencySearch',
+            'nighttimeEfficiencySearch',
+            'search=10-AF-106',
+        ] as $marker) {
+            $this->assertStringNotContainsString($marker, $html, 'Removed efficiency top search marker is still rendered: '.$marker);
         }
 
         $view = file_get_contents(resource_path('views/dashboard/index.blade.php'));

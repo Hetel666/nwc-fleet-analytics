@@ -33,7 +33,6 @@
                             data-drilldown-date-from="{{ $filters['from'] }}"
                             data-drilldown-date-to="{{ $filters['to'] }}"
                             data-drilldown-project-id="{{ $filters['project_id'] }}"
-                            data-drilldown-search="{{ request('nighttime_search') }}"
                             data-drilldown-endpoint-url="{{ route('api.dashboard.nighttime-efficiency.projects') }}"
                             data-drilldown-units-endpoint-url="{{ route('api.dashboard.nighttime-efficiency.units') }}"
                             data-drilldown-export-url="{{ route('api.dashboard.nighttime-efficiency.export') }}"
