@@ -1833,11 +1833,81 @@
 
     .dashboard-ranking-card .dashboard-ranking-table {
         flex: 1 1 auto;
-        height: 350px;
-        max-height: 350px;
+        height: auto;
+        max-height: none;
         max-width: 100%;
+        overflow-x: visible;
+        overflow-y: visible;
         contain: inline-size;
-        overscroll-behavior: contain;
+    }
+
+    .dashboard-ranking-card {
+        height: auto;
+        min-height: 0;
+    }
+
+    .top20-table {
+        width: 100%;
+        table-layout: fixed;
+        font-size: .8125rem;
+    }
+
+    .top20-table th,
+    .top20-table td {
+        height: 38px;
+        padding: 8px 10px;
+        line-height: 1.25;
+        vertical-align: middle;
+    }
+
+    .top20-table th {
+        white-space: nowrap;
+    }
+
+    .top20-table .truncate {
+        display: block;
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .top20-table .top20-rank-cell {
+        color: var(--fleet-muted);
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+    }
+
+    .top20-table .top20-hours-cell,
+    .top20-table .top20-hours-cell .truncate {
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+    }
+
+    .top20-table .top20-col-rank { width: 5%; }
+    .top20-table .top20-col-equipment { width: 20%; }
+    .top20-table .top20-col-ownership { width: 15%; }
+    .top20-table .top20-col-type { width: 18%; }
+    .top20-table .top20-col-project { width: 30%; }
+    .top20-table .top20-col-hours { width: 12%; }
+    .top20-table .top20-col-date { width: 11%; }
+
+    .top20-table--with-date .top20-col-equipment { width: 19%; }
+    .top20-table--with-date .top20-col-ownership { width: 13%; }
+    .top20-table--with-date .top20-col-type { width: 16%; }
+    .top20-table--with-date .top20-col-project { width: 25%; }
+    .top20-table--with-date .top20-col-hours { width: 11%; }
+
+    @media (max-width: 767.98px) {
+        .dashboard-ranking-card .dashboard-ranking-table {
+            overflow-x: auto;
+            overflow-y: visible;
+        }
+
+        .top20-table {
+            min-width: 760px;
+        }
     }
 
     .dashboard-efficiency-pair-widget,
@@ -2182,15 +2252,6 @@
         .dashboard-efficiency-section-heading,
         .dashboard-efficiency-shift-section {
             scroll-margin-top: 152px;
-        }
-
-        .dashboard-ranking-card {
-            min-height: 390px;
-        }
-
-        .dashboard-ranking-card .dashboard-ranking-table {
-            height: 320px;
-            max-height: 320px;
         }
 
         .dashboard-design-drawer {

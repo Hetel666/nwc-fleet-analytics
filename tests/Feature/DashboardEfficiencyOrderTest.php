@@ -2,6 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\EngineHoursReportUnitDay;
+use App\Models\Equipment;
+use App\Models\EquipmentType;
+use App\Models\Project;
 use App\Models\User;
 use App\Models\UserDashboardPreference;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -109,6 +113,60 @@ class DashboardEfficiencyOrderTest extends TestCase
             str_contains($view, "drilldown_mode: 'efficiency_projects'"),
             'The efficiency drill-down contract must remain in the dashboard script.',
         );
+    }
+
+    public function test_top20_ranking_tables_render_twenty_rows_without_fixed_vertical_scroll(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $project = Project::query()->create(['name' => 'Long Road Project With Tooltip', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Road Grader']);
+
+        for ($index = 1; $index <= 25; $index++) {
+            $unit = Equipment::query()->create([
+                'name' => sprintf('Long Named Top Unit %02d', $index),
+                'wialon_unit_id' => 'top20-'.$index,
+                'equipment_type_id' => $type->id,
+                'project_id' => $project->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'matched_wialon_group_id' => '601701903',
+                'active' => true,
+            ]);
+
+            EngineHoursReportUnitDay::query()->create([
+                'stat_date' => '2026-07-31',
+                'equipment_id' => $unit->id,
+                'project_id' => $project->id,
+                'equipment_type_id' => $type->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'wialon_unit_id' => $unit->wialon_unit_id,
+                'unit_name' => $unit->name,
+                'vehicle_type' => $type->name,
+                'engine_hours' => (float) $index,
+                'engine_hours_source' => EngineHoursReportUnitDay::SOURCE,
+                'parse_status' => 'ok',
+                'source_group_ids_json' => ['601701903'],
+                'synced_at' => now(),
+            ]);
+        }
+
+        $html = $this->actingAs($user)->get(route('dashboard', [
+            'tab' => 'efficiency',
+            'date_from' => '2026-07-31',
+            'date_to' => '2026-07-31',
+        ]))->assertOk()->getContent();
+
+        $this->assertSame(20, substr_count($html, 'data-drilldown-top-ranking="least"'));
+        $this->assertSame(20, substr_count($html, 'data-drilldown-top-ranking="most"'));
+        $this->assertStringContainsString('class="dashboard-scroll-table dashboard-ranking-table top20-table-wrapper"', $html);
+        $this->assertStringContainsString('class="table table-sm align-middle mb-0 top20-table"', $html);
+        $this->assertStringContainsString('title="Long Road Project With Tooltip"', $html);
+
+        $view = file_get_contents(resource_path('views/dashboard/index.blade.php'));
+        $this->assertStringNotContainsString('height: 350px', $view);
+        $this->assertStringNotContainsString('max-height: 350px', $view);
+        $this->assertStringNotContainsString('height: 320px', $view);
+        $this->assertStringNotContainsString('max-height: 320px', $view);
+        $this->assertStringContainsString('overflow-y: visible', $view);
     }
 
     public function test_internal_navigation_only_scrolls_to_existing_sections(): void
