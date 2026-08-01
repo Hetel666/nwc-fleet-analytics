@@ -61,7 +61,7 @@ class NighttimeEfficiencyRecalculationHandler
         $this->refreshRun($run);
 
         try {
-            $result = $this->synchronizeProjectDate($run, $task, $date);
+            $result = $this->synchronizeProjectDate($run, $task, $date, (bool) $historicalRun->force);
 
             $task->forceFill([
                 'wialon_group_id' => implode(',', $result['group_ids']),
@@ -95,8 +95,12 @@ class NighttimeEfficiencyRecalculationHandler
     }
 
     /** @return array<string, mixed> */
-    private function synchronizeProjectDate(NighttimeEfficiencySyncRun $run, NighttimeEfficiencySyncTask $task, CarbonImmutable $date): array
-    {
+    private function synchronizeProjectDate(
+        NighttimeEfficiencySyncRun $run,
+        NighttimeEfficiencySyncTask $task,
+        CarbonImmutable $date,
+        bool $force,
+    ): array {
         $groups = ProjectWialonGroup::query()
             ->where('project_id', $task->project_id)
             ->when(
@@ -199,28 +203,36 @@ class NighttimeEfficiencyRecalculationHandler
             }
         }
 
-        DB::transaction(function () use ($task, $date, $facts, $unmatched): void {
+        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force): void {
             $unitIds = array_keys($facts);
             $stale = NighttimeEfficiencyDailyFact::query()
                 ->where('project_id', $task->project_id)
                 ->whereDate('shift_date', $date->toDateString());
 
-            $unitIds === [] ? $stale->delete() : $stale->whereNotIn('wialon_unit_id', $unitIds)->delete();
+            if ($force) {
+                $stale->delete();
+            } else {
+                $unitIds === [] ? $stale->delete() : $stale->whereNotIn('wialon_unit_id', $unitIds)->delete();
+            }
 
             if ($facts !== []) {
-                NighttimeEfficiencyDailyFact::query()->upsert(
-                    array_values($facts),
-                    ['shift_date', 'project_id', 'wialon_unit_id'],
-                    [
-                        'wialon_group_id', 'unit_name', 'vehicle_type', 'ownership',
-                        'engine_hours_decimal', 'engine_seconds', 'engine_hours_raw',
-                        'shift_started_at', 'shift_ended_at', 'started_at', 'ended_at',
-                        'evening_engine_seconds', 'morning_engine_seconds', 'mileage_km', 'mileage_raw',
-                        'efficiency_status', 'source_report_template_id', 'source_report_name',
-                        'source_table_index', 'source_mode', 'source_parts_json',
-                        'sync_run_id', 'sync_task_id', 'raw_row_json', 'updated_at',
-                    ],
-                );
+                if ($force) {
+                    NighttimeEfficiencyDailyFact::query()->insert(array_values($facts));
+                } else {
+                    NighttimeEfficiencyDailyFact::query()->upsert(
+                        array_values($facts),
+                        ['shift_date', 'project_id', 'wialon_unit_id'],
+                        [
+                            'wialon_group_id', 'unit_name', 'vehicle_type', 'ownership',
+                            'engine_hours_decimal', 'engine_seconds', 'engine_hours_raw',
+                            'shift_started_at', 'shift_ended_at', 'started_at', 'ended_at',
+                            'evening_engine_seconds', 'morning_engine_seconds', 'mileage_km', 'mileage_raw',
+                            'efficiency_status', 'source_report_template_id', 'source_report_name',
+                            'source_table_index', 'source_mode', 'source_parts_json',
+                            'sync_run_id', 'sync_task_id', 'raw_row_json', 'updated_at',
+                        ],
+                    );
+                }
             }
 
             DB::table('nighttime_efficiency_unmatched_rows')->where('task_id', $task->id)->delete();

@@ -53,7 +53,7 @@ class NewEfficiencyModuleTest extends TestCase
         $this->assertSame(EfficiencyStatus::OVER_TEN, EfficiencyStatus::classify((int) round(10.01 * 3600)));
     }
 
-    public function test_successful_sync_creates_missing_fact_and_is_idempotent(): void
+    public function test_forced_sync_replaces_existing_facts_with_new_rows(): void
     {
         [$handler, $run, $task] = $this->handlerScenario($this->report('6001', '7,50', '4,25 km'));
 
@@ -69,15 +69,29 @@ class NewEfficiencyModuleTest extends TestCase
             'efficiency_status' => EfficiencyStatus::NO_DATA,
             'engine_seconds' => 0,
         ]);
+        $firstIds = EfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
 
         $handler->execute($run->refresh(), $task->refresh());
 
         $this->assertSame(2, EfficiencyDailyFact::query()->count());
+        $secondIds = EfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
+        $this->assertSame([], array_values(array_intersect($firstIds, $secondIds)));
     }
 
-    public function test_report_failure_does_not_create_mass_no_data(): void
+    public function test_forced_sync_report_failure_preserves_existing_facts(): void
     {
         [$handler, $run, $task] = $this->handlerScenario(new RuntimeException('Wialon report failed'));
+        $project = Project::query()->firstOrFail();
+        $this->fact(
+            $project,
+            '6001',
+            '2026-07-31',
+            Equipment::OWNERSHIP_NWC,
+            'Dump Truck',
+            EfficiencyStatus::ONE_TO_SEVEN,
+            4,
+        );
+        $existingId = EfficiencyDailyFact::query()->value('id');
 
         try {
             $handler->execute($run, $task);
@@ -86,7 +100,9 @@ class NewEfficiencyModuleTest extends TestCase
             $this->assertSame('Wialon report failed', $exception->getMessage());
         }
 
-        $this->assertSame(0, EfficiencyDailyFact::query()->count());
+        $this->assertSame(1, EfficiencyDailyFact::query()->count());
+        $this->assertSame($existingId, EfficiencyDailyFact::query()->value('id'));
+        $this->assertSame(4.0, (float) EfficiencyDailyFact::query()->value('engine_hours_decimal'));
         $this->assertDatabaseHas('efficiency_sync_tasks', ['status' => 'failed']);
     }
 

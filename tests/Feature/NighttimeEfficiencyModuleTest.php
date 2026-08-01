@@ -119,7 +119,7 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $this->assertSame('2026-07-31 20:37:07', $record['ended_at']->format('Y-m-d H:i:s'));
     }
 
-    public function test_successful_sync_is_idempotent_and_does_not_change_existing_efficiency(): void
+    public function test_forced_sync_replaces_existing_facts_and_does_not_change_other_modules(): void
     {
         [$handler, $run, $task, $project] = $this->handlerScenario($this->report('6001', '7,50', '4,25 km'));
         $this->ordinaryFact($project);
@@ -146,17 +146,37 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $this->assertSame(1, EfficiencyDailyFact::query()->count());
         $this->assertSame(8.0, (float) EfficiencyDailyFact::query()->value('engine_hours_decimal'));
         $this->assertSame(6.0, (float) DaytimeEfficiencyDailyFact::query()->value('engine_hours_decimal'));
+        $firstIds = NighttimeEfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
 
         $handler->execute($run->refresh(), $task->refresh());
 
         $this->assertSame(2, NighttimeEfficiencyDailyFact::query()->count());
+        $secondIds = NighttimeEfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
+        $this->assertSame([], array_values(array_intersect($firstIds, $secondIds)));
         $this->assertSame(1, EfficiencyDailyFact::query()->count());
         $this->assertSame(1, DaytimeEfficiencyDailyFact::query()->count());
     }
 
-    public function test_report_failure_does_not_publish_zero_facts(): void
+    public function test_forced_sync_report_failure_preserves_existing_facts(): void
     {
-        [$handler, $run, $task] = $this->handlerScenario(new RuntimeException('Nighttime Wialon report failed'));
+        [$handler, $run, $task, $project] = $this->handlerScenario(new RuntimeException('Nighttime Wialon report failed'));
+        NighttimeEfficiencyDailyFact::query()->create([
+            'shift_date' => '2026-07-31',
+            'shift_started_at' => '2026-07-31 18:00:00',
+            'shift_ended_at' => '2026-08-01 07:59:59',
+            'project_id' => $project->id,
+            'wialon_group_id' => '9001',
+            'wialon_unit_id' => '6001',
+            'unit_name' => 'Unit 6001',
+            'vehicle_type' => 'Dump Truck',
+            'ownership' => Equipment::OWNERSHIP_NWC,
+            'engine_hours_decimal' => 4,
+            'engine_seconds' => 14400,
+            'efficiency_status' => EfficiencyStatus::ONE_TO_SEVEN,
+            'source_report_template_id' => 18,
+            'source_report_name' => 'night report Engine hours (api)',
+        ]);
+        $existingId = NighttimeEfficiencyDailyFact::query()->value('id');
 
         try {
             $handler->execute($run, $task);
@@ -165,7 +185,9 @@ class NighttimeEfficiencyModuleTest extends TestCase
             $this->assertSame('Nighttime Wialon report failed', $exception->getMessage());
         }
 
-        $this->assertSame(0, NighttimeEfficiencyDailyFact::query()->count());
+        $this->assertSame(1, NighttimeEfficiencyDailyFact::query()->count());
+        $this->assertSame($existingId, NighttimeEfficiencyDailyFact::query()->value('id'));
+        $this->assertSame(4.0, (float) NighttimeEfficiencyDailyFact::query()->value('engine_hours_decimal'));
         $this->assertDatabaseHas('nighttime_efficiency_sync_tasks', ['status' => 'failed']);
     }
 

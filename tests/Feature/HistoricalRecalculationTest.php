@@ -166,6 +166,39 @@ class HistoricalRecalculationTest extends TestCase
             ]);
     }
 
+    public function test_checked_force_option_is_stored_for_efficiency_recalculation(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Forced efficiency project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '252',
+            'name' => 'Forced efficiency project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '2520');
+
+        $this->actingAs($admin)
+            ->post(route('admin.historical-recalculations.store'), [
+                'date_from' => '2026-07-31',
+                'date_to' => '2026-07-31',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+                'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => '1',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('historical_recalculations', [
+            'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+            'force' => true,
+        ]);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class);
+    }
+
     public function test_preview_for_geofence_section_counts_projects_once(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);

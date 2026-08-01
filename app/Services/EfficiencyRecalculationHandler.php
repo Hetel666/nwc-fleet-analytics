@@ -60,7 +60,7 @@ class EfficiencyRecalculationHandler
         $this->refreshRun($run);
 
         try {
-            $result = $this->synchronizeProjectDate($run, $task, $date);
+            $result = $this->synchronizeProjectDate($run, $task, $date, (bool) $historicalRun->force);
 
             $task->forceFill([
                 'wialon_group_id' => implode(',', $result['group_ids']),
@@ -94,8 +94,12 @@ class EfficiencyRecalculationHandler
     }
 
     /** @return array<string, mixed> */
-    private function synchronizeProjectDate(EfficiencySyncRun $run, EfficiencySyncTask $task, CarbonImmutable $date): array
-    {
+    private function synchronizeProjectDate(
+        EfficiencySyncRun $run,
+        EfficiencySyncTask $task,
+        CarbonImmutable $date,
+        bool $force,
+    ): array {
         $groups = ProjectWialonGroup::query()
             ->where('project_id', $task->project_id)
             ->when(
@@ -195,26 +199,34 @@ class EfficiencyRecalculationHandler
             }
         }
 
-        DB::transaction(function () use ($task, $date, $facts, $unmatched): void {
+        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force): void {
             $unitIds = array_keys($facts);
             $stale = EfficiencyDailyFact::query()
                 ->where('project_id', $task->project_id)
                 ->whereDate('business_date', $date->toDateString());
 
-            $unitIds === [] ? $stale->delete() : $stale->whereNotIn('wialon_unit_id', $unitIds)->delete();
+            if ($force) {
+                $stale->delete();
+            } else {
+                $unitIds === [] ? $stale->delete() : $stale->whereNotIn('wialon_unit_id', $unitIds)->delete();
+            }
 
             if ($facts !== []) {
-                EfficiencyDailyFact::query()->upsert(
-                    array_values($facts),
-                    ['business_date', 'project_id', 'wialon_unit_id'],
-                    [
-                        'wialon_group_id', 'unit_name', 'vehicle_type', 'ownership',
-                        'engine_hours_decimal', 'engine_seconds', 'engine_hours_raw',
-                        'started_at', 'ended_at', 'mileage_km', 'mileage_raw',
-                        'efficiency_status', 'report_run_id', 'source_report_template_id',
-                        'source_report_name', 'raw_row_json', 'updated_at',
-                    ],
-                );
+                if ($force) {
+                    EfficiencyDailyFact::query()->insert(array_values($facts));
+                } else {
+                    EfficiencyDailyFact::query()->upsert(
+                        array_values($facts),
+                        ['business_date', 'project_id', 'wialon_unit_id'],
+                        [
+                            'wialon_group_id', 'unit_name', 'vehicle_type', 'ownership',
+                            'engine_hours_decimal', 'engine_seconds', 'engine_hours_raw',
+                            'started_at', 'ended_at', 'mileage_km', 'mileage_raw',
+                            'efficiency_status', 'report_run_id', 'source_report_template_id',
+                            'source_report_name', 'raw_row_json', 'updated_at',
+                        ],
+                    );
+                }
             }
 
             DB::table('efficiency_unmatched_report_rows')->where('task_id', $task->id)->delete();
