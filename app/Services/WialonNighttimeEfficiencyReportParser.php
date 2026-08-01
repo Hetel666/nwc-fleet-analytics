@@ -37,10 +37,14 @@ class WialonNighttimeEfficiencyReportParser
                 $cells = $row['c'] ?? $row['cells'] ?? [];
                 $parsed['records'][$recordIndex]['source_table_index'] = (int) ($reportTable['index'] ?? 0);
                 $parsed['records'][$recordIndex]['started_at'] = $this->localDateTime(
-                    $beginIndex === null ? null : ($cells[$beginIndex] ?? null),
+                    is_numeric($row['t1'] ?? null)
+                        ? ['v' => (int) $row['t1']]
+                        : ($beginIndex === null ? null : ($cells[$beginIndex] ?? null)),
                 );
                 $parsed['records'][$recordIndex]['ended_at'] = $this->localDateTime(
-                    $endIndex === null ? null : ($cells[$endIndex] ?? null),
+                    is_numeric($row['t2'] ?? null)
+                        ? ['v' => (int) $row['t2']]
+                        : ($endIndex === null ? null : ($cells[$endIndex] ?? null)),
                 );
                 $recordIndex++;
             }

@@ -104,6 +104,21 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $this->assertSame('test-session', $execution[6]);
     }
 
+    public function test_parser_prefers_exact_row_timestamps_over_ambiguous_display_cells(): void
+    {
+        config()->set('historical_recalculation.timezone', 'Asia/Baku');
+        $report = $this->report('6001', '0.77', '4.38 km');
+        $report['tables'][0]['rows'][0]['t1'] = CarbonImmutable::parse('2026-07-31 19:34:57', 'Asia/Baku')->timestamp;
+        $report['tables'][0]['rows'][0]['t2'] = CarbonImmutable::parse('2026-07-31 20:37:07', 'Asia/Baku')->timestamp;
+        $report['tables'][0]['rows'][0]['c'][2] = '2026-07-31 15:34:57';
+        $report['tables'][0]['rows'][0]['c'][3] = '2026-07-31 16:37:07';
+
+        $record = app(WialonNighttimeEfficiencyReportParser::class)->parse($report)['records'][0];
+
+        $this->assertSame('2026-07-31 19:34:57', $record['started_at']->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-07-31 20:37:07', $record['ended_at']->format('Y-m-d H:i:s'));
+    }
+
     public function test_successful_sync_is_idempotent_and_does_not_change_existing_efficiency(): void
     {
         [$handler, $run, $task, $project] = $this->handlerScenario($this->report('6001', '7,50', '4,25 km'));
