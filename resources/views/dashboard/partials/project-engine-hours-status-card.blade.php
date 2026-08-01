@@ -1,15 +1,12 @@
 @php
     $primaryCategoryKeys = collect([
-        'less_than_1_hour',
-        'less_than_7_hours',
-        'between_7_and_10_hours',
-        'night_shift_only',
+        '0_1',
+        '1_7',
+        '7_10',
+        'over_10',
         'no_data',
     ]);
-    $additionalCategoryKeys = collect([
-        'overtime',
-        'over_10_hours',
-    ]);
+    $additionalCategoryKeys = collect();
     $total = (int) ($summary['total'] ?? 0);
     $hasRows = $total + (int) $additionalCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0)) > 0;
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
@@ -45,6 +42,8 @@
             </button>
         </div>
     </div>
+
+    <div class="dashboard-work-status-note mb-2">Hesablama vahidi: Texnika-gün</div>
 
     @if ($hasRows)
         <div class="dashboard-work-status-layout flex-grow-1">

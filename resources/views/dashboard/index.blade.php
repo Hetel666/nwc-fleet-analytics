@@ -45,30 +45,24 @@
     $projectWorkCategoryRowsNwc = collect($projectWorkCategoryGroups[$nwc] ?? []);
     $projectWorkCategoryRowsIcare = collect($projectWorkCategoryGroups[$icare] ?? []);
     $actualWorkCategoryLabels = collect([
-        'less_than_1_hour' => __('app.worked_less_than_1_hour'),
-        'less_than_7_hours' => __('app.worked_less_than_7_hours'),
-        'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),
-        'night_shift_only' => __('app.worked_night_shift_only'),
-        'over_10_hours' => __('app.worked_over_10_hours'),
-        'overtime' => __('app.worked_overtime_hours'),
-        'no_data' => __('app.equipment_without_data'),
+        '0_1' => '0 - 1 saat arası işləyən',
+        '1_7' => '1 - 7 saat arası işləyən',
+        '7_10' => '7 - 10 saat arası işləyən',
+        'over_10' => '10 saatdan artıq işləyən',
+        'no_data' => 'İşləməyən / Məlumatı olmayan',
     ]);
     $actualWorkCategoryRanges = collect([
-        'less_than_1_hour' => '< 1 saat',
-        'less_than_7_hours' => '1 - 7 saat',
-        'between_7_and_10_hours' => '7 - 10 saat',
-        'night_shift_only' => '18:00 - 07:59',
-        'over_10_hours' => '> 10 saat',
-        'overtime' => '18:00 - 07:59 (Overtime)',
+        '0_1' => '0 - 1 saat',
+        '1_7' => '1 - 7 saat',
+        '7_10' => '7 - 10 saat',
+        'over_10' => '> 10 saat',
         'no_data' => '-',
     ]);
     $actualWorkCategoryColors = collect([
-        'less_than_1_hour' => '#1f6feb',
-        'less_than_7_hours' => '#f97316',
-        'between_7_and_10_hours' => '#24b35b',
-        'night_shift_only' => '#0ea5e9',
-        'over_10_hours' => '#8b5cf6',
-        'overtime' => '#ef4444',
+        '0_1' => '#1f6feb',
+        '1_7' => '#f97316',
+        '7_10' => '#24b35b',
+        'over_10' => '#8b5cf6',
         'no_data' => '#94a3b8',
     ]);
     $efficiencyVehicleTypes = collect(config('fleet_efficiency.efficiency_vehicle_types', config('fleet_efficiency.allowed_vehicle_types', [])))
@@ -2099,7 +2093,7 @@
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-nwc'),
                     'filters' => $filters,
-                    'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Project üzrə: '.__('app.ownership_nwc')),
+                    'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Effektivlik: NWC üzrə'),
                 ])
             </div>
 
@@ -2117,7 +2111,7 @@
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-icare'),
                     'filters' => $filters,
-                    'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Project üzrə: '.__('app.ownership_icare')),
+                    'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Effektivlik: İcarə üzrə'),
                 ])
             </div>
 
@@ -2488,7 +2482,7 @@
                                     <option value="icare">İCARƏ</option>
                                 </select>
                             </div>
-                            <div class="col-6 col-lg-3">
+                            <div class="col-6 col-lg-3 dashboard-legacy-shift-filter-group">
                                 <label class="form-label" for="dashboardDrilldownDataStatusSelect">Məlumat statusu</label>
                                 <select class="form-select form-select-sm dashboard-drilldown-control" id="dashboardDrilldownDataStatusSelect" data-filter-name="data_status">
                                     <option value="all">Hamısı</option>
@@ -2512,7 +2506,7 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-12 col-lg-4">
+                            <div class="col-12 col-lg-4 dashboard-legacy-shift-filter-group">
                                 <div class="row g-2">
                                     <div class="col-6">
                                         <label class="form-label" for="dashboardDrilldownDayStatus">Gündüz statusu</label>
@@ -2570,11 +2564,11 @@
                                 <label class="form-label" for="dashboardDrilldownUnitName">Texnikanın adı</label>
                                 <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownUnitName" data-filter-name="unit_name">
                             </div>
-                            <div class="col-6 col-lg-4">
+                            <div class="col-6 col-lg-4 dashboard-legacy-shift-filter-group">
                                 <label class="form-label" for="dashboardDrilldownRegistration">Qeydiyyat nişanı</label>
                                 <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownRegistration" data-filter-name="registration_number">
                             </div>
-                            <div class="col-6 col-lg-4">
+                            <div class="col-6 col-lg-4 dashboard-legacy-shift-filter-group">
                                 <label class="form-label" for="dashboardDrilldownWialonId">Wialon ID</label>
                                 <input type="search" class="form-control form-control-sm dashboard-drilldown-control" id="dashboardDrilldownWialonId" data-filter-name="wialon_id">
                             </div>
@@ -2637,22 +2631,20 @@
 const ownershipColor = { NWC: '#24b35b', ICARE: '#1f6feb' };
 const typePalette = ['#1f6feb', '#24b35b', '#f6ad00', '#8b5cf6', '#0ea5b7', '#94a3b8', '#f97316', '#14b8a6', '#6366f1', '#ef4444'];
 const workCategoryColors = {
-    less_than_1_hour: '#1f6feb',
-    less_than_7_hours: '#f97316',
-    between_7_and_10_hours: '#24b35b',
-    night_shift_only: '#0ea5e9',
-    over_10_hours: '#8b5cf6',
-    overtime: '#ef4444',
+    '0_1': '#1f6feb',
+    '1_7': '#f97316',
+    '7_10': '#24b35b',
+    over_10: '#8b5cf6',
     no_data: '#94a3b8',
 };
 const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
 const workCategoryLabels = @json($actualWorkCategoryLabels->values());
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
 const workCategoryDonutKeys = [
-    'less_than_1_hour',
-    'less_than_7_hours',
-    'between_7_and_10_hours',
-    'night_shift_only',
+    '0_1',
+    '1_7',
+    '7_10',
+    'over_10',
     'no_data',
 ];
 const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
@@ -3760,6 +3752,7 @@ const drilldownApplyFilters = document.getElementById('dashboardDrilldownApplyFi
 const drilldownClearFilters = document.getElementById('dashboardDrilldownClearFilters');
 const drilldownFilterControls = Array.from(document.querySelectorAll('.dashboard-drilldown-control'));
 const drilldownEfficiencyFilterGroups = Array.from(document.querySelectorAll('.dashboard-efficiency-filter-group'));
+const drilldownLegacyShiftFilterGroups = Array.from(document.querySelectorAll('.dashboard-legacy-shift-filter-group'));
 const drilldownChips = document.getElementById('dashboardDrilldownChips');
 const drilldownPageInfo = document.getElementById('dashboardDrilldownPageInfo');
 const drilldownPageSize = document.getElementById('dashboardDrilldownPageSize');
@@ -4364,6 +4357,7 @@ const resetDashboardDrilldownState = (options = {}) => {
     drilldownDataStatusGroup?.classList.remove('d-none');
     drilldownBack?.classList.add('d-none');
     drilldownEfficiencyFilterGroups.forEach(group => group.classList.remove('d-none'));
+    drilldownLegacyShiftFilterGroups.forEach(group => group.classList.remove('d-none'));
     syncDrilldownFilterControls();
     renderDrilldownChips();
 };
@@ -4456,6 +4450,7 @@ const configureDrilldownMode = (mode, filters = {}) => {
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
     drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
     drilldownEfficiencyFilterGroups.forEach(group => group.classList.toggle('d-none', isMetricDrilldown && !isEfficiencyDrilldown));
+    drilldownLegacyShiftFilterGroups.forEach(group => group.classList.toggle('d-none', isEfficiencyDrilldown));
 
     if (drilldownGroupMode) {
         drilldownGroupMode.value = filters.group_by || 'details';

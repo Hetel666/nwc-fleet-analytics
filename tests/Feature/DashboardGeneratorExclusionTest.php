@@ -84,12 +84,6 @@ class DashboardGeneratorExclusionTest extends TestCase
             ['name' => 'Dump Truck', 'total' => 1],
         ], $types[Equipment::OWNERSHIP_ICARE]);
 
-        $categories = $dashboard->getActualWorkHourCategories($filters);
-        $this->assertSame(0, $categories[Equipment::OWNERSHIP_NWC]['overtime']);
-        $this->assertSame(1, $categories[Equipment::OWNERSHIP_NWC]['between_7_and_10_hours']);
-        $this->assertSame(0, $categories[Equipment::OWNERSHIP_NWC]['less_than_7_hours']);
-        $this->assertSame(1, $categories[Equipment::OWNERSHIP_ICARE]['less_than_7_hours']);
-
         $averages = $dashboard->getAverageMetricsByOwnership($filters);
         $this->assertSame(1, $averages[Equipment::OWNERSHIP_NWC]['engine_hours_equipment_count']);
         $this->assertSame(8.0, $averages[Equipment::OWNERSHIP_NWC]['avg_hours']);

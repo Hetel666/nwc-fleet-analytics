@@ -11,6 +11,7 @@ use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
+use App\Services\EfficiencyRecalculationHandler;
 use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -124,7 +125,7 @@ class HistoricalRecalculationTest extends TestCase
             ]);
     }
 
-    public function test_preview_for_efficiency_section_uses_project_ownership_tasks_without_aggregate(): void
+    public function test_preview_for_efficiency_section_uses_one_task_per_project_and_date(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
         $project = Project::query()->create(['name' => 'Efficiency project', 'active' => true]);
@@ -158,10 +159,10 @@ class HistoricalRecalculationTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'days' => 3,
-                'project_groups' => 2,
-                'fetch_tasks' => 6,
+                'project_groups' => 1,
+                'fetch_tasks' => 3,
                 'aggregate_tasks' => 0,
-                'total_tasks' => 6,
+                'total_tasks' => 3,
             ]);
     }
 
@@ -445,56 +446,18 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
     }
 
-    public function test_efficiency_history_runs_shift_sync_for_one_project_group(): void
+    public function test_efficiency_history_uses_only_the_new_handler_and_tables(): void
     {
-        Queue::fake();
-        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
-        $project = Project::query()->create(['name' => 'Efficiency command project', 'active' => true]);
-        $group = ProjectWialonGroup::query()->create([
-            'project_id' => $project->id,
-            'wialon_group_id' => '520',
-            'name' => 'Efficiency command project - NWC',
-            'ownership_type' => Equipment::OWNERSHIP_NWC,
-        ]);
-        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '5200');
-        $service = app(HistoricalRecalculationService::class);
-        $run = $service->createRun([
-            'date_from' => '2026-07-29',
-            'date_to' => '2026-07-29',
-            'timezone' => 'Asia/Baku',
-            'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
-            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
-            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
-            'project_ids' => [$project->id],
-            'force' => true,
-        ], $admin);
-        $task = $run->tasks()->where('operation', HistoricalRecalculation::OPERATION_FETCH)->firstOrFail();
+        $definition = app(HistoricalRecalculationModuleRegistry::class)
+            ->definition(HistoricalRecalculation::SECTION_EFFICIENCY);
 
-        Artisan::shouldReceive('call')
-            ->once()
-            ->with('fleet:plan-shift-sync', \Mockery::on(
-                fn (array $parameters): bool => $parameters['--group'] === '520'
-                    && $parameters['--from'] === '2026-07-29'
-                    && $parameters['--to'] === '2026-07-29'
-                    && $parameters['--force'] === true
-            ))
-            ->andReturn(0);
-        Artisan::shouldReceive('call')
-            ->once()
-            ->with('fleet:run-shift-sync', \Mockery::on(
-                fn (array $parameters): bool => $parameters['--group'] === '520'
-                    && $parameters['--date'] === '2026-07-29'
-                    && $parameters['--limit'] === 1
-                    && $parameters['--retry-failed'] === true
-            ))
-            ->andReturn(0);
-
-        (new RunHistoricalRecalculationTaskJob($task->id))->handle(
-            app(HistoricalRecalculationModuleRegistry::class),
-            $service
-        );
-
-        $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
+        $this->assertSame(EfficiencyRecalculationHandler::class, $definition['service']);
+        $this->assertSame([], $definition['aliases']);
+        $this->assertSame([
+            'efficiency_daily_facts',
+            'efficiency_sync_runs',
+            'efficiency_sync_tasks',
+        ], $definition['result_tables']);
     }
 
     public function test_historical_jobs_define_explicit_retry_and_timeout_policies(): void
@@ -511,7 +474,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertTrue($finalizeJob->failOnTimeout);
     }
 
-    public function test_registry_covers_every_ui_module_and_legacy_efficiency_alias(): void
+    public function test_registry_covers_every_ui_module_with_canonical_efficiency_code(): void
     {
         $registry = app(HistoricalRecalculationModuleRegistry::class);
 
@@ -522,11 +485,6 @@ class HistoricalRecalculationTest extends TestCase
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         ], array_keys($registry->definitions()));
-        $this->assertSame(
-            HistoricalRecalculation::SECTION_EFFICIENCY,
-            $registry->canonicalSection(HistoricalRecalculation::SECTION_LEGACY_EFFICIENCY)
-        );
-
         foreach ($registry->definitions() as $definition) {
             $this->assertSame('historical-recalculations', $definition['queue']);
             $this->assertSame(RunHistoricalRecalculationTaskJob::class, $definition['job']);
@@ -537,6 +495,7 @@ class HistoricalRecalculationTest extends TestCase
         foreach (array_keys($registry->definitions()) as $moduleCode) {
             $this->assertStringContainsString('value="'.$moduleCode.'"', $view);
         }
+        $this->assertStringNotContainsString('value="daytime_efficiency"', $view);
     }
 
     public function test_store_rejects_run_when_selected_project_has_no_executable_tasks(): void

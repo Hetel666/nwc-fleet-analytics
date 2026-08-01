@@ -9,6 +9,7 @@ use App\Http\Controllers\DashboardExportController;
 use App\Http\Controllers\DashboardLayoutController;
 use App\Http\Controllers\DashboardOwnershipExportController;
 use App\Http\Controllers\DashboardTopWorkingUnitsExportController;
+use App\Http\Controllers\EfficiencyDashboardController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\EquipmentTypeController;
 use App\Http\Controllers\GeofenceController;
@@ -49,6 +50,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/dashboard/export', [DashboardExportController::class, 'create'])->name('dashboard.export');
     Route::get('/dashboard/exports/{export}/status', [DashboardExportController::class, 'status'])->name('dashboard.exports.status');
     Route::get('/dashboard/exports/{export}/download', [DashboardExportController::class, 'download'])->name('dashboard.exports.download');
+    Route::get('/api/dashboard/efficiency/summary', [EfficiencyDashboardController::class, 'summary'])->name('api.dashboard.efficiency.summary');
+    Route::get('/api/dashboard/efficiency/projects', [EfficiencyDashboardController::class, 'projects'])->name('api.dashboard.efficiency.projects');
+    Route::get('/api/dashboard/efficiency/units', [EfficiencyDashboardController::class, 'units'])->name('api.dashboard.efficiency.units');
+    Route::get('/api/dashboard/efficiency/export', [EfficiencyDashboardController::class, 'export'])->name('api.dashboard.efficiency.export');
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
     Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');

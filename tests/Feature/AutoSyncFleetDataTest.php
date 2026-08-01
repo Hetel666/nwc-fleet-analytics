@@ -31,13 +31,9 @@ class AutoSyncFleetDataTest extends TestCase
             'auto_sync_daily_enabled' => '1',
             'auto_sync_daily_recent_days' => '1',
             'auto_sync_top20_batch_limit' => '1',
-            'auto_sync_shift_batch_limit' => '1',
         ]);
 
-        foreach ([
-            WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20,
-            WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY,
-        ] as $type) {
+        foreach ([WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20] as $type) {
             foreach (['100', '101'] as $groupId) {
                 WialonReportSyncItem::query()->create([
                     'sync_type' => $type,
@@ -56,7 +52,6 @@ class AutoSyncFleetDataTest extends TestCase
             $parametersByCommand[$command][] = $parameters;
             $type = match ($command) {
                 'fleet:sync-engine-hours-report' => WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20,
-                'fleet:run-shift-sync' => WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY,
                 default => null,
             };
 
@@ -76,7 +71,7 @@ class AutoSyncFleetDataTest extends TestCase
 
         $this->assertSame(0, $kernel->call('fleet:auto-sync', ['--force' => true]));
         $this->assertSame(2, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:sync-engine-hours-report')->count());
-        $this->assertSame(2, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:run-shift-sync')->count());
+        $this->assertSame(1, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:queue-efficiency-sync')->count());
         $this->assertSame(1, collect($calls)->filter(fn (string $command): bool => $command === 'fleet:sync-geofence-violations-report')->count());
         $this->assertSame(
             [
@@ -91,7 +86,7 @@ class AutoSyncFleetDataTest extends TestCase
             'status' => WialonReportSyncItem::STATUS_PENDING,
         ]);
         $this->assertSame('success', Setting::query()->where('key', 'auto_sync_top20_last_status')->value('value'));
-        $this->assertSame('success', Setting::query()->where('key', 'auto_sync_shift_last_status')->value('value'));
+        $this->assertSame('success', Setting::query()->where('key', 'auto_sync_efficiency_last_status')->value('value'));
         $this->assertSame('success', Setting::query()->where('key', 'auto_sync_geofence_violations_last_status')->value('value'));
     }
 

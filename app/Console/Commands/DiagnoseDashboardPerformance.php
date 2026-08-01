@@ -6,13 +6,12 @@ use App\Models\Equipment;
 use App\Services\DashboardDailyAverageService;
 use App\Services\DashboardFleetDrilldownService;
 use App\Services\DashboardService;
-use App\Services\FleetEfficiencyService;
+use App\Services\EfficiencyDashboardService;
 use App\Services\GeofenceViolationService;
 use App\Services\TopWorkingUnitsService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -38,7 +37,7 @@ class DiagnoseDashboardPerformance extends Command
     public function handle(
         DashboardService $dashboard,
         DashboardDailyAverageService $dailyAverages,
-        FleetEfficiencyService $efficiency,
+        EfficiencyDashboardService $efficiency,
         TopWorkingUnitsService $topWorkingUnits,
         GeofenceViolationService $geofenceViolations,
         DashboardFleetDrilldownService $drilldown,
@@ -137,13 +136,13 @@ class DiagnoseDashboardPerformance extends Command
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<int, array<string, mixed>>
      */
     private function widgets(
         DashboardService $dashboard,
         DashboardDailyAverageService $dailyAverages,
-        FleetEfficiencyService $efficiency,
+        EfficiencyDashboardService $efficiency,
         TopWorkingUnitsService $topWorkingUnits,
         GeofenceViolationService $geofenceViolations,
         DashboardFleetDrilldownService $drilldown,
@@ -256,7 +255,7 @@ class DiagnoseDashboardPerformance extends Command
                     'date_to' => $filters['to'],
                     'project_id' => $filters['project_id'],
                     'ownership' => Equipment::OWNERSHIP_NWC,
-                    'work_category' => FleetEfficiencyService::DAY_STATUS_LESS_THAN_1,
+                    'work_category' => '0_1',
                     'per_page' => 50,
                 ]))),
             ],
@@ -274,7 +273,7 @@ class DiagnoseDashboardPerformance extends Command
     }
 
     /**
-     * @param array<string, mixed> $widget
+     * @param  array<string, mixed>  $widget
      * @return array<string, mixed>
      */
     private function measure(array $widget): array
@@ -315,7 +314,7 @@ class DiagnoseDashboardPerformance extends Command
     }
 
     /**
-     * @param array<int, array<string, mixed>> $results
+     * @param  array<int, array<string, mixed>>  $results
      */
     private function printDetails(array $results): void
     {
@@ -376,7 +375,6 @@ class DiagnoseDashboardPerformance extends Command
     }
 
     /**
-     * @param mixed $paginator
      * @return array<string, mixed>
      */
     private function paginatorPayload(mixed $paginator): array
@@ -433,7 +431,7 @@ class DiagnoseDashboardPerformance extends Command
     }
 
     /**
-     * @param array<int, mixed> $bindings
+     * @param  array<int, mixed>  $bindings
      * @return array<int, mixed>
      */
     private function safeBindings(array $bindings): array

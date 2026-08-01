@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\EfficiencyDailyFact;
 use App\Models\Equipment;
 use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
@@ -73,7 +74,7 @@ class DashboardAccessTest extends TestCase
         }
     }
 
-    public function test_efficiency_card_shows_primary_total_then_supplemental_counts_without_percentages(): void
+    public function test_efficiency_card_shows_five_engine_hour_statuses_without_percentages(): void
     {
         $this->seed(DemoSeeder::class);
         $project = $this->createPreparedEfficiencyRow();
@@ -101,11 +102,9 @@ class DashboardAccessTest extends TestCase
                 '0 - 1 saat arası işləyən',
                 '1 - 7 saat arası işləyən',
                 '7 - 10 saat arası işləyən',
-                'Sırf gecə növbəsi işləyən',
+                '10 saatdan artıq işləyən',
                 'İşləməyən / Məlumatı olmayan',
                 'Cəmi',
-                'Həm gündüz həm gecə növbəsi işləyən (Overtime)',
-                '10 saatdan artıq işləyən',
             ]
         );
         $this->assertNotContains(false, $positions);
@@ -296,7 +295,7 @@ class DashboardAccessTest extends TestCase
                 'date_from' => '2026-07-19',
                 'date_to' => '2026-07-19',
                 'ownership' => 'nwc',
-                'status' => 'less_than_1',
+                'status' => '0_1',
             ]))
             ->assertOk()
             ->assertJsonPath('summary.total', 1)
@@ -363,6 +362,22 @@ class DashboardAccessTest extends TestCase
             'distance_km' => 1,
             'calculation_source' => 'wialon_shift_report',
             'calculation_status' => 'ok',
+        ]);
+
+        EfficiencyDailyFact::query()->create([
+            'business_date' => '2026-07-19',
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701903',
+            'wialon_unit_id' => $equipment->wialon_unit_id,
+            'unit_name' => $equipment->name,
+            'vehicle_type' => 'Loader',
+            'ownership' => Equipment::OWNERSHIP_NWC,
+            'engine_hours_decimal' => 0.5,
+            'engine_seconds' => 1800,
+            'engine_hours_raw' => '0.50',
+            'efficiency_status' => '0_1',
+            'source_report_template_id' => 19,
+            'source_report_name' => 'Qrup report Engine hours (api)',
         ]);
 
         return $project;

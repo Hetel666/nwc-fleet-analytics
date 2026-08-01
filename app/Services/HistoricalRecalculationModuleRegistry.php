@@ -6,8 +6,6 @@ use App\Jobs\RunHistoricalRecalculationTaskJob;
 use App\Models\GeofenceViolationSyncItem;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
-use App\Models\ProjectWialonGroup;
-use App\Models\WialonReportSyncItem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use InvalidArgumentException;
@@ -15,7 +13,10 @@ use RuntimeException;
 
 class HistoricalRecalculationModuleRegistry
 {
-    public function __construct(private WialonReportStatsSyncService $dailyStats) {}
+    public function __construct(
+        private WialonReportStatsSyncService $dailyStats,
+        private EfficiencyRecalculationHandler $efficiency,
+    ) {}
 
     /** @return array<string, array<string, mixed>> */
     public function definitions(): array
@@ -35,11 +36,11 @@ class HistoricalRecalculationModuleRegistry
             HistoricalRecalculation::SECTION_EFFICIENCY => [
                 'label' => 'Effektivlik',
                 'handler' => 'executeEfficiency',
-                'service' => WialonShiftSyncService::class,
+                'service' => EfficiencyRecalculationHandler::class,
                 'job' => RunHistoricalRecalculationTaskJob::class,
                 'queue' => $queue,
-                'result_tables' => ['equipment_daily_stats', 'wialon_report_sync_items'],
-                'aliases' => [HistoricalRecalculation::SECTION_LEGACY_EFFICIENCY],
+                'result_tables' => ['efficiency_daily_facts', 'efficiency_sync_runs', 'efficiency_sync_tasks'],
+                'aliases' => [],
             ],
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS => [
                 'label' => 'Top 20',
@@ -125,31 +126,7 @@ class HistoricalRecalculationModuleRegistry
 
     private function executeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
-        $date = $task->stat_date->toDateString();
-        $group = ProjectWialonGroup::query()
-            ->where('project_id', $task->project_id)
-            ->where('ownership_type', $task->ownership_type)
-            ->firstOrFail();
-
-        $this->runArtisanOrFail('fleet:plan-shift-sync', array_filter([
-            '--from' => $date,
-            '--to' => $date,
-            '--group' => $group->wialon_group_id,
-            '--force' => (bool) $run->force,
-        ], $this->hasValue(...)));
-
-        $this->runArtisanOrFail('fleet:run-shift-sync', array_filter([
-            '--date' => $date,
-            '--group' => $group->wialon_group_id,
-            '--limit' => 1,
-            '--retry-failed' => (bool) $run->force,
-        ], $this->hasValue(...)));
-
-        return (int) WialonReportSyncItem::query()
-            ->where('sync_type', WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY)
-            ->where('report_date', $date)
-            ->where('wialon_group_id', $group->wialon_group_id)
-            ->value('rows_saved');
+        return $this->efficiency->execute($run, $task);
     }
 
     private function executeGeofenceOutside(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int

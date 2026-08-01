@@ -33,7 +33,7 @@ class DashboardReadPathArchitectureTest extends TestCase
             'DashboardOwnershipExportController' => [$base.'app/Http/Controllers/DashboardOwnershipExportController.php'],
             'DashboardFleetDrilldownService' => [$base.'app/Services/DashboardFleetDrilldownService.php'],
             'DashboardDailyAverageService' => [$base.'app/Services/DashboardDailyAverageService.php'],
-            'FleetEfficiencyService' => [$base.'app/Services/FleetEfficiencyService.php'],
+            'EfficiencyDashboardService' => [$base.'app/Services/EfficiencyDashboardService.php'],
             'TopWorkingUnitsService' => [$base.'app/Services/TopWorkingUnitsService.php'],
             'GeofenceViolationService' => [$base.'app/Services/GeofenceViolationService.php'],
         ];

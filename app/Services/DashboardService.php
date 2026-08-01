@@ -38,7 +38,7 @@ class DashboardService
 
     public function __construct(
         private FleetOwnershipStatsService $ownershipStats,
-        private FleetEfficiencyService $efficiency,
+        private EfficiencyDashboardService $efficiency,
         private DashboardDailyAverageService $dailyAverages,
         private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
@@ -770,7 +770,16 @@ class DashboardService
 
     public function getDashboardExport(array $filters, string $block): array
     {
+        if ($block === 'efficiency') {
+            return $this->efficiency->export($filters);
+        }
+
         [$filters, $block] = $this->normalizeExportRequest($filters, $block);
+
+        if (in_array($block, ['actual-work-hours-nwc', 'actual-work-hours-icare'], true)) {
+            return $this->efficiency->export($filters);
+        }
+
         $title = $this->dashboardExportTitle($block, $filters);
 
         if (in_array($block, ['average-engine-hours', 'average-mileage'], true)) {

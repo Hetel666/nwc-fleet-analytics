@@ -83,6 +83,10 @@ class DashboardDrilldownRequest extends FormRequest
                 'wialon_id',
             ])],
             'work_category' => ['nullable', Rule::in([
+                '0_1',
+                '1_7',
+                '7_10',
+                'over_10',
                 'less_than_1',
                 'from_1_to_7',
                 'from_7_to_10',
@@ -96,6 +100,10 @@ class DashboardDrilldownRequest extends FormRequest
                 'no_data',
             ])],
             'status' => ['nullable', Rule::in([
+                '0_1',
+                '1_7',
+                '7_10',
+                'over_10',
                 'less_than_1',
                 'from_1_to_7',
                 'from_7_to_10',
@@ -110,6 +118,10 @@ class DashboardDrilldownRequest extends FormRequest
             ])],
             'day_status' => ['nullable', Rule::in([
                 'all',
+                '0_1',
+                '1_7',
+                '7_10',
+                'over_10',
                 'less_than_1',
                 'from_1_to_7',
                 'from_7_to_10',

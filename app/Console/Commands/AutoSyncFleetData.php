@@ -102,16 +102,15 @@ class AutoSyncFleetData extends Command
         $days = max(1, min(7, (int) $this->setting('auto_sync_daily_recent_days', 3)));
         $dailySuccess = true;
         $top20Success = true;
-        $shiftSuccess = true;
+        $efficiencySuccess = true;
         $geozonSuccess = true;
         $geofenceViolationsSuccess = true;
         $dailyMessages = [];
         $top20Messages = [];
-        $shiftMessages = [];
+        $efficiencyMessages = [];
         $geozonMessages = [];
         $geofenceViolationsMessages = [];
         $top20Limit = max(1, min(50, (int) $this->setting('auto_sync_top20_batch_limit', 10)));
-        $shiftLimit = max(1, min(50, (int) $this->setting('auto_sync_shift_batch_limit', 10)));
         $rangeFrom = now(config('app.timezone'))->subDays($days)->startOfDay();
         $rangeTo = now(config('app.timezone'))->subDay()->endOfDay();
 
@@ -130,24 +129,20 @@ class AutoSyncFleetData extends Command
                 '--to' => $date.' 23:59:59',
                 '--force' => true,
             ]);
-            $shiftPlanOk = $this->runArtisanCommand('fleet:plan-shift-sync', ['--from' => $date, '--to' => $date]);
-            $shiftRunOk = $shiftPlanOk['ok']
-                ? $this->runBatchedReportCommand(
-                    'fleet:run-shift-sync',
-                    ['--date' => $date, '--limit' => $shiftLimit],
-                    WialonReportSyncItem::TYPE_SHIFT_EFFICIENCY,
-                    $date
-                )
-                : ['ok' => false, 'output' => 'Shift planning failed.'];
+            $efficiencyOk = $this->runArtisanCommand('fleet:queue-efficiency-sync', [
+                '--from' => $date,
+                '--to' => $date,
+                '--force' => true,
+            ]);
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
             $top20Success = $top20Success && $top20Ok['ok'];
             $geozonSuccess = $geozonSuccess && $geozonOk['ok'];
-            $shiftSuccess = $shiftSuccess && $shiftPlanOk['ok'] && $shiftRunOk['ok'];
+            $efficiencySuccess = $efficiencySuccess && $efficiencyOk['ok'];
 
             $dailyMessages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
             $top20Messages[] = $date.': '.trim($top20Ok['output']);
             $geozonMessages[] = $date.': '.trim($geozonOk['output']);
-            $shiftMessages[] = $date.': '.trim($shiftPlanOk['output'].' '.$shiftRunOk['output']);
+            $efficiencyMessages[] = $date.': '.trim($efficiencyOk['output']);
         }
 
         $geofenceViolationsOk = $this->runArtisanCommand('fleet:sync-geofence-violations-report', [
@@ -167,7 +162,7 @@ class AutoSyncFleetData extends Command
             $geofenceViolationsSuccess,
             implode(' | ', array_filter($geofenceViolationsMessages))
         );
-        $this->storeTaskResult('shift', $shiftSuccess, implode(' | ', array_filter($shiftMessages)));
+        $this->storeTaskResult('efficiency', $efficiencySuccess, implode(' | ', array_filter($efficiencyMessages)));
 
         Setting::updateOrCreate(
             ['key' => 'auto_sync_daily_last_run_date'],
@@ -178,7 +173,7 @@ class AutoSyncFleetData extends Command
             && $top20Success
             && $geozonSuccess
             && $geofenceViolationsSuccess
-            && $shiftSuccess;
+            && $efficiencySuccess;
     }
 
     /**

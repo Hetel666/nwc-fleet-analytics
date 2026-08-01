@@ -26,7 +26,7 @@ class DashboardFleetDrilldownService
     ];
 
     public function __construct(
-        private FleetEfficiencyService $efficiency,
+        private EfficiencyDashboardService $efficiency,
         private DashboardDailyAverageService $dailyAverages,
         private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
@@ -300,10 +300,27 @@ class DashboardFleetDrilldownService
     {
         if ($filters['view'] === 'projects' && ($filters['work_category'] || $filters['day_status'])) {
             return [
-                'project' => __('app.project'),
-                'nwc_count' => 'NWC',
-                'icare_count' => 'İCARƏ',
-                'count' => 'Say',
+                'project' => 'Layihə',
+                'ownership' => 'Ownership',
+                'status' => 'Status',
+                'equipment_days_count' => 'Texnika-gün sayı',
+                'unique_units_count' => 'Unikal texnika sayı',
+                'average_engine_hours' => 'Orta Engine hours',
+            ];
+        }
+
+        if ($filters['work_category'] || $filters['day_status']) {
+            return [
+                'date' => 'Tarix',
+                'name' => 'Texnika',
+                'project' => 'Layihə',
+                'vehicle_type' => 'Texnika növü',
+                'ownership' => 'Ownership',
+                'engine_hours' => 'Engine hours',
+                'started_at' => 'Başlama',
+                'ended_at' => 'Bitmə',
+                'mileage' => 'Yürüş',
+                'status_label' => 'Status',
             ];
         }
 
@@ -322,28 +339,6 @@ class DashboardFleetDrilldownService
 
         if ($filters['geofence_violation']) {
             return $this->geofenceViolations->columns();
-        }
-
-        if ($filters['work_category'] || $filters['day_status']) {
-            return [
-                'number' => '#',
-                'date' => 'Tarix',
-                'name' => 'Texnikanın adı',
-                'registration_number' => 'Qeydiyyat nişanı',
-                'vehicle_type' => 'Texnika növü',
-                'ownership' => 'Mənsubiyyət',
-                'project' => 'Layihə',
-                'daytime_hours' => 'Gunduz Engine hours, '.DurationFormatter::labelSuffix($filters['duration_format'] ?? null),
-                'overtime_hours' => 'Gece Engine hours, '.DurationFormatter::labelSuffix($filters['duration_format'] ?? null),
-                'total_hours' => 'Umumi Engine hours, '.DurationFormatter::labelSuffix($filters['duration_format'] ?? null),
-                'daytime_seconds' => 'Gunduz saniye',
-                'overtime_seconds' => 'Gece saniye',
-                'total_seconds' => 'Umumi saniye',
-                'work_status_label' => 'Əsas iş statusu',
-                'overtime_label' => 'Overtime',
-                'data_status' => 'Məlumat statusu',
-                'wialon_id' => 'Wialon ID',
-            ];
         }
 
         if ($filters['metric']) {
@@ -636,6 +631,10 @@ class DashboardFleetDrilldownService
     private function workCategory(?string $category): ?string
     {
         return match ($category) {
+            '0_1' => '0_1',
+            '1_7' => '1_7',
+            '7_10' => '7_10',
+            'over_10' => 'over_10',
             'less_than_1', 'less_than_1_hour' => 'less_than_1_hour',
             'from_1_to_7', 'less_than_7_hours' => 'less_than_7_hours',
             'from_7_to_10', 'between_7_and_10_hours' => 'between_7_and_10_hours',
@@ -650,6 +649,10 @@ class DashboardFleetDrilldownService
     private function dayStatus(?string $status): ?string
     {
         return match ($status) {
+            '0_1' => '0_1',
+            '1_7' => '1_7',
+            '7_10' => '7_10',
+            'over_10' => 'over_10',
             'less_than_1', 'less_than_1_hour' => 'less_than_1_hour',
             'from_1_to_7', 'less_than_7_hours' => 'less_than_7_hours',
             'from_7_to_10', 'between_7_and_10_hours' => 'between_7_and_10_hours',
@@ -662,6 +665,10 @@ class DashboardFleetDrilldownService
     private function workCategoryLabel(string $category): string
     {
         return match ($category) {
+            '0_1' => '0 - 1 saat arası işləyən',
+            '1_7' => '1 - 7 saat arası işləyən',
+            '7_10' => '7 - 10 saat arası işləyən',
+            'over_10' => '10 saatdan artıq işləyən',
             'less_than_1_hour' => __('app.worked_less_than_1_hour'),
             'less_than_7_hours' => __('app.worked_less_than_7_hours'),
             'between_7_and_10_hours' => __('app.worked_7_to_10_hours'),

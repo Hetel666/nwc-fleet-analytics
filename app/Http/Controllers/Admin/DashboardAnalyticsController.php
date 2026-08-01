@@ -29,7 +29,7 @@ class DashboardAnalyticsController extends Controller
             'least-working', 'most-working' => 'top_working_units',
             'geofence-analysis' => 'geofence_outside',
             'geofence-violations-report' => 'geofence_violations',
-            'project-work-categories-nwc', 'project-work-categories-icare' => 'shift_efficiency',
+            'project-work-categories-nwc', 'project-work-categories-icare' => 'efficiency',
             default => 'static_fleet',
         };
     }
