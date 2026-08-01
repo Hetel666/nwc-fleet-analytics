@@ -61,22 +61,6 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 
         if ($task->status !== HistoricalRecalculationTask::STATUS_PENDING) {
             $service->dispatchNextPendingFetchTask($run);
-            $task = $task->refresh();
-
-            if ($task->status === HistoricalRecalculationTask::STATUS_RUNNING) {
-                $this->release($this->releaseDelayUntilStale($task));
-            }
-
-            return;
-        }
-
-        $runLock = Cache::lock(
-            'historical-recalculation-run-execution:'.$run->id,
-            (int) config('historical_recalculation.lock_seconds', 7200)
-        );
-
-        if (! $runLock->get()) {
-            $this->release(max(5, (int) config('historical_recalculation.report_task_delay_seconds', 5)));
 
             return;
         }
@@ -84,8 +68,11 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
         $lock = Cache::lock('historical-recalculation-task:'.$task->id, (int) config('historical_recalculation.lock_seconds', 7200));
 
         if (! $lock->get()) {
-            optional($runLock)->release();
-            $this->release(30);
+            Log::info('Historical recalculation task lock is already held; duplicate job skipped.', [
+                'run_id' => $run->id,
+                'task_id' => $task->id,
+                'module' => $run->dashboard_section,
+            ]);
 
             return;
         }
@@ -127,7 +114,6 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
             $service->markTaskFailed($task, $exception->getMessage());
         } finally {
             optional($lock)->release();
-            optional($runLock)->release();
             $service->dispatchNextPendingFetchTask($run->refresh());
         }
     }
@@ -144,20 +130,8 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
         }
 
         $service = app(HistoricalRecalculationService::class);
+        $service->releaseExecutionLocks($task->run, [$task]);
         $service->markTaskFailed($task, $exception?->getMessage() ?: 'Queue worker failed before task completion.');
         $service->dispatchNextPendingFetchTask($task->run->refresh());
-    }
-
-    private function releaseDelayUntilStale(HistoricalRecalculationTask $task): int
-    {
-        $staleSeconds = max(5, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
-
-        if (! $task->last_heartbeat_at) {
-            return 5;
-        }
-
-        $ageSeconds = max(0, now(config('app.timezone'))->getTimestamp() - $task->last_heartbeat_at->getTimestamp());
-
-        return max(5, ($staleSeconds - $ageSeconds) + 5);
     }
 }

@@ -9,5 +9,5 @@ return [
     'timeout' => (int) env('HISTORICAL_RECALCULATION_TIMEOUT', 900),
     'lock_seconds' => (int) env('HISTORICAL_RECALCULATION_LOCK_SECONDS', 7200),
     'report_task_delay_seconds' => (int) env('HISTORICAL_RECALCULATION_REPORT_TASK_DELAY_SECONDS', 5),
-    'stale_running_task_seconds' => (int) env('HISTORICAL_RECALCULATION_STALE_RUNNING_TASK_SECONDS', 2400),
+    'stale_running_task_seconds' => (int) env('HISTORICAL_RECALCULATION_STALE_RUNNING_TASK_SECONDS', 1200),
 ];

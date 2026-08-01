@@ -214,6 +214,7 @@ class HistoricalRecalculationService
                 'stale_seconds' => $staleSeconds,
             ]);
 
+            $this->releaseExecutionLocks($run, [$task]);
             $this->markTaskFailed(
                 $task,
                 "Stale running task recovered after worker interruption. Last heartbeat: {$heartbeat}; stale threshold: {$staleSeconds} seconds. Review this task before retry."
@@ -221,6 +222,24 @@ class HistoricalRecalculationService
         }
 
         return $staleTasks->count();
+    }
+
+    /**
+     * Release historical execution locks after a verified worker interruption.
+     *
+     * @param  iterable<HistoricalRecalculationTask>  $tasks
+     */
+    public function releaseExecutionLocks(HistoricalRecalculation $run, iterable $tasks = []): void
+    {
+        $lockSeconds = (int) config('historical_recalculation.lock_seconds', 7200);
+
+        Cache::lock('historical-recalculation-run-execution:'.$run->id, $lockSeconds)->forceRelease();
+
+        foreach ($tasks as $task) {
+            if ($task instanceof HistoricalRecalculationTask) {
+                Cache::lock('historical-recalculation-task:'.$task->id, $lockSeconds)->forceRelease();
+            }
+        }
     }
 
     public function cancel(HistoricalRecalculation $run): void

@@ -17,6 +17,7 @@ use App\Services\HistoricalRecalculationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -768,8 +769,19 @@ class HistoricalRecalculationTest extends TestCase
                 'operation' => HistoricalRecalculation::OPERATION_FETCH,
                 'stat_date' => '2026-07-30',
             ]);
+            $runLock = Cache::lock('historical-recalculation-run-execution:'.$run->id, 7200);
+            $taskLock = Cache::lock('historical-recalculation-task:'.$first->id, 7200);
+            $this->assertTrue($runLock->get());
+            $this->assertTrue($taskLock->get());
 
             app(HistoricalRecalculationService::class)->dispatchNextPendingFetchTask($run);
+
+            $releasedRunLock = Cache::lock('historical-recalculation-run-execution:'.$run->id, 7200);
+            $releasedTaskLock = Cache::lock('historical-recalculation-task:'.$first->id, 7200);
+            $this->assertTrue($releasedRunLock->get());
+            $this->assertTrue($releasedTaskLock->get());
+            $releasedRunLock->release();
+            $releasedTaskLock->release();
         } finally {
             Carbon::setTestNow();
         }
@@ -823,7 +835,7 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_retry_of_fresh_running_task_is_released_until_stale_window(): void
+    public function test_retry_of_fresh_running_task_does_not_fail_or_requeue_duplicate_job(): void
     {
         Queue::fake();
         config()->set('historical_recalculation.stale_running_task_seconds', 600);
@@ -860,13 +872,52 @@ class HistoricalRecalculationTest extends TestCase
 
             $job = (new RunHistoricalRecalculationTaskJob($task->id))->withFakeQueueInteractions();
             $job->handle(app(HistoricalRecalculationModuleRegistry::class), app(HistoricalRecalculationService::class));
-            $job->assertReleased(485);
+            $job->assertNotReleased();
         } finally {
             Carbon::setTestNow();
         }
 
         $this->assertSame(HistoricalRecalculationTask::STATUS_RUNNING, $task->refresh()->status);
         Queue::assertNothingPushed();
+    }
+
+    public function test_legacy_run_execution_lock_does_not_block_pending_task(): void
+    {
+        Queue::fake();
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '3a1552ed-9f80-42da-b44d-44c459ce3a87',
+            'signature' => 'legacy-run-lock-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $task = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+        ]);
+        $runLock = Cache::lock('historical-recalculation-run-execution:'.$run->id, 7200);
+        $this->assertTrue($runLock->get());
+
+        try {
+            Artisan::shouldReceive('call')->once()->andReturn(0);
+
+            (new RunHistoricalRecalculationTaskJob($task->id))->handle(
+                app(HistoricalRecalculationModuleRegistry::class),
+                app(HistoricalRecalculationService::class)
+            );
+        } finally {
+            $runLock->release();
+        }
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
     }
 
     public function test_diagnose_runs_can_recover_stale_running_task_for_explicit_run(): void
