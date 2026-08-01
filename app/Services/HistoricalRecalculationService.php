@@ -7,6 +7,7 @@ use App\Jobs\RunHistoricalRecalculationTaskJob;
 use App\Models\Equipment;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
+use App\Models\NighttimeEfficiencySyncRun;
 use App\Models\Project;
 use App\Models\User;
 use Carbon\Carbon;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -195,6 +197,16 @@ class HistoricalRecalculationService
             'completed_at' => now(config('app.timezone')),
             'last_heartbeat_at' => now(config('app.timezone')),
         ])->save();
+
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY
+            && Schema::hasTable('nighttime_efficiency_sync_runs')) {
+            NighttimeEfficiencySyncRun::query()
+                ->where('historical_recalculation_id', $run->id)
+                ->update([
+                    'status' => HistoricalRecalculation::STATUS_CANCELLED,
+                    'completed_at' => now(config('app.timezone')),
+                ]);
+        }
 
         $this->refreshProgress($run);
     }

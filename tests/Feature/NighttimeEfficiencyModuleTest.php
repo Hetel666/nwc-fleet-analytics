@@ -9,9 +9,11 @@ use App\Models\EquipmentType;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\NighttimeEfficiencyDailyFact;
+use App\Models\NighttimeEfficiencySyncRun;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
+use App\Services\HistoricalRecalculationService;
 use App\Services\NighttimeEfficiencyDashboardService;
 use App\Services\NighttimeEfficiencyRecalculationHandler;
 use App\Services\WialonNighttimeEfficiencyReportParser;
@@ -257,6 +259,36 @@ class NighttimeEfficiencyModuleTest extends TestCase
             ->where('dashboard_section', HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY)
             ->whereDate('date_from', $shiftDate)
             ->count());
+    }
+
+    public function test_cancelling_historical_run_closes_nighttime_sync_run(): void
+    {
+        $historicalRun = HistoricalRecalculation::query()->create([
+            'uuid' => fake()->uuid(),
+            'signature' => sha1(fake()->uuid()),
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-31',
+            'date_to' => '2026-07-31',
+            'timezone' => 'Asia/Baku',
+            'force' => true,
+            'project_ids' => [],
+        ]);
+        NighttimeEfficiencySyncRun::query()->create([
+            'historical_recalculation_id' => $historicalRun->id,
+            'date_from' => '2026-07-31',
+            'date_to' => '2026-07-31',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+        ]);
+
+        app(HistoricalRecalculationService::class)->cancel($historicalRun);
+
+        $this->assertDatabaseHas('nighttime_efficiency_sync_runs', [
+            'historical_recalculation_id' => $historicalRun->id,
+            'status' => HistoricalRecalculation::STATUS_CANCELLED,
+        ]);
     }
 
     public function test_automatic_command_queues_the_previous_baku_shift_date(): void
