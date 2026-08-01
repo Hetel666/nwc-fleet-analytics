@@ -2240,12 +2240,12 @@
     }
     @media (max-width: 767.98px) {
         .dashboard-efficiency-subnav {
-            top: 64px;
+            top: 88px;
         }
 
         .dashboard-efficiency-section-heading,
         .dashboard-efficiency-shift-section {
-            scroll-margin-top: 128px;
+            scroll-margin-top: 152px;
         }
 
         .dashboard-ranking-card {
