@@ -4,12 +4,15 @@ namespace App\Services;
 
 use App\Models\ProjectWialonGroup;
 use Carbon\CarbonInterface;
+use DateTimeZone;
 use RuntimeException;
 use Throwable;
 
 class WialonDaytimeEfficiencyReportService
 {
     private ?array $resolvedSettings = null;
+
+    private ?array $sourceTemplate = null;
 
     public function __construct(
         private WialonService $wialon,
@@ -59,9 +62,9 @@ class WialonDaytimeEfficiencyReportService
 
             try {
                 $this->wialon->cleanupReportResult($sid);
-                $result = $this->wialon->executeReport(
+                $result = $this->wialon->executeReportTemplate(
                     $settings['resource_id'],
-                    $settings['template_id'],
+                    $this->apiTemplate($settings, $from, $sid),
                     $group->wialon_group_id,
                     $from->timestamp,
                     $to->timestamp,
@@ -118,6 +121,52 @@ class WialonDaytimeEfficiencyReportService
 
             return $response ?? throw new RuntimeException('Wialon daytime efficiency report returned no response.');
         });
+    }
+
+    /** @param  array<string, mixed>  $settings
+     * @return array<string, mixed>
+     */
+    private function apiTemplate(array $settings, CarbonInterface $date, string $sid): array
+    {
+        $template = $this->sourceTemplate ??= $this->wialon->getReportTemplateData(
+            $settings['resource_id'],
+            $settings['template_id'],
+            $sid,
+        );
+        $timezone = (string) config('historical_recalculation.timezone', 'Asia/Baku');
+        $offsetMinutes = intdiv((new DateTimeZone($timezone))->getOffset($date), 60);
+        $engineTableFound = false;
+
+        foreach ($template['tbl'] ?? [] as $index => $table) {
+            if (($table['n'] ?? null) !== 'unit_group_engine_hours') {
+                continue;
+            }
+
+            $engineTableFound = true;
+            $schedule = $table['sch'] ?? [];
+            $from = (int) ($schedule['f1'] ?? -1);
+            $to = (int) ($schedule['t1'] ?? -1);
+
+            if ((int) ($schedule['fl'] ?? 0) !== 1 || $from !== 480 || $to !== 1079) {
+                throw new RuntimeException('Wialon daytime efficiency table must be limited to 08:00-17:59 Asia/Baku.');
+            }
+
+            $apiFrom = $from - $offsetMinutes;
+            $apiTo = $to - $offsetMinutes;
+
+            if ($apiFrom < 0 || $apiTo >= 1440 || $apiFrom > $apiTo) {
+                throw new RuntimeException('Wialon daytime efficiency window cannot be converted to the API timezone safely.');
+            }
+
+            $template['tbl'][$index]['sch']['f1'] = $apiFrom;
+            $template['tbl'][$index]['sch']['t1'] = $apiTo;
+        }
+
+        if (! $engineTableFound) {
+            throw new RuntimeException('Wialon daytime efficiency template has no Engine hours table.');
+        }
+
+        return $template;
     }
 
     /** @return array<int, array<string, mixed>> */

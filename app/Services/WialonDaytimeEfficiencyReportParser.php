@@ -51,16 +51,16 @@ class WialonDaytimeEfficiencyReportParser
 
     private function localDateTime(mixed $value): ?CarbonImmutable
     {
+        if (is_array($value) && is_numeric($value['v'] ?? null)) {
+            return CarbonImmutable::createFromTimestamp((int) $value['v'], 'UTC')->timezone($this->timezone());
+        }
+
         if (is_array($value) && filled($value['t'] ?? null)) {
             try {
                 return CarbonImmutable::parse((string) $value['t'], $this->timezone());
             } catch (Throwable) {
-                // Fall back to the timestamp supplied by Wialon.
+                // Fall back to the scalar value below.
             }
-        }
-
-        if (is_array($value) && is_numeric($value['v'] ?? null)) {
-            return CarbonImmutable::createFromTimestamp((int) $value['v'], 'UTC')->timezone($this->timezone());
         }
 
         try {

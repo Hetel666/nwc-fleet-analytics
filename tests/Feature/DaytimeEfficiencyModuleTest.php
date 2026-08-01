@@ -19,6 +19,7 @@ use App\Services\WialonReportSessionLock;
 use App\Services\WialonService;
 use App\Services\WialonSessionManager;
 use App\Support\EfficiencyStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
@@ -34,6 +35,7 @@ class DaytimeEfficiencyModuleTest extends TestCase
         config()->set('fleet.wialon.daytime_efficiency_report_resource_id', 601701680);
         config()->set('fleet.wialon.daytime_efficiency_report_template_id', 10);
         config()->set('fleet.wialon.daytime_efficiency_report_template_name', 'day report Engine hours (api)');
+        config()->set('historical_recalculation.timezone', 'Asia/Baku');
 
         $wialon = Mockery::mock(WialonService::class);
         $wialon->shouldReceive('findReportTemplateByName')
@@ -47,6 +49,52 @@ class DaytimeEfficiencyModuleTest extends TestCase
         $this->assertSame(601701680, $settings['resource_id']);
         $this->assertSame(10, $settings['template_id']);
         $this->assertSame('day report Engine hours (api)', $settings['template_name']);
+    }
+
+    public function test_report_service_converts_the_baku_shift_for_wialon_api_execution(): void
+    {
+        config()->set('fleet.wialon.daytime_efficiency_report_resource_id', 601701680);
+        config()->set('fleet.wialon.daytime_efficiency_report_template_id', 10);
+        config()->set('fleet.wialon.daytime_efficiency_report_template_name', 'day report Engine hours (api)');
+        config()->set('historical_recalculation.timezone', 'Asia/Baku');
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('findReportTemplateByName')->once()->andReturn([
+            'resource_id' => 601701680,
+            'id' => 10,
+            'type' => 'avl_unit_group',
+        ]);
+        $wialon->shouldReceive('getReportTemplateData')->once()->andReturn([
+            'tbl' => [[
+                'n' => 'unit_group_engine_hours',
+                'sch' => ['f1' => 480, 'f2' => 0, 't1' => 1079, 't2' => 0, 'm' => 0, 'y' => 0, 'w' => 0, 'fl' => 1],
+            ]],
+        ]);
+        $wialon->shouldReceive('cleanupReportResult')->twice();
+        $execution = [];
+        $wialon->shouldReceive('executeReportTemplate')->once()->andReturnUsing(function (...$arguments) use (&$execution): array {
+            $execution = $arguments;
+
+            return ['reportResult' => ['tables' => []]];
+        });
+
+        $lock = Mockery::mock(WialonReportSessionLock::class);
+        $lock->shouldReceive('run')->once()->andReturnUsing(fn (callable $callback): mixed => $callback());
+        $group = new ProjectWialonGroup(['wialon_group_id' => '9001']);
+        $date = CarbonImmutable::parse('2026-07-31', 'Asia/Baku');
+
+        $result = (new WialonDaytimeEfficiencyReportService($wialon, $lock))
+            ->execute($group, $date->startOfDay(), $date->endOfDay(), 'test-session');
+
+        $this->assertSame(10, $result['template_id']);
+        $this->assertSame('9001', $result['object_id']);
+        $this->assertSame(601701680, $execution[0]);
+        $this->assertSame(240, $execution[1]['tbl'][0]['sch']['f1']);
+        $this->assertSame(839, $execution[1]['tbl'][0]['sch']['t1']);
+        $this->assertSame(CarbonImmutable::parse('2026-07-31 00:00:00', 'Asia/Baku')->timestamp, $execution[3]);
+        $this->assertSame(CarbonImmutable::parse('2026-07-31 23:59:59', 'Asia/Baku')->timestamp, $execution[4]);
+        $this->assertSame(0, $execution[5]);
+        $this->assertSame('test-session', $execution[6]);
     }
 
     public function test_successful_sync_is_idempotent_and_does_not_change_existing_efficiency(): void
@@ -237,8 +285,8 @@ class DaytimeEfficiencyModuleTest extends TestCase
                 'c' => [
                     'Unit '.$unitId,
                     $hours,
-                    ['t' => '2026-07-31 08:00:00', 'v' => 1785484800, 'u' => (int) $unitId],
-                    ['t' => '2026-07-31 17:59:00', 'v' => 1785520740, 'u' => (int) $unitId],
+                    ['t' => '2026-07-31 04:00:00', 'v' => CarbonImmutable::parse('2026-07-31 08:00:00', 'Asia/Baku')->timestamp, 'u' => (int) $unitId],
+                    ['t' => '2026-07-31 13:59:00', 'v' => CarbonImmutable::parse('2026-07-31 17:59:00', 'Asia/Baku')->timestamp, 'u' => (int) $unitId],
                     $mileage,
                 ],
             ]],
