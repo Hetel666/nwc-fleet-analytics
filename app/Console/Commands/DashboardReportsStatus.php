@@ -100,6 +100,8 @@ class DashboardReportsStatus extends Command
 
     private function showRunDetails(int $runId): void
     {
+        $staleSeconds = max(0, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
+        $staleCutoff = now(config('app.timezone'))->subSeconds($staleSeconds);
         $counts = HistoricalRecalculationTask::query()
             ->where('historical_recalculation_id', $runId)
             ->selectRaw('status, operation, COUNT(*) as total, COALESCE(SUM(equipment_count), 0) as equipment_count')
@@ -135,18 +137,25 @@ class DashboardReportsStatus extends Command
 
         $this->line('Current tasks');
         $this->table(
-            ['ID', 'Operation', 'Status', 'Date', 'Project', 'Ownership', 'Attempts', 'Rows', 'Error'],
-            $current->map(fn (HistoricalRecalculationTask $task): array => [
-                $task->id,
-                $task->operation,
-                $task->status,
-                $task->stat_date?->toDateString(),
-                $task->project_id,
-                $task->ownership_type,
-                (int) $task->attempts,
-                (int) $task->equipment_count,
-                mb_substr((string) $task->error_message, 0, 120),
-            ])->all()
+            ['ID', 'Operation', 'Status', 'Date', 'Project', 'Ownership', 'Attempts', 'Rows', 'Heartbeat', 'Stale', 'Error'],
+            $current->map(function (HistoricalRecalculationTask $task) use ($staleCutoff): array {
+                $stale = $task->status === HistoricalRecalculationTask::STATUS_RUNNING
+                    && ($task->last_heartbeat_at === null || $task->last_heartbeat_at->lte($staleCutoff));
+
+                return [
+                    $task->id,
+                    $task->operation,
+                    $task->status,
+                    $task->stat_date?->toDateString(),
+                    $task->project_id,
+                    $task->ownership_type,
+                    (int) $task->attempts,
+                    (int) $task->equipment_count,
+                    $task->last_heartbeat_at?->toDateTimeString(),
+                    $stale ? 'yes' : '',
+                    mb_substr((string) $task->error_message, 0, 120),
+                ];
+            })->all()
         );
     }
 }

@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -136,6 +137,9 @@ class HistoricalRecalculationService
                 return;
             }
 
+            $this->failStaleRunningFetchTasks($run);
+            $run = $run->refresh();
+
             $runningFetchTasks = $run->tasks()
                 ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
                 ->where('status', HistoricalRecalculationTask::STATUS_RUNNING)
@@ -173,6 +177,50 @@ class HistoricalRecalculationService
         } finally {
             optional($lock)->release();
         }
+    }
+
+    public function failStaleRunningFetchTasks(HistoricalRecalculation $run): int
+    {
+        $staleSeconds = $this->staleRunningTaskSeconds();
+
+        if ($staleSeconds <= 0) {
+            return 0;
+        }
+
+        $cutoff = now(config('app.timezone'))->subSeconds($staleSeconds);
+        $staleTasks = $run->tasks()
+            ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+            ->where('status', HistoricalRecalculationTask::STATUS_RUNNING)
+            ->where(function ($query) use ($cutoff): void {
+                $query->whereNull('last_heartbeat_at')
+                    ->orWhere('last_heartbeat_at', '<=', $cutoff);
+            })
+            ->orderBy('id')
+            ->get();
+
+        foreach ($staleTasks as $task) {
+            $heartbeat = $task->last_heartbeat_at
+                ? $task->last_heartbeat_at->timezone(config('app.timezone'))->toDateTimeString()
+                : 'none';
+
+            Log::warning('Historical recalculation task marked failed after stale running heartbeat.', [
+                'run_id' => $run->id,
+                'task_id' => $task->id,
+                'module' => $run->dashboard_section,
+                'project_id' => $task->project_id,
+                'stat_date' => $task->stat_date?->toDateString(),
+                'ownership_type' => $task->ownership_type,
+                'last_heartbeat_at' => $heartbeat,
+                'stale_seconds' => $staleSeconds,
+            ]);
+
+            $this->markTaskFailed(
+                $task,
+                "Stale running task recovered after worker interruption. Last heartbeat: {$heartbeat}; stale threshold: {$staleSeconds} seconds. Review this task before retry."
+            );
+        }
+
+        return $staleTasks->count();
     }
 
     public function cancel(HistoricalRecalculation $run): void
@@ -555,5 +603,10 @@ class HistoricalRecalculationService
             HistoricalRecalculation::OPERATION_RECALCULATE,
             HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
         ], true);
+    }
+
+    private function staleRunningTaskSeconds(): int
+    {
+        return max(0, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
     }
 }
