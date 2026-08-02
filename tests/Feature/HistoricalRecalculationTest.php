@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -1006,6 +1007,126 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame(HistoricalRecalculationTask::STATUS_FAILED, $first->refresh()->status);
         $this->assertStringContainsString('Stale running task recovered', (string) $first->error_message);
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, fn ($job): bool => $job->taskId === $second->id);
+    }
+
+    public function test_stuck_queue_cleanup_removes_obsolete_historical_job_and_resumes_active_run(): void
+    {
+        Queue::fake();
+
+        $cancelledRun = HistoricalRecalculation::query()->create([
+            'uuid' => 'f16b7bc2-4d42-4dd7-a8fa-533e8dfc141d',
+            'signature' => 'cancelled-cleanup-test',
+            'status' => HistoricalRecalculation::STATUS_CANCELLED,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $cancelledTask = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $cancelledRun->id,
+            'status' => HistoricalRecalculationTask::STATUS_CANCELLED,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-08-01',
+        ]);
+        $activeRun = HistoricalRecalculation::query()->create([
+            'uuid' => 'f487e1ae-eba9-4fc8-9671-a96085ad3c06',
+            'signature' => 'active-cleanup-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $activeTask = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $activeRun->id,
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-08-01',
+        ]);
+
+        $staleJobId = DB::table('jobs')->insertGetId($this->historicalQueueJobRow(
+            new RunHistoricalRecalculationTaskJob($cancelledTask->id)
+        ));
+
+        $summary = app(HistoricalRecalculationService::class)->cleanupStuckQueue();
+
+        $this->assertSame(1, $summary['deleted_jobs']);
+        $this->assertSame(1, $summary['active_runs_resumed']);
+        $this->assertDatabaseMissing('jobs', ['id' => $staleJobId]);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, fn ($job): bool => $job->taskId === $activeTask->id);
+    }
+
+    public function test_settings_page_exposes_historical_cleanup_action(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+
+        $this->actingAs($admin)
+            ->get(route('settings.edit'))
+            ->assertOk()
+            ->assertSee('Historical run cleanup')
+            ->assertSee(route('settings.cleanup-historical-runs'), false);
+    }
+
+    public function test_admin_can_trigger_stuck_queue_cleanup_from_settings(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '77e0d6e6-b7e0-405f-bac2-f34bc7523a47',
+            'signature' => 'settings-cleanup-test',
+            'status' => HistoricalRecalculation::STATUS_CANCELLED,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $task = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_CANCELLED,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-08-01',
+        ]);
+        $staleJobId = DB::table('jobs')->insertGetId($this->historicalQueueJobRow(
+            new RunHistoricalRecalculationTaskJob($task->id)
+        ));
+
+        $this->actingAs($admin)
+            ->from(route('settings.edit'))
+            ->post(route('settings.cleanup-historical-runs'))
+            ->assertRedirect(route('settings.edit'))
+            ->assertSessionHas('status');
+
+        $this->assertDatabaseMissing('jobs', ['id' => $staleJobId]);
+    }
+
+    private function historicalQueueJobRow(object $job): array
+    {
+        return [
+            'queue' => (string) config('historical_recalculation.queue', 'historical-recalculations'),
+            'payload' => json_encode([
+                'displayName' => $job::class,
+                'data' => [
+                    'commandName' => $job::class,
+                    'command' => serialize($job),
+                ],
+            ]),
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now(config('app.timezone'))->timestamp,
+            'created_at' => now(config('app.timezone'))->timestamp,
+        ];
     }
 
     private function equipment(

@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
@@ -179,6 +180,113 @@ class HistoricalRecalculationService
         }
     }
 
+    public function cleanupStuckQueue(?HistoricalRecalculation $run = null): array
+    {
+        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $summary = [
+            'queue' => $queue,
+            'deleted_jobs' => 0,
+            'kept_jobs' => 0,
+            'unknown_jobs' => 0,
+            'stale_tasks_failed' => 0,
+            'active_runs_checked' => 0,
+            'active_runs_resumed' => 0,
+            'active_runs_with_queue_job' => 0,
+            'deleted_job_ids' => [],
+        ];
+
+        $activeRuns = HistoricalRecalculation::query()
+            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
+            ->when($run, fn ($query) => $query->whereKey($run->id))
+            ->orderBy('id')
+            ->get();
+
+        foreach ($activeRuns as $activeRun) {
+            $summary['active_runs_checked']++;
+            $summary['stale_tasks_failed'] += $this->failStaleRunningFetchTasks($activeRun);
+        }
+
+        if (Schema::hasTable('jobs')) {
+            DB::table('jobs')
+                ->where('queue', $queue)
+                ->orderBy('id')
+                ->chunkById(100, function ($jobs) use (&$summary, $queue): void {
+                    foreach ($jobs as $queuedJob) {
+                        $reference = $this->historicalQueueJobReference((string) $queuedJob->payload);
+
+                        if ($reference === null) {
+                            $summary['kept_jobs']++;
+
+                            continue;
+                        }
+
+                        if (($reference['type'] ?? null) === 'unknown') {
+                            $summary['unknown_jobs']++;
+                            $summary['kept_jobs']++;
+
+                            continue;
+                        }
+
+                        $reason = $this->obsoleteHistoricalQueueJobReason($reference);
+
+                        if ($reason === null) {
+                            $summary['kept_jobs']++;
+
+                            continue;
+                        }
+
+                        $deleted = DB::table('jobs')->where('id', $queuedJob->id)->delete();
+
+                        if ($deleted > 0) {
+                            $this->releaseHistoricalQueueUniqueLock($reference);
+                            $summary['deleted_jobs']++;
+                            $summary['deleted_job_ids'][] = (int) $queuedJob->id;
+
+                            Log::warning('Deleted obsolete historical recalculation queue job.', [
+                                'job_id' => (int) $queuedJob->id,
+                                'queue' => $queue,
+                                'reason' => $reason,
+                                'reference' => $reference,
+                            ]);
+                        }
+                    }
+                });
+        }
+
+        foreach ($activeRuns as $activeRun) {
+            $activeRun = $activeRun->refresh();
+
+            if ($activeRun->isTerminal()) {
+                continue;
+            }
+
+            if ($this->historicalQueueHasActiveJobForRun($activeRun, $queue)) {
+                $summary['active_runs_with_queue_job']++;
+
+                continue;
+            }
+
+            $hasPendingFetchTasks = $activeRun->tasks()
+                ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+                ->where('status', HistoricalRecalculationTask::STATUS_PENDING)
+                ->exists();
+            $hasRunningFetchTasks = $activeRun->tasks()
+                ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+                ->where('status', HistoricalRecalculationTask::STATUS_RUNNING)
+                ->exists();
+
+            if (! $hasPendingFetchTasks && $hasRunningFetchTasks) {
+                continue;
+            }
+
+            $this->releaseNextHistoricalDispatchUniqueLock($activeRun);
+            $this->dispatchNextPendingFetchTask($activeRun);
+            $summary['active_runs_resumed']++;
+        }
+
+        return $summary;
+    }
+
     public function failStaleRunningFetchTasks(HistoricalRecalculation $run): int
     {
         $staleSeconds = $this->staleRunningTaskSeconds();
@@ -276,6 +384,7 @@ class HistoricalRecalculationService
         }
 
         $this->refreshProgress($run);
+        $this->cleanupStuckQueue($run);
     }
 
     public function retryFailed(HistoricalRecalculation $run): void
@@ -627,5 +736,189 @@ class HistoricalRecalculationService
     private function staleRunningTaskSeconds(): int
     {
         return max(0, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
+    }
+
+    private function releaseHistoricalQueueUniqueLock(array $reference): void
+    {
+        $uniqueLock = new UniqueLock(app(\Illuminate\Contracts\Cache\Repository::class));
+
+        if (($reference['type'] ?? null) === 'task' && isset($reference['task_id'])) {
+            $uniqueLock->release(new RunHistoricalRecalculationTaskJob((int) $reference['task_id']));
+
+            return;
+        }
+
+        if (($reference['type'] ?? null) === 'finalize' && isset($reference['run_id'])) {
+            $uniqueLock->release(new FinalizeHistoricalRecalculationJob((int) $reference['run_id']));
+        }
+    }
+
+    private function releaseNextHistoricalDispatchUniqueLock(HistoricalRecalculation $run): void
+    {
+        $nextTask = $run->tasks()
+            ->where('operation', HistoricalRecalculation::OPERATION_FETCH)
+            ->where('status', HistoricalRecalculationTask::STATUS_PENDING)
+            ->orderBy('stat_date')
+            ->orderBy('project_id')
+            ->orderBy('ownership_type')
+            ->orderBy('id')
+            ->first();
+
+        $uniqueLock = new UniqueLock(app(\Illuminate\Contracts\Cache\Repository::class));
+
+        if ($nextTask instanceof HistoricalRecalculationTask) {
+            $uniqueLock->release(new RunHistoricalRecalculationTaskJob($nextTask->id));
+
+            return;
+        }
+
+        $uniqueLock->release(new FinalizeHistoricalRecalculationJob($run->id));
+    }
+
+    private function historicalQueueJobReference(string $payload): ?array
+    {
+        $decodedPayload = json_decode($payload, true);
+
+        if (! is_array($decodedPayload)) {
+            return null;
+        }
+
+        $displayName = (string) ($decodedPayload['displayName'] ?? ($decodedPayload['data']['commandName'] ?? ''));
+        $isHistoricalJob = in_array($displayName, [
+            RunHistoricalRecalculationTaskJob::class,
+            FinalizeHistoricalRecalculationJob::class,
+        ], true);
+
+        $command = $decodedPayload['data']['command'] ?? null;
+        $job = null;
+
+        if (is_string($command) && $command !== '') {
+            try {
+                $job = @unserialize($command, [
+                    'allowed_classes' => [
+                        RunHistoricalRecalculationTaskJob::class,
+                        FinalizeHistoricalRecalculationJob::class,
+                    ],
+                ]);
+            } catch (\Throwable) {
+                $job = null;
+            }
+        }
+
+        if ($job instanceof RunHistoricalRecalculationTaskJob) {
+            return [
+                'type' => 'task',
+                'class' => RunHistoricalRecalculationTaskJob::class,
+                'task_id' => $job->taskId,
+            ];
+        }
+
+        if ($job instanceof FinalizeHistoricalRecalculationJob) {
+            return [
+                'type' => 'finalize',
+                'class' => FinalizeHistoricalRecalculationJob::class,
+                'run_id' => $job->runId,
+            ];
+        }
+
+        if ($isHistoricalJob) {
+            return [
+                'type' => 'unknown',
+                'class' => $displayName,
+            ];
+        }
+
+        return null;
+    }
+
+    private function obsoleteHistoricalQueueJobReason(array $reference): ?string
+    {
+        if (($reference['type'] ?? null) === 'task') {
+            $task = HistoricalRecalculationTask::query()
+                ->with('run')
+                ->find($reference['task_id'] ?? null);
+
+            if (! $task) {
+                return 'missing_task';
+            }
+
+            if (! $task->run) {
+                return 'missing_run';
+            }
+
+            if ($task->run->isTerminal()) {
+                return 'terminal_run_'.$task->run->status;
+            }
+
+            if (in_array($task->status, [
+                HistoricalRecalculationTask::STATUS_CANCELLED,
+                HistoricalRecalculationTask::STATUS_COMPLETED,
+                HistoricalRecalculationTask::STATUS_FAILED,
+            ], true)) {
+                return 'task_'.$task->status;
+            }
+
+            return null;
+        }
+
+        if (($reference['type'] ?? null) === 'finalize') {
+            $run = HistoricalRecalculation::query()->find($reference['run_id'] ?? null);
+
+            if (! $run) {
+                return 'missing_run';
+            }
+
+            if ($run->isTerminal()) {
+                return 'terminal_run_'.$run->status;
+            }
+        }
+
+        return null;
+    }
+
+    private function historicalQueueHasActiveJobForRun(HistoricalRecalculation $run, string $queue): bool
+    {
+        if (! Schema::hasTable('jobs')) {
+            return false;
+        }
+
+        $hasActiveJob = false;
+
+        DB::table('jobs')
+            ->where('queue', $queue)
+            ->orderBy('id')
+            ->chunkById(100, function ($jobs) use ($run, &$hasActiveJob): bool {
+                foreach ($jobs as $queuedJob) {
+                    $reference = $this->historicalQueueJobReference((string) $queuedJob->payload);
+
+                    if (! $this->historicalQueueReferenceBelongsToRun($reference, $run)) {
+                        continue;
+                    }
+
+                    $hasActiveJob = true;
+
+                    return false;
+                }
+
+                return true;
+            });
+
+        return $hasActiveJob;
+    }
+
+    private function historicalQueueReferenceBelongsToRun(?array $reference, HistoricalRecalculation $run): bool
+    {
+        if ($reference === null || ($reference['type'] ?? null) === 'unknown') {
+            return false;
+        }
+
+        if (($reference['type'] ?? null) === 'finalize') {
+            return (int) ($reference['run_id'] ?? 0) === (int) $run->id;
+        }
+
+        $task = HistoricalRecalculationTask::query()->find($reference['task_id'] ?? null);
+
+        return $task instanceof HistoricalRecalculationTask
+            && (int) $task->historical_recalculation_id === (int) $run->id;
     }
 }

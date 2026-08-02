@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\DashboardAnalyticsController;
+use App\Http\Controllers\Admin\CleanupHistoricalRecalculationQueueController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
@@ -91,10 +92,14 @@ Route::middleware(['auth', 'active'])->group(function (): void {
             Route::get('/{historicalRecalculation:uuid}/status', [HistoricalRecalculationController::class, 'status'])->name('status');
             Route::post('/{historicalRecalculation:uuid}/cancel', [HistoricalRecalculationController::class, 'cancel'])->name('cancel');
             Route::post('/{historicalRecalculation:uuid}/retry', [HistoricalRecalculationController::class, 'retry'])->name('retry');
+            Route::post('/{historicalRecalculation:uuid}/cleanup-stuck', CleanupHistoricalRecalculationQueueController::class)->name('cleanup-stuck');
         });
 
     Route::get('/settings', [SettingsController::class, 'edit'])->middleware('admin')->name('settings.edit');
     Route::put('/settings', [SettingsController::class, 'update'])->middleware('admin')->name('settings.update');
     Route::post('/settings/sync-units', [SettingsController::class, 'syncUnits'])->middleware('admin')->name('settings.sync-units');
     Route::post('/settings/sync-geofences', [SettingsController::class, 'syncGeofences'])->middleware('admin')->name('settings.sync-geofences');
+    Route::post('/settings/historical-recalculations/cleanup-stuck', [SettingsController::class, 'cleanupHistoricalRuns'])
+        ->middleware('admin')
+        ->name('settings.cleanup-historical-runs');
 });

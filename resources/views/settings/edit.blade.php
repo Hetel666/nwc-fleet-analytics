@@ -105,6 +105,35 @@
                 </form>
             </section>
 
+            <section class="panel p-4 mb-4">
+                <h2 class="h6 fw-bold">Historical run cleanup</h2>
+                <div class="text-secondary small mb-3">
+                    Zavis historical queue ucun: yalniz cancelled/completed/failed task-lara aid kohne queue job-lari silinir, hesabat datasi silinmir.
+                </div>
+
+                <dl class="row small mb-3">
+                    <dt class="col-6 text-secondary">Queue</dt>
+                    <dd class="col-6 text-end">{{ config('historical_recalculation.queue', 'historical-recalculations') }}</dd>
+                    <dt class="col-6 text-secondary">Queue jobs</dt>
+                    <dd class="col-6 text-end">{{ $historicalQueueSize ?? '-' }}</dd>
+                    <dt class="col-6 text-secondary">Son run</dt>
+                    <dd class="col-6 text-end">
+                        @if ($latestHistoricalRun)
+                            #{{ $latestHistoricalRun->id }} / {{ $latestHistoricalRun->status }}
+                        @else
+                            -
+                        @endif
+                    </dd>
+                </dl>
+
+                <form method="POST" action="{{ route('settings.cleanup-historical-runs') }}" data-sync-form data-confirm="Zavis historical queue cleanup icra edilsin? Hesabat datasi silinmeyecek.">
+                    @csrf
+                    <button type="submit" class="btn btn-outline-warning btn-icon" data-loading-text="Cleanup gedir...">
+                        <i class="bi bi-tools"></i><span>Zavis run temizle</span>
+                    </button>
+                </form>
+            </section>
+
             <section class="panel p-4">
                 <h2 class="h6 fw-bold">Avtomatik sinxronizasiya statusu</h2>
                 <div class="table-responsive">
@@ -142,7 +171,13 @@
 @push('scripts')
     <script>
         document.querySelectorAll('[data-sync-form]').forEach(form => {
-            form.addEventListener('submit', () => {
+            form.addEventListener('submit', event => {
+                if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) {
+                    event.preventDefault();
+
+                    return;
+                }
+
                 const button = form.querySelector('button[type="submit"]');
 
                 if (!button) {

@@ -30,6 +30,10 @@
             </div>
             <div class="d-flex align-items-start gap-2">
                 @if (! $run->isTerminal())
+                    <form method="POST" action="{{ route('admin.historical-recalculations.cleanup-stuck', $run) }}" onsubmit="return confirm('Zavis queue cleanup icra edilsin? Hesabat datasi silinmeyecek.');">
+                        @csrf
+                        <button class="btn btn-outline-warning btn-sm">Cleanup</button>
+                    </form>
                     <form method="POST" action="{{ route('admin.historical-recalculations.cancel', $run) }}">
                         @csrf
                         <button class="btn btn-outline-danger btn-sm">Ləğv et</button>

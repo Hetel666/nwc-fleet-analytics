@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\HistoricalRecalculation;
 use App\Models\Setting;
+use App\Services\HistoricalRecalculationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Throwable;
 
@@ -20,6 +24,8 @@ class SettingsController extends Controller
             'wialonTokenConfigured' => filled(config('fleet.wialon.token')),
             'syncIntervalOptions' => $this->syncIntervalOptions(),
             'syncStatusRows' => $this->syncStatusRows(),
+            'latestHistoricalRun' => $this->latestHistoricalRun(),
+            'historicalQueueSize' => $this->historicalQueueSize(),
         ]);
     }
 
@@ -63,6 +69,20 @@ class SettingsController extends Controller
     public function syncGeofences(): RedirectResponse
     {
         return $this->runSyncCommand('geofences', 'fleet:sync-geofences');
+    }
+
+    public function cleanupHistoricalRuns(HistoricalRecalculationService $service): RedirectResponse
+    {
+        $summary = $service->cleanupStuckQueue();
+
+        $message = sprintf(
+            'Historical queue cleanup: %d stale job deleted, %d stale task marked failed, %d active run resumed.',
+            $summary['deleted_jobs'],
+            $summary['stale_tasks_failed'],
+            $summary['active_runs_resumed']
+        );
+
+        return back()->with('status', $message);
     }
 
     private function runSyncCommand(string $name, string $command): RedirectResponse
@@ -118,5 +138,25 @@ class SettingsController extends Controller
             ['label' => 'Geofence Pozuntuları', 'key' => 'geofence_violations'],
             ['label' => 'Effektivlik Engine hours', 'key' => 'efficiency'],
         ];
+    }
+
+    private function latestHistoricalRun(): ?HistoricalRecalculation
+    {
+        return HistoricalRecalculation::query()
+            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
+            ->latest('updated_at')
+            ->first()
+            ?: HistoricalRecalculation::query()->latest('updated_at')->first();
+    }
+
+    private function historicalQueueSize(): ?int
+    {
+        if (! Schema::hasTable('jobs')) {
+            return null;
+        }
+
+        return DB::table('jobs')
+            ->where('queue', (string) config('historical_recalculation.queue', 'historical-recalculations'))
+            ->count();
     }
 }
