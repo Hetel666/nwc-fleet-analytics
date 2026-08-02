@@ -233,13 +233,13 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $this->assertSame('night report Engine hours (api)', $export['filters'][4][1]);
     }
 
-    public function test_scheduler_uses_unified_dashboard_reports_queue_at_midnight_baku(): void
+    public function test_scheduler_uses_unified_dashboard_reports_queue_at_1800_baku(): void
     {
         $events = collect(app(Schedule::class)->events());
         $event = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:queue-sync --daily --force'));
 
         $this->assertNotNull($event);
-        $this->assertSame('0 0 * * *', $event->expression);
+        $this->assertSame('0 18 * * *', $event->expression);
         $this->assertSame('Asia/Baku', $event->timezone);
     }
 

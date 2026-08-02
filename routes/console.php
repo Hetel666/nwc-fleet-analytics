@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('dashboard-reports:queue-sync --daily --force')
-    ->dailyAt('00:00')
+    ->dailyAt('18:00')
     ->timezone(config('app.timezone', 'Asia/Baku'))
     ->withoutOverlapping(180);
 
