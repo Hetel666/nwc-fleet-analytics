@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Jobs\FinalizeHistoricalRecalculationJob;
+use App\Jobs\RunHistoricalRecalculationTaskJob;
 use App\Models\HistoricalRecalculation;
+use App\Models\HistoricalRecalculationTask;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
@@ -176,6 +179,48 @@ class DashboardReportPipelineService
         return $pipelines;
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function queueSnapshot(): array
+    {
+        $pipelines = $this->all();
+        $positions = $this->activePipelinePositions($pipelines);
+        $jobsByRun = $this->historicalQueueJobsByRun();
+
+        return collect($pipelines)
+            ->map(fn (array $pipeline, int $index): array => $this->queueSnapshotRow($pipeline, $index, $positions, $jobsByRun))
+            ->values()
+            ->all();
+    }
+
+    public function clearClosed(): array
+    {
+        return $this->withLock(function (): array {
+            $pipelines = $this->load();
+            $this->reconcile($pipelines);
+
+            $kept = [];
+            $removed = 0;
+
+            foreach ($pipelines as $pipeline) {
+                if (in_array($pipeline['status'] ?? null, [self::STATUS_PENDING, self::STATUS_RUNNING], true)) {
+                    $kept[] = $pipeline;
+
+                    continue;
+                }
+
+                $removed++;
+            }
+
+            $this->save($kept);
+
+            return [
+                'status' => 'cleared',
+                'removed_closed' => $removed,
+                'kept_active' => count($kept),
+            ];
+        });
+    }
+
     /** @param  callable(): array  $callback */
     private function withLock(callable $callback): array
     {
@@ -190,6 +235,339 @@ class DashboardReportPipelineService
         } finally {
             optional($lock)->release();
         }
+    }
+
+    /** @param  array<int, array<string, mixed>>  $pipelines */
+    private function activePipelinePositions(array $pipelines): array
+    {
+        $active = [];
+
+        foreach ($pipelines as $index => $pipeline) {
+            if (! in_array($pipeline['status'] ?? null, [self::STATUS_PENDING, self::STATUS_RUNNING], true)) {
+                continue;
+            }
+
+            $active[] = [
+                'index' => $index,
+                'priority' => (int) ($pipeline['priority'] ?? 0),
+                'created_at' => (string) ($pipeline['created_at'] ?? ''),
+            ];
+        }
+
+        usort($active, function (array $a, array $b): int {
+            return $b['priority'] <=> $a['priority']
+                ?: strcmp($a['created_at'], $b['created_at']);
+        });
+
+        $positions = [];
+
+        foreach ($active as $position => $entry) {
+            $positions[(int) $entry['index']] = $position + 1;
+        }
+
+        return $positions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $pipeline
+     * @param  int  $pipelineIndex
+     * @param  array<int, int>  $positions
+     * @param  array<int, array<string, mixed>>  $jobsByRun
+     * @return array<string, mixed>
+     */
+    private function queueSnapshotRow(array $pipeline, int $pipelineIndex, array $positions, array $jobsByRun): array
+    {
+        $plans = collect($pipeline['plans'] ?? [])
+            ->filter(fn (mixed $plan): bool => is_array($plan))
+            ->values();
+        $planCount = $plans->count();
+        $currentIndex = max(0, min((int) ($pipeline['current_index'] ?? 0), max(0, $planCount - 1)));
+        $plan = $plans->get($currentIndex, []);
+        $runId = (int) ($pipeline['current_run_id'] ?? 0);
+        $run = $runId > 0
+            ? HistoricalRecalculation::query()->find($runId)
+            : $this->latestPipelineRun($pipeline);
+        $job = $run instanceof HistoricalRecalculation ? ($jobsByRun[(int) $run->id] ?? null) : null;
+        $step = $pipeline['steps'][$currentIndex] ?? [];
+        $createdAt = (string) ($job['created_at'] ?? ($pipeline['created_at'] ?? ''));
+        $startedAt = (string) ($job['reserved_at'] ?? ($step['started_at'] ?? optional($run?->started_at)->toDateTimeString() ?? ''));
+        $status = $this->pipelineDisplayStatus($pipeline, $run, $job);
+        [$progressDone, $progressTotal] = $this->pipelineProgress($pipeline, $run, $currentIndex, $planCount);
+        $errors = collect($pipeline['errors'] ?? [])
+            ->filter()
+            ->values();
+        $lastTaskError = $run instanceof HistoricalRecalculation
+            ? HistoricalRecalculationTask::query()
+                ->where('historical_recalculation_id', $run->id)
+                ->whereNotNull('error_message')
+                ->latest('updated_at')
+                ->value('error_message')
+            : null;
+
+        return [
+            'queue_id' => $job['id'] ?? (string) ($pipeline['id'] ?? '-'),
+            'pipeline_id' => (string) ($pipeline['id'] ?? '-'),
+            'created_at' => $createdAt,
+            'started_at' => $startedAt !== '' ? $startedAt : null,
+            'wait_time' => $this->formatWaitTime($createdAt, $startedAt),
+            'status' => $status,
+            'section' => $this->sectionLabel((string) ($plan['section'] ?? '')),
+            'period' => $this->periodLabel((string) ($plan['date_from'] ?? ''), (string) ($plan['date_to'] ?? '')),
+            'scope' => $this->scopeLabel((string) ($plan['scope'] ?? ''), $plan['project_ids'] ?? []),
+            'position' => $positions[$pipelineIndex] ?? null,
+            'progress' => $progressDone.' / '.$progressTotal,
+            'progress_percent' => $progressTotal > 0 ? round(($progressDone / $progressTotal) * 100, 1) : 0,
+            'worker' => $this->workerLabel($job, $run),
+            'last_error' => $errors->last() ?: ($lastTaskError ?: null),
+            'source' => (string) ($pipeline['source'] ?? '-'),
+            'priority' => (int) ($pipeline['priority'] ?? 0),
+            'step' => $planCount > 0 ? ($currentIndex + 1).' / '.$planCount : '-',
+            'run_id' => $run?->id,
+        ];
+    }
+
+    /** @param  array<string, mixed>  $pipeline */
+    private function latestPipelineRun(array $pipeline): ?HistoricalRecalculation
+    {
+        $runId = collect($pipeline['run_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->last();
+
+        return $runId ? HistoricalRecalculation::query()->find($runId) : null;
+    }
+
+    private function pipelineDisplayStatus(array $pipeline, ?HistoricalRecalculation $run, ?array $job): string
+    {
+        if ($run instanceof HistoricalRecalculation && ! $run->isTerminal()) {
+            if (($job['reserved_at'] ?? null) !== null) {
+                return HistoricalRecalculation::STATUS_RUNNING;
+            }
+
+            return $run->status === HistoricalRecalculation::STATUS_PENDING ? 'queued' : $run->status;
+        }
+
+        return (string) ($pipeline['status'] ?? '-');
+    }
+
+    /** @return array{0: int, 1: int} */
+    private function pipelineProgress(array $pipeline, ?HistoricalRecalculation $run, int $currentIndex, int $planCount): array
+    {
+        if ($run instanceof HistoricalRecalculation && (int) $run->total_tasks > 0) {
+            return [
+                (int) $run->completed_tasks + (int) $run->failed_tasks + (int) $run->cancelled_tasks,
+                (int) $run->total_tasks,
+            ];
+        }
+
+        $metrics = $pipeline['metrics'] ?? [];
+
+        if (is_array($metrics) && (int) ($metrics['total_tasks'] ?? 0) > 0) {
+            return [
+                (int) ($metrics['completed_tasks'] ?? 0)
+                    + (int) ($metrics['failed_tasks'] ?? 0)
+                    + (int) ($metrics['cancelled_tasks'] ?? 0),
+                (int) $metrics['total_tasks'],
+            ];
+        }
+
+        return [$currentIndex, max(1, $planCount)];
+    }
+
+    private function periodLabel(string $from, string $to): string
+    {
+        if ($from === '' && $to === '') {
+            return '-';
+        }
+
+        return $from === $to ? $from : trim($from.' - '.$to, ' -');
+    }
+
+    private function scopeLabel(string $scope, mixed $projectIds): string
+    {
+        $count = collect($projectIds)->count();
+
+        return match ($scope) {
+            HistoricalRecalculation::SCOPE_ALL_PROJECTS => 'Bütün layihələr',
+            HistoricalRecalculation::SCOPE_SELECTED_PROJECTS => $count > 0 ? 'Seçilmiş layihələr: '.$count : 'Seçilmiş layihələr',
+            default => $scope !== '' ? $scope : '-',
+        };
+    }
+
+    private function sectionLabel(string $section): string
+    {
+        return match ($section) {
+            HistoricalRecalculation::SECTION_DAILY_AVERAGES => 'Orta göstəricilər',
+            HistoricalRecalculation::SECTION_EFFICIENCY => 'Effektivlik',
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => 'Effektivlik gündüz',
+            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY => 'Effektivlik gecə',
+            HistoricalRecalculation::SECTION_TOP_WORKING_UNITS => 'Top 20',
+            HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE => 'Geofence Transferləri',
+            HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS => 'Geofence Pozuntuları',
+            default => $section !== '' ? $section : '-',
+        };
+    }
+
+    private function workerLabel(?array $job, ?HistoricalRecalculation $run): string
+    {
+        if ($job !== null) {
+            $state = ($job['reserved_at'] ?? null) !== null ? 'reserved' : 'queued';
+
+            return ($job['queue'] ?? 'historical-recalculations').' / '.$state;
+        }
+
+        if ($run instanceof HistoricalRecalculation && ! $run->isTerminal()) {
+            return (string) config('historical_recalculation.queue', 'historical-recalculations');
+        }
+
+        return '-';
+    }
+
+    private function formatWaitTime(string $createdAt, ?string $startedAt): string
+    {
+        $created = $this->timestamp($createdAt);
+
+        if ($created === null) {
+            return '-';
+        }
+
+        $end = $startedAt ? $this->timestamp($startedAt) : now(config('app.timezone'))->timestamp;
+
+        if ($end === null) {
+            return '-';
+        }
+
+        $seconds = max(0, $end - $created);
+
+        if ($seconds < 60) {
+            return $seconds.'s';
+        }
+
+        if ($seconds < 3600) {
+            return floor($seconds / 60).'m';
+        }
+
+        if ($seconds < 86400) {
+            return floor($seconds / 3600).'h '.floor(($seconds % 3600) / 60).'m';
+        }
+
+        return floor($seconds / 86400).'d '.floor(($seconds % 86400) / 3600).'h';
+    }
+
+    private function timestamp(string $value): ?int
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        $timestamp = strtotime($value);
+
+        return $timestamp === false ? null : $timestamp;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function historicalQueueJobsByRun(): array
+    {
+        if (! Schema::hasTable('jobs')) {
+            return [];
+        }
+
+        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $jobsByRun = [];
+
+        DB::table('jobs')
+            ->where('queue', $queue)
+            ->orderBy('id')
+            ->get()
+            ->each(function (object $queuedJob) use (&$jobsByRun): void {
+                $reference = $this->historicalQueueJobReference((string) $queuedJob->payload);
+                $runId = $this->queueReferenceRunId($reference);
+
+                if ($runId <= 0) {
+                    return;
+                }
+
+                $jobsByRun[$runId] = [
+                    'id' => (int) $queuedJob->id,
+                    'queue' => (string) $queuedJob->queue,
+                    'attempts' => (int) $queuedJob->attempts,
+                    'reserved_at' => $queuedJob->reserved_at ? date('Y-m-d H:i:s', (int) $queuedJob->reserved_at) : null,
+                    'available_at' => $queuedJob->available_at ? date('Y-m-d H:i:s', (int) $queuedJob->available_at) : null,
+                    'created_at' => $queuedJob->created_at ? date('Y-m-d H:i:s', (int) $queuedJob->created_at) : null,
+                    'reference' => $reference,
+                ];
+            });
+
+        return $jobsByRun;
+    }
+
+    private function queueReferenceRunId(?array $reference): int
+    {
+        if ($reference === null || ($reference['type'] ?? null) === 'unknown') {
+            return 0;
+        }
+
+        if (($reference['type'] ?? null) === 'finalize') {
+            return (int) ($reference['run_id'] ?? 0);
+        }
+
+        $task = HistoricalRecalculationTask::query()->find($reference['task_id'] ?? null);
+
+        return $task instanceof HistoricalRecalculationTask ? (int) $task->historical_recalculation_id : 0;
+    }
+
+    private function historicalQueueJobReference(string $payload): ?array
+    {
+        $decodedPayload = json_decode($payload, true);
+
+        if (! is_array($decodedPayload)) {
+            return null;
+        }
+
+        $displayName = (string) ($decodedPayload['displayName'] ?? ($decodedPayload['data']['commandName'] ?? ''));
+        $command = $decodedPayload['data']['command'] ?? null;
+        $job = null;
+
+        if (is_string($command) && $command !== '') {
+            try {
+                $job = @unserialize($command, [
+                    'allowed_classes' => [
+                        RunHistoricalRecalculationTaskJob::class,
+                        FinalizeHistoricalRecalculationJob::class,
+                    ],
+                ]);
+            } catch (Throwable) {
+                $job = null;
+            }
+        }
+
+        if ($job instanceof RunHistoricalRecalculationTaskJob) {
+            return [
+                'type' => 'task',
+                'class' => RunHistoricalRecalculationTaskJob::class,
+                'task_id' => $job->taskId,
+            ];
+        }
+
+        if ($job instanceof FinalizeHistoricalRecalculationJob) {
+            return [
+                'type' => 'finalize',
+                'class' => FinalizeHistoricalRecalculationJob::class,
+                'run_id' => $job->runId,
+            ];
+        }
+
+        if (in_array($displayName, [
+            RunHistoricalRecalculationTaskJob::class,
+            FinalizeHistoricalRecalculationJob::class,
+        ], true)) {
+            return [
+                'type' => 'unknown',
+                'class' => $displayName,
+            ];
+        }
+
+        return null;
     }
 
     /** @param  array<int, array<string, mixed>>  $pipelines */

@@ -17,12 +17,13 @@ use Illuminate\View\View;
 
 class HistoricalRecalculationController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, DashboardReportPipelineService $pipelines): View
     {
         $this->authorize('manage-historical-recalculations');
 
         return view('admin.historical-recalculations.index', [
             'projects' => Project::query()->where('active', true)->orderBy('name')->get(['id', 'name']),
+            'pipelineQueue' => $pipelines->queueSnapshot(),
             'runs' => HistoricalRecalculation::query()
                 ->with('requestedBy:id,name')
                 ->latest()
@@ -31,6 +32,19 @@ class HistoricalRecalculationController extends Controller
             'defaultTimezone' => config('historical_recalculation.timezone', 'Asia/Baku'),
             'today' => now(config('historical_recalculation.timezone', 'Asia/Baku'))->toDateString(),
         ]);
+    }
+
+    public function clearClosedPipelines(DashboardReportPipelineService $pipelines): RedirectResponse
+    {
+        $this->authorize('manage-historical-recalculations');
+
+        $summary = $pipelines->clearClosed();
+
+        return back()->with('status', sprintf(
+            'Pipeline cleanup: %d closed entries removed, %d active entries kept.',
+            (int) ($summary['removed_closed'] ?? 0),
+            (int) ($summary['kept_active'] ?? 0),
+        ));
     }
 
     public function preview(StoreHistoricalRecalculationRequest $request, HistoricalRecalculationService $service): JsonResponse

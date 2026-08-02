@@ -88,6 +88,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
             Route::get('/', [HistoricalRecalculationController::class, 'index'])->name('index');
             Route::post('/preview', [HistoricalRecalculationController::class, 'preview'])->name('preview');
             Route::post('/', [HistoricalRecalculationController::class, 'store'])->name('store');
+            Route::post('/pipeline/clear-closed', [HistoricalRecalculationController::class, 'clearClosedPipelines'])->name('pipeline.clear-closed');
             Route::get('/{historicalRecalculation:uuid}', [HistoricalRecalculationController::class, 'show'])->name('show');
             Route::get('/{historicalRecalculation:uuid}/status', [HistoricalRecalculationController::class, 'status'])->name('status');
             Route::post('/{historicalRecalculation:uuid}/cancel', [HistoricalRecalculationController::class, 'cancel'])->name('cancel');

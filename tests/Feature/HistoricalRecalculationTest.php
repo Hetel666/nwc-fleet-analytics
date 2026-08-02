@@ -591,6 +591,134 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertStringContainsString('value="daytime_efficiency"', $view);
     }
 
+    public function test_historical_page_exposes_pipeline_queue_snapshot(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        Setting::query()->create([
+            'key' => 'dashboard_report_pipelines',
+            'value' => json_encode([[
+                'id' => 'pipeline-visible-test',
+                'signature' => 'visible-signature',
+                'source' => 'manual',
+                'priority' => 50,
+                'status' => 'pending',
+                'plans' => [[
+                    'section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+                    'date_from' => '2026-08-01',
+                    'date_to' => '2026-08-01',
+                    'timezone' => 'Asia/Baku',
+                    'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                    'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                    'project_ids' => [],
+                    'force' => true,
+                ]],
+                'current_index' => 0,
+                'current_run_id' => null,
+                'run_ids' => [],
+                'steps' => [],
+                'errors' => [],
+                'created_at' => '2026-08-02 12:00:00',
+                'updated_at' => '2026-08-02 12:00:00',
+            ]], JSON_UNESCAPED_SLASHES),
+            'is_secret' => false,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.historical-recalculations.index'))
+            ->assertOk()
+            ->assertSee('Pipeline növbəsi')
+            ->assertSee('Queue ID')
+            ->assertSee('Effektivlik')
+            ->assertSee(route('admin.historical-recalculations.pipeline.clear-closed'), false);
+    }
+
+    public function test_admin_can_clear_only_closed_pipeline_entries(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $closedRun = HistoricalRecalculation::query()->create([
+            'uuid' => '61111ba4-cc65-4ade-af1a-88f522df9ce9',
+            'signature' => 'closed-run',
+            'status' => HistoricalRecalculation::STATUS_COMPLETED,
+            'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        Setting::query()->create([
+            'key' => 'dashboard_report_pipelines',
+            'value' => json_encode([
+                [
+                    'id' => 'active-pipeline',
+                    'signature' => 'active-signature',
+                    'source' => 'daily',
+                    'priority' => 100,
+                    'status' => 'pending',
+                    'plans' => [[
+                        'section' => HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+                        'date_from' => '2026-08-01',
+                        'date_to' => '2026-08-01',
+                        'timezone' => 'Asia/Baku',
+                        'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                        'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                        'project_ids' => [],
+                        'force' => true,
+                    ]],
+                    'current_index' => 0,
+                    'current_run_id' => null,
+                    'run_ids' => [],
+                    'steps' => [],
+                    'errors' => [],
+                    'created_at' => '2026-08-02 12:00:00',
+                    'updated_at' => '2026-08-02 12:00:00',
+                ],
+                [
+                    'id' => 'closed-pipeline',
+                    'signature' => 'closed-signature',
+                    'source' => 'manual',
+                    'priority' => 50,
+                    'status' => 'completed',
+                    'plans' => [[
+                        'section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+                        'date_from' => '2026-08-01',
+                        'date_to' => '2026-08-01',
+                        'timezone' => 'Asia/Baku',
+                        'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                        'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                        'project_ids' => [],
+                        'force' => false,
+                    ]],
+                    'current_index' => 1,
+                    'current_run_id' => null,
+                    'run_ids' => [$closedRun->id],
+                    'steps' => [],
+                    'errors' => [],
+                    'created_at' => '2026-08-02 11:00:00',
+                    'updated_at' => '2026-08-02 11:30:00',
+                    'completed_at' => '2026-08-02 11:30:00',
+                ],
+            ], JSON_UNESCAPED_SLASHES),
+            'is_secret' => false,
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('admin.historical-recalculations.index'))
+            ->post(route('admin.historical-recalculations.pipeline.clear-closed'))
+            ->assertRedirect(route('admin.historical-recalculations.index'))
+            ->assertSessionHas('status');
+
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+
+        $this->assertCount(1, $pipelines);
+        $this->assertSame('active-pipeline', $pipelines[0]['id']);
+        $this->assertDatabaseHas('historical_recalculations', ['id' => $closedRun->id]);
+    }
+
     public function test_dashboard_reports_daily_queue_uses_completed_baku_periods(): void
     {
         Queue::fake();

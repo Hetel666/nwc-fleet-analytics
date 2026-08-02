@@ -5,6 +5,91 @@
 @section('page-subtitle', 'Wialon məlumatlarını fon rejimində yüklə və Dashboard statistikasını yenilə')
 
 @section('content')
+    <div class="panel p-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+            <div>
+                <h2 class="h6 fw-bold mb-1">Pipeline növbəsi</h2>
+                <div class="text-secondary small">Dashboard yenilənmələrinin cari növbəsi, icra vəziyyəti və son xətaları.</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-secondary btn-sm btn-icon" href="{{ route('admin.historical-recalculations.index') }}">
+                    <i data-lucide="refresh-cw"></i><span>Yenilə</span>
+                </a>
+                <form method="POST" action="{{ route('admin.historical-recalculations.pipeline.clear-closed') }}" onsubmit="return confirm('Bağlanmış pipeline qeydləri siyahıdan silinsin? Aktiv növbə və hesabat datası silinməyəcək.');">
+                    @csrf
+                    <button class="btn btn-outline-warning btn-sm btn-icon" type="submit">
+                        <i data-lucide="trash-2"></i><span>Bağlanmışları təmizlə</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead>
+                <tr>
+                    <th>Queue ID</th>
+                    <th>Created at</th>
+                    <th>Started at</th>
+                    <th>Wait time</th>
+                    <th>Status</th>
+                    <th>Bölmə</th>
+                    <th>Dövr</th>
+                    <th>Scope</th>
+                    <th>Position</th>
+                    <th style="min-width: 150px;">Progress</th>
+                    <th>Worker</th>
+                    <th style="min-width: 260px;">Last error</th>
+                </tr>
+                </thead>
+                <tbody>
+                @forelse ($pipelineQueue as $entry)
+                    @php
+                        $statusClass = match ($entry['status']) {
+                            'running' => 'text-bg-primary',
+                            'queued', 'pending' => 'text-bg-info',
+                            'completed' => 'text-bg-success',
+                            'completed_with_errors' => 'text-bg-warning',
+                            'failed' => 'text-bg-danger',
+                            'cancelled' => 'text-bg-secondary',
+                            default => 'text-bg-light',
+                        };
+                    @endphp
+                    <tr>
+                        <td>
+                            <div class="fw-semibold text-nowrap">{{ is_numeric($entry['queue_id']) ? '#'.$entry['queue_id'] : \Illuminate\Support\Str::limit($entry['queue_id'], 10) }}</div>
+                            <div class="small text-secondary text-nowrap">Pipeline {{ \Illuminate\Support\Str::limit($entry['pipeline_id'], 8) }}</div>
+                        </td>
+                        <td class="text-nowrap">{{ $entry['created_at'] ?: '-' }}</td>
+                        <td class="text-nowrap">{{ $entry['started_at'] ?: '-' }}</td>
+                        <td class="text-nowrap">{{ $entry['wait_time'] }}</td>
+                        <td><span class="badge {{ $statusClass }}">{{ $entry['status'] }}</span></td>
+                        <td>
+                            <div class="fw-semibold text-nowrap">{{ $entry['section'] }}</div>
+                            <div class="small text-secondary">Step {{ $entry['step'] }}</div>
+                        </td>
+                        <td class="text-nowrap">{{ $entry['period'] }}</td>
+                        <td class="text-nowrap">{{ $entry['scope'] }}</td>
+                        <td>{{ $entry['position'] ? '#'.$entry['position'] : '-' }}</td>
+                        <td>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" style="width: {{ $entry['progress_percent'] }}%"></div>
+                            </div>
+                            <div class="small text-secondary mt-1">{{ $entry['progress'] }}</div>
+                        </td>
+                        <td class="text-nowrap">{{ $entry['worker'] }}</td>
+                        <td class="text-danger small" style="max-width: 420px;">{{ $entry['last_error'] ?: '-' }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="12" class="text-secondary">Pipeline növbəsində məlumat yoxdur</td>
+                    </tr>
+                @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="row g-4">
         <div class="col-lg-5">
             <div class="panel p-4">
