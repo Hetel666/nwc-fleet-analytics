@@ -3,15 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\DashboardDrilldownRequest;
+use App\Services\DashboardDisplayConfigurationService;
 use App\Services\DashboardFleetDrilldownService;
 use App\Services\XlsxExportService;
 use Symfony\Component\HttpFoundation\Response;
 
 class DashboardDrilldownController extends Controller
 {
-    public function index(DashboardDrilldownRequest $request, DashboardFleetDrilldownService $drilldown): array
-    {
+    public function index(
+        DashboardDrilldownRequest $request,
+        DashboardFleetDrilldownService $drilldown,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
         $filters = $drilldown->filters($request->validated());
+        $this->guardVisibleEfficiencyStatus($filters, $displayConfiguration);
         $units = $drilldown->getUnits($filters);
 
         return [
@@ -35,9 +40,11 @@ class DashboardDrilldownController extends Controller
     public function export(
         DashboardDrilldownRequest $request,
         DashboardFleetDrilldownService $drilldown,
+        DashboardDisplayConfigurationService $displayConfiguration,
         XlsxExportService $xlsx
     ): Response {
         $filters = $drilldown->filters($request->validated());
+        $this->guardVisibleEfficiencyStatus($filters, $displayConfiguration);
         $export = $drilldown->export($filters);
         $content = $xlsx->build($export);
 
@@ -47,5 +54,12 @@ class DashboardDrilldownController extends Controller
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Content-Length' => (string) strlen($content),
         ]);
+    }
+
+    private function guardVisibleEfficiencyStatus(array $filters, DashboardDisplayConfigurationService $displayConfiguration): void
+    {
+        $status = $filters['work_category'] ?? $filters['day_status'] ?? null;
+
+        abort_unless($displayConfiguration->isStatusVisible('general_efficiency', $status), 403, 'Dashboard status is hidden.');
     }
 }

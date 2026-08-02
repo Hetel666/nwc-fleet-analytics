@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\GenerateDashboardExportJob;
 use App\Models\DashboardExport;
+use App\Services\DashboardDisplayConfigurationService;
 use App\Services\NighttimeEfficiencyDashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,15 +13,23 @@ use Illuminate\View\View;
 
 class NighttimeEfficiencyDashboardController extends Controller
 {
-    public function summary(Request $request, NighttimeEfficiencyDashboardService $dashboard): array
-    {
-        return ['data' => $dashboard->summary($this->filters($request))];
+    public function summary(
+        Request $request,
+        NighttimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
+        $filters = $this->visibleFilters($request, $displayConfiguration);
+
+        return ['data' => $displayConfiguration->filterSummaryRows($dashboard->summary($filters), 'nighttime_efficiency')];
     }
 
-    public function projects(Request $request, NighttimeEfficiencyDashboardService $dashboard): array
-    {
+    public function projects(
+        Request $request,
+        NighttimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
         abort_unless($dashboard->isReady(), 503, 'Nighttime efficiency storage is not ready.');
-        $rows = $dashboard->paginateProjects($this->filters($request));
+        $rows = $dashboard->paginateProjects($this->visibleFilters($request, $displayConfiguration));
 
         return [
             'title' => 'Gecə effektivliyi - '.($request->string('status')->toString() ?: 'Layihələr'),
@@ -37,10 +46,13 @@ class NighttimeEfficiencyDashboardController extends Controller
         ];
     }
 
-    public function units(Request $request, NighttimeEfficiencyDashboardService $dashboard): array
-    {
+    public function units(
+        Request $request,
+        NighttimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
         abort_unless($dashboard->isReady(), 503, 'Nighttime efficiency storage is not ready.');
-        $rows = $dashboard->paginateUnits($this->filters($request));
+        $rows = $dashboard->paginateUnits($this->visibleFilters($request, $displayConfiguration));
 
         return [
             'title' => 'Gecə effektivliyi - Texnika siyahısı',
@@ -63,10 +75,13 @@ class NighttimeEfficiencyDashboardController extends Controller
         ];
     }
 
-    public function export(Request $request, NighttimeEfficiencyDashboardService $dashboard): JsonResponse|View
-    {
+    public function export(
+        Request $request,
+        NighttimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): JsonResponse|View {
         abort_unless($dashboard->isReady(), 503, 'Nighttime efficiency storage is not ready.');
-        $filters = $dashboard->normalizeFilters($this->filters($request), 'export');
+        $filters = $dashboard->normalizeFilters($this->visibleFilters($request, $displayConfiguration), 'export');
         $record = DashboardExport::query()->create([
             'user_id' => $request->user()->id,
             'block' => 'nighttime_efficiency',
@@ -124,5 +139,17 @@ class NighttimeEfficiencyDashboardController extends Controller
                 'total' => $rows->total(),
             ],
         ];
+    }
+
+    private function visibleFilters(Request $request, DashboardDisplayConfigurationService $displayConfiguration): array
+    {
+        $filters = $this->filters($request);
+        $displayConfiguration->assertDashboardVisibleForOwnership(
+            $filters,
+            'efficiency_nighttime_nwc',
+            'efficiency_nighttime_rental'
+        );
+
+        return $displayConfiguration->applyVisibleStatusesToFilters($filters, 'nighttime_efficiency');
     }
 }

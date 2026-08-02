@@ -32,6 +32,8 @@ class User extends Authenticatable
 
     public const PERMISSION_PROJECTS_MANAGE = 'projects.manage';
 
+    public const PERMISSION_DASHBOARD_VISIBILITY_MANAGE = 'dashboard_visibility.manage';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -107,6 +109,7 @@ class User extends Authenticatable
     public static function permissionKeys(): array
     {
         return [
+            self::PERMISSION_DASHBOARD_VISIBILITY_MANAGE,
             self::PERMISSION_WIALON_CATALOG_VIEW,
             self::PERMISSION_WIALON_CATALOG_SYNC,
             self::PERMISSION_PROJECTS_MANAGE,
@@ -117,6 +120,7 @@ class User extends Authenticatable
     public static function permissionOptions(): array
     {
         return [
+            self::PERMISSION_DASHBOARD_VISIBILITY_MANAGE => 'Dashboard gorunurluyunu idare etmek',
             self::PERMISSION_WIALON_CATALOG_VIEW => 'Wialon kataloquna baxış',
             self::PERMISSION_WIALON_CATALOG_SYNC => 'Wialon kataloqu sinxronizasiya',
             self::PERMISSION_PROJECTS_MANAGE => 'Layihələri yaratmaq və dəyişmək',

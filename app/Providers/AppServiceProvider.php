@@ -3,8 +3,8 @@
 namespace App\Providers;
 
 use Illuminate\Pagination\Paginator;
-use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,5 +28,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('view-wialon-catalog', fn ($user): bool => $user->hasPermission('wialon_catalog.view'));
         Gate::define('sync-wialon-catalog', fn ($user): bool => $user->hasPermission('wialon_catalog.sync'));
         Gate::define('manage-projects', fn ($user): bool => $user->hasPermission('projects.manage'));
+        Gate::define('manage-dashboard-visibility', fn ($user): bool => $user->hasPermission('dashboard_visibility.manage'));
     }
 }

@@ -1,6 +1,9 @@
 @php
-    $statuses = collect(['0_1', '1_7', '7_10', 'over_10', 'no_data']);
-    $total = (int) ($summary['total'] ?? 0);
+    $statuses = collect($visibleStatuses ?? ['0_1', '1_7', '7_10', 'over_10', 'no_data'])
+        ->filter(fn (string $status): bool => $categoryLabels->has($status))
+        ->values();
+    $fullTotal = (int) ($summary['total'] ?? 0);
+    $total = (int) $statuses->sum(fn (string $status): int => (int) ($summary[$status] ?? 0));
     $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
 @endphp
 
@@ -43,6 +46,9 @@
                         </tr>
                     @endforeach
                     <tr class="dashboard-work-status-total"><td>Cəmi</td><td class="text-end">{{ number_format($total, 0, '.', ' ') }}</td></tr>
+                    @if ($fullTotal !== $total)
+                    <tr class="dashboard-work-status-note"><td colspan="2">Gosterilir: {{ number_format($total, 0, '.', ' ') }} / {{ number_format($fullTotal, 0, '.', ' ') }}</td></tr>
+                    @endif
                     </tbody>
                 </table>
             </div>

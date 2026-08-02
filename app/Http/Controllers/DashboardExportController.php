@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\GenerateDashboardExportJob;
 use App\Models\DashboardExport;
 use App\Models\Equipment;
+use App\Services\DashboardDisplayConfigurationService;
 use App\Services\DashboardService;
 use App\Services\XlsxExportService;
 use App\Support\DashboardSectionAccess;
@@ -18,8 +19,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DashboardExportController extends Controller
 {
-    public function create(Request $request, DashboardService $dashboard, XlsxExportService $xlsx): Response|View
-    {
+    public function create(
+        Request $request,
+        DashboardService $dashboard,
+        XlsxExportService $xlsx,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): Response|View {
         $filters = $dashboard->normalizeFilters($request->only([
             'date_from',
             'date_to',
@@ -30,6 +35,8 @@ class DashboardExportController extends Controller
             'ownership_type',
         ]), 'export');
         $block = (string) $request->query('block', 'overview');
+        $this->guardVisibleBlock($block, $displayConfiguration);
+        $filters = $this->applyVisibleStatusRestriction($filters, $block, $displayConfiguration);
 
         if ($this->shouldRunInBackground($filters)) {
             $record = DashboardExport::query()->create([
@@ -141,5 +148,27 @@ class DashboardExportController extends Controller
             $user?->canAccessDashboardSection(DashboardSectionAccess::sectionForExportBlock($export->block)),
             403
         );
+    }
+
+    private function guardVisibleBlock(string $block, DashboardDisplayConfigurationService $displayConfiguration): void
+    {
+        $dashboardCode = $displayConfiguration->dashboardCodeForExportBlock($block);
+
+        abort_if($dashboardCode !== null && ! $displayConfiguration->isDashboardVisible($dashboardCode), 403, 'Dashboard is hidden.');
+    }
+
+    private function applyVisibleStatusRestriction(
+        array $filters,
+        string $block,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
+        if (in_array($block, ['actual-work-hours-nwc', 'actual-work-hours-icare'], true)) {
+            return [
+                ...$filters,
+                'visible_statuses' => $displayConfiguration->visibleStatusCodes('general_efficiency'),
+            ];
+        }
+
+        return $filters;
     }
 }

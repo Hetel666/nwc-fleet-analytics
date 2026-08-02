@@ -191,6 +191,25 @@
         ['label' => __('app.avg_distance'), 'value' => number_format($overview['avg_distance_per_equipment'], 1).' '.__('app.km'), 'icon' => 'bi-geo-alt', 'tone' => '#fff1e9', 'color' => '#f97316', 'change' => $overview['changes']['avg_distance_per_equipment']],
         ['label' => __('app.utilization'), 'value' => number_format($overview['utilization'], 1).' %', 'icon' => 'bi-graph-up-arrow', 'tone' => '#e8f8fb', 'color' => '#0ea5b7', 'change' => $overview['changes']['utilization']],
     ];
+    $dashboardDisplayConfiguration = is_array($dashboardDisplayConfiguration ?? null) ? $dashboardDisplayConfiguration : [];
+    $dashboardDisplayRows = collect($dashboardDisplayConfiguration['dashboards'] ?? [])->keyBy('code');
+    $dashboardStatusRows = collect($dashboardDisplayConfiguration['statuses'] ?? []);
+    $dashboardDisplayVisibleFor = fn (string $code): bool => (bool) ($dashboardDisplayRows->get($code, [])['is_visible'] ?? true);
+    $dashboardDisplayOrderFor = fn (string $code, int $default): int => (int) ($dashboardDisplayRows->get($code, [])['display_order'] ?? $default);
+    $dashboardStatusKeysFor = fn (string $type): \Illuminate\Support\Collection => collect($dashboardStatusRows->get($type, []))
+        ->filter(fn (array $status): bool => (bool) ($status['is_visible'] ?? true))
+        ->sortBy('display_order')
+        ->pluck('status_code')
+        ->values();
+    $visibleGeneralStatusKeys = $dashboardStatusKeysFor('general_efficiency');
+    $visibleDaytimeStatusKeys = $dashboardStatusKeysFor('daytime_efficiency');
+    $visibleNighttimeStatusKeys = $dashboardStatusKeysFor('nighttime_efficiency');
+    $showGeneralEfficiencySection = $dashboardDisplayVisibleFor('efficiency_general_nwc') || $dashboardDisplayVisibleFor('efficiency_general_rental');
+    $showDaytimeEfficiencySection = $dashboardDisplayVisibleFor('efficiency_daytime_nwc') || $dashboardDisplayVisibleFor('efficiency_daytime_rental');
+    $showNighttimeEfficiencySection = $dashboardDisplayVisibleFor('efficiency_nighttime_nwc') || $dashboardDisplayVisibleFor('efficiency_nighttime_rental');
+    $showAveragesSection = $dashboardDisplayVisibleFor('average_engine_hours') || $dashboardDisplayVisibleFor('average_mileage');
+    $showTop20Section = $dashboardDisplayVisibleFor('top_20_low') || $dashboardDisplayVisibleFor('top_20_high');
+    $showAnyEfficiencySection = $showGeneralEfficiencySection || $showDaytimeEfficiencySection || $showNighttimeEfficiencySection || $showAveragesSection || $showTop20Section;
     $dashboardLayoutItems = collect($dashboardLayout ?? [])->keyBy('key');
     $dashboardWidgetLayoutFor = function (string $key, string $defaultClass, int $defaultWidth) use ($dashboardLayoutItems): array {
         $item = $dashboardLayoutItems->get($key, []);
@@ -237,12 +256,12 @@
         'typeIcareTotals' => $typeIcareTop->pluck('total')->values()->all(),
         'typeIcareIds' => $typeIcareTop->pluck('id')->values()->all(),
         'typeIcareTotal' => (int) $typeIcare->sum('total'),
-        'projectWorkCategoryNwcCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values()->all(),
-        'projectWorkCategoryIcareCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
-        'daytimeEfficiencyNwcCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
-        'daytimeEfficiencyIcareCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
-        'nighttimeEfficiencyNwcCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($nighttimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
-        'nighttimeEfficiencyIcareCounts' => $actualWorkCategoryLabels->keys()->map(fn (string $key): int => (int) ($nighttimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
+        'projectWorkCategoryNwcCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values()->all(),
+        'projectWorkCategoryIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
+        'daytimeEfficiencyNwcCounts' => $visibleDaytimeStatusKeys->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
+        'daytimeEfficiencyIcareCounts' => $visibleDaytimeStatusKeys->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
+        'nighttimeEfficiencyNwcCounts' => $visibleNighttimeStatusKeys->map(fn (string $key): int => (int) ($nighttimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
+        'nighttimeEfficiencyIcareCounts' => $visibleNighttimeStatusKeys->map(fn (string $key): int => (int) ($nighttimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
         'utilizationTrend' => $utilizationTrendByOwnership,
         'projectComparisonLabels' => $projectComparisonTop->pluck('name')->values()->all(),
         'projectComparisonIds' => $projectComparisonTop->pluck('id')->values()->all(),
@@ -2416,6 +2435,7 @@
             </div>
         @endif
 
+        @if ($dashboardDisplayVisibleFor('overview_kpi'))
         <div class="row g-3 mb-4">
             @foreach ($kpis as $kpi)
                 <div class="col-12 col-md-6 col-xxl">
@@ -2440,6 +2460,7 @@
                 </div>
             @endforeach
         </div>
+        @endif
 
         <nav class="dashboard-tabs mb-3" aria-label="{{ __('app.dashboard_sections') }}">
             <div class="nav nav-tabs" role="tablist">
@@ -2529,6 +2550,7 @@
             data-dashboard-chart-data="{{ json_encode($dashboardChartData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
         >
             @if ($selectedDashboardTab === 'overview')
+            @if ($dashboardDisplayVisibleFor('ownership_share'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('ownership-share', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
@@ -2579,7 +2601,9 @@
                     </div>
                 </section>
             </div>
+            @endif
 
+            @if ($dashboardDisplayVisibleFor('nwc_vehicle_type_share'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('equipment-types-nwc', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
@@ -2597,7 +2621,9 @@
                     ])
                 </section>
             </div>
+            @endif
 
+            @if ($dashboardDisplayVisibleFor('rental_vehicle_type_share'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('equipment-types-icare', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
@@ -2616,8 +2642,10 @@
                 </section>
             </div>
             @endif
+            @endif
 
             @if ($selectedDashboardTab === 'efficiency')
+            @if ($showGeneralEfficiencySection)
             <section
                 id="efficiency-general"
                 class="col-12 dashboard-efficiency-section-heading"
@@ -2630,11 +2658,13 @@
                     <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
                 </div>
             </section>
+            @endif
 
+            @if ($dashboardDisplayVisibleFor('efficiency_general_nwc'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: 110" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesNwc',
                     'ownershipCode' => $nwc,
@@ -2645,14 +2675,18 @@
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-nwc'),
                     'filters' => $filters,
+                    'visibleStatuses' => $visibleGeneralStatusKeys,
                     'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Effektivlik: NWC üzrə'),
                 ])
             </div>
 
+            @endif
+
+            @if ($dashboardDisplayVisibleFor('efficiency_general_rental'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-icare', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: 111" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesIcare',
                     'ownershipCode' => $icare,
@@ -2663,10 +2697,14 @@
                     'categoryColors' => $actualWorkCategoryColors,
                     'exportUrl' => $exportUrl('actual-work-hours-icare'),
                     'filters' => $filters,
+                    'visibleStatuses' => $visibleGeneralStatusKeys,
                     'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Effektivlik: İcarə üzrə'),
                 ])
             </div>
 
+            @endif
+
+            @if ($showDaytimeEfficiencySection)
             <section id="efficiency-daytime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="daytime" style="order: 200" aria-labelledby="daytime-efficiency-title">
                 <div class="mb-3">
                     <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
@@ -2677,6 +2715,7 @@
                     </div>
                 </div>
                 <div class="row g-3">
+                    @if ($dashboardDisplayVisibleFor('efficiency_daytime_nwc'))
                     <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.daytime-efficiency-card', [
                             'chartId' => 'daytimeEfficiencyNwc',
@@ -2685,6 +2724,7 @@
                             'categoryLabels' => $actualWorkCategoryLabels,
                             'categoryColors' => $actualWorkCategoryColors,
                             'filters' => $filters,
+                            'visibleStatuses' => $visibleDaytimeStatusKeys,
                             'title' => 'Effektivlik gündüz: NWC üzrə',
                             'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
@@ -2692,6 +2732,8 @@
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
+                    @endif
+                    @if ($dashboardDisplayVisibleFor('efficiency_daytime_rental'))
                     <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.daytime-efficiency-card', [
                             'chartId' => 'daytimeEfficiencyIcare',
@@ -2700,6 +2742,7 @@
                             'categoryLabels' => $actualWorkCategoryLabels,
                             'categoryColors' => $actualWorkCategoryColors,
                             'filters' => $filters,
+                            'visibleStatuses' => $visibleDaytimeStatusKeys,
                             'title' => 'Effektivlik gündüz: İcarə üzrə',
                             'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
@@ -2707,9 +2750,12 @@
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
+                    @endif
                 </div>
             </section>
+            @endif
 
+            @if ($showNighttimeEfficiencySection)
             <section id="efficiency-nighttime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="nighttime" style="order: 300" aria-labelledby="nighttime-efficiency-title">
                 <div class="mb-3">
                     <h2 class="h4 fw-bold mb-1" id="nighttime-efficiency-title">Gecə növbəsi üzrə effektivlik</h2>
@@ -2721,6 +2767,7 @@
                     <div class="small text-secondary mt-1">Növbə tarixi başlanğıc gününə görə hesablanır</div>
                 </div>
                 <div class="row g-3">
+                    @if ($dashboardDisplayVisibleFor('efficiency_nighttime_nwc'))
                     <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.nighttime-efficiency-card', [
                             'chartId' => 'nighttimeEfficiencyNwc',
@@ -2729,6 +2776,7 @@
                             'categoryLabels' => $actualWorkCategoryLabels,
                             'categoryColors' => $actualWorkCategoryColors,
                             'filters' => $filters,
+                            'visibleStatuses' => $visibleNighttimeStatusKeys,
                             'title' => 'Effektivlik gecə: NWC üzrə',
                             'exportUrl' => route('api.dashboard.nighttime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
@@ -2736,6 +2784,8 @@
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
+                    @endif
+                    @if ($dashboardDisplayVisibleFor('efficiency_nighttime_rental'))
                     <div class="col-12 col-md-6 d-flex">
                         @include('dashboard.partials.nighttime-efficiency-card', [
                             'chartId' => 'nighttimeEfficiencyIcare',
@@ -2744,6 +2794,7 @@
                             'categoryLabels' => $actualWorkCategoryLabels,
                             'categoryColors' => $actualWorkCategoryColors,
                             'filters' => $filters,
+                            'visibleStatuses' => $visibleNighttimeStatusKeys,
                             'title' => 'Effektivlik gecə: İcarə üzrə',
                             'exportUrl' => route('api.dashboard.nighttime-efficiency.export', array_filter([
                                 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
@@ -2751,17 +2802,21 @@
                             ], fn ($value) => $value !== null && $value !== '')),
                         ])
                     </div>
+                    @endif
                 </div>
             </section>
+            @endif
 
+            @if ($showAveragesSection)
             <section id="efficiency-averages" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="averages" style="order: 400" aria-labelledby="efficiency-averages-title">
                 <h2 class="h4 fw-bold mb-1" id="efficiency-averages-title">Orta göstəricilər</h2>
             </section>
 
+            @if ($dashboardDisplayVisibleFor('average_engine_hours'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: 410" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'engine_hours',
                     'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
@@ -2772,11 +2827,13 @@
                     'selectedProject' => $selectedProject,
                 ])
             </div>
+            @endif
 
+            @if ($dashboardDisplayVisibleFor('average_mileage'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-mileage', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: 411" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'mileage',
                     'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
@@ -2787,33 +2844,42 @@
                     'selectedProject' => $selectedProject,
                 ])
             </div>
+            @endif
+            @endif
 
+            @if ($showTop20Section)
             <section id="efficiency-top20" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="top20" style="order: 500" aria-labelledby="efficiency-top20-title">
                 <h2 class="h4 fw-bold mb-1" id="efficiency-top20-title">Top göstəricilər</h2>
             </section>
 
+            @if ($dashboardDisplayVisibleFor('top_20_low'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: 510" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-ranking-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
                 </section>
             </div>
+            @endif
 
+            @if ($dashboardDisplayVisibleFor('top_20_high'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: 511" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-ranking-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
                 </section>
             </div>
             @endif
+            @endif
+            @endif
 
             @if ($selectedDashboardTab === 'geozones')
+            @if ($dashboardDisplayVisibleFor('geofence_transfers'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('geofence-analysis', 'col-12 col-xl-6', 6);
                 $geofenceAnalysisTitle = $dashboardWidgetTitleFor('geofence-analysis', __('app.geofence_analysis'));
@@ -2884,7 +2950,9 @@
 
                 </section>
             </div>
+            @endif
 
+            @if ($dashboardDisplayVisibleFor('geofence_violations'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('geofence-violations-report', 'col-12 col-xl-6', 6);
                 $geofenceReportTitle = $dashboardWidgetTitleFor('geofence-violations-report', __('app.geofence_violations'));
@@ -2953,6 +3021,7 @@
                     </div>
                 </section>
             </div>
+            @endif
 
             @endif
 
@@ -2971,6 +3040,7 @@
                 </section>
             </div>
 
+            @if ($dashboardDisplayVisibleFor('project_ownership_share'))
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-comparison', 'col-12', 12);
             @endphp
@@ -3059,6 +3129,7 @@
                     @endif
                 </section>
             </div>
+            @endif
             @endif
         </div>
     </div>
@@ -3156,16 +3227,17 @@ const workCategoryColors = {
     over_10: '#8b5cf6',
     no_data: '#94a3b8',
 };
-const workCategoryKeys = @json($actualWorkCategoryLabels->keys()->values());
-const workCategoryLabels = @json($actualWorkCategoryLabels->values());
+const workCategoryLabelMap = @json($actualWorkCategoryLabels);
+const workCategoryKeys = @json($visibleGeneralStatusKeys->values());
+const daytimeEfficiencyKeys = @json($visibleDaytimeStatusKeys->values());
+const nighttimeEfficiencyKeys = @json($visibleNighttimeStatusKeys->values());
+const workCategoryLabels = workCategoryKeys.map(key => workCategoryLabelMap[key] || key);
+const daytimeEfficiencyLabels = daytimeEfficiencyKeys.map(key => workCategoryLabelMap[key] || key);
+const nighttimeEfficiencyLabels = nighttimeEfficiencyKeys.map(key => workCategoryLabelMap[key] || key);
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
-const workCategoryDonutKeys = [
-    '0_1',
-    '1_7',
-    '7_10',
-    'over_10',
-    'no_data',
-];
+const daytimeEfficiencyColorValues = daytimeEfficiencyKeys.map(key => workCategoryColors[key]);
+const nighttimeEfficiencyColorValues = nighttimeEfficiencyKeys.map(key => workCategoryColors[key]);
+const workCategoryDonutKeys = workCategoryKeys;
 const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
 const workCategoryDonutLabels = workCategoryDonutIndexes.map(index => workCategoryLabels[index]);
 const workCategoryDonutColorValues = workCategoryDonutKeys.map(key => workCategoryColors[key]);
@@ -3254,7 +3326,9 @@ let savedDashboardPreferences = {
     ...dashboardPreferenceDefaults,
     ...JSON.parse(dashboardPage?.dataset.dashboardPreferences || '{}'),
 };
-function setActiveEfficiencyNavigation(activeSection = 'general') {
+function setActiveEfficiencyNavigation(activeSection = null) {
+    activeSection = activeSection || document.querySelector('[data-efficiency-section]')?.dataset.efficiencySection || 'general';
+
     document.querySelectorAll('[data-efficiency-section]').forEach(button => {
         const active = button.dataset.efficiencySection === activeSection;
         button.classList.toggle('btn-primary', active);
@@ -5314,8 +5388,8 @@ const daytimeEfficiencyEndpoints = {
     units: @json(route('api.dashboard.daytime-efficiency.units')),
     export: @json(route('api.dashboard.daytime-efficiency.export')),
 };
-const daytimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
-    title: `Effektivlik gunduz: ${labels.nwc} - ${workCategoryDonutLabels[index]}`,
+const daytimeEfficiencyNwcDrilldownItems = daytimeEfficiencyKeys.map((key, index) => ({
+    title: `Effektivlik gunduz: ${labels.nwc} - ${daytimeEfficiencyLabels[index]}`,
     ownership: 'nwc',
     view: 'projects',
     drilldown_mode: 'daytime_efficiency_projects',
@@ -5325,8 +5399,8 @@ const daytimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, index
     export_url: daytimeEfficiencyEndpoints.export,
     export_enabled: false,
 }));
-const daytimeEfficiencyIcareDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
-    title: `Effektivlik gunduz: ${labels.icare} - ${workCategoryDonutLabels[index]}`,
+const daytimeEfficiencyIcareDrilldownItems = daytimeEfficiencyKeys.map((key, index) => ({
+    title: `Effektivlik gunduz: ${labels.icare} - ${daytimeEfficiencyLabels[index]}`,
     ownership: 'icare',
     view: 'projects',
     drilldown_mode: 'daytime_efficiency_projects',
@@ -5341,8 +5415,8 @@ const nighttimeEfficiencyEndpoints = {
     units: @json(route('api.dashboard.nighttime-efficiency.units')),
     export: @json(route('api.dashboard.nighttime-efficiency.export')),
 };
-const nighttimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
-    title: `Effektivlik gecə: ${labels.nwc} - ${workCategoryDonutLabels[index]}`,
+const nighttimeEfficiencyNwcDrilldownItems = nighttimeEfficiencyKeys.map((key, index) => ({
+    title: `Effektivlik gece: ${labels.nwc} - ${nighttimeEfficiencyLabels[index]}`,
     ownership: 'nwc',
     view: 'projects',
     drilldown_mode: 'nighttime_efficiency_projects',
@@ -5352,8 +5426,8 @@ const nighttimeEfficiencyNwcDrilldownItems = workCategoryDonutKeys.map((key, ind
     export_url: nighttimeEfficiencyEndpoints.export,
     export_enabled: false,
 }));
-const nighttimeEfficiencyIcareDrilldownItems = workCategoryDonutKeys.map((key, index) => ({
-    title: `Effektivlik gecə: ${labels.icare} - ${workCategoryDonutLabels[index]}`,
+const nighttimeEfficiencyIcareDrilldownItems = nighttimeEfficiencyKeys.map((key, index) => ({
+    title: `Effektivlik gece: ${labels.icare} - ${nighttimeEfficiencyLabels[index]}`,
     ownership: 'icare',
     view: 'projects',
     drilldown_mode: 'nighttime_efficiency_projects',
@@ -5412,23 +5486,23 @@ const initializeDashboardCharts = () => {
         drilldownItems: projectWorkCategoryIcareDonutDrilldownItems,
     });
     createProjectWorkCategoryChart('daytimeEfficiencyNwc', daytimeEfficiencyNwcCounts, {
-        labels: workCategoryDonutLabels,
-        colors: workCategoryDonutColorValues,
+        labels: daytimeEfficiencyLabels,
+        colors: daytimeEfficiencyColorValues,
         drilldownItems: daytimeEfficiencyNwcDrilldownItems,
     });
     createProjectWorkCategoryChart('daytimeEfficiencyIcare', daytimeEfficiencyIcareCounts, {
-        labels: workCategoryDonutLabels,
-        colors: workCategoryDonutColorValues,
+        labels: daytimeEfficiencyLabels,
+        colors: daytimeEfficiencyColorValues,
         drilldownItems: daytimeEfficiencyIcareDrilldownItems,
     });
     createProjectWorkCategoryChart('nighttimeEfficiencyNwc', nighttimeEfficiencyNwcCounts, {
-        labels: workCategoryDonutLabels,
-        colors: workCategoryDonutColorValues,
+        labels: nighttimeEfficiencyLabels,
+        colors: nighttimeEfficiencyColorValues,
         drilldownItems: nighttimeEfficiencyNwcDrilldownItems,
     });
     createProjectWorkCategoryChart('nighttimeEfficiencyIcare', nighttimeEfficiencyIcareCounts, {
-        labels: workCategoryDonutLabels,
-        colors: workCategoryDonutColorValues,
+        labels: nighttimeEfficiencyLabels,
+        colors: nighttimeEfficiencyColorValues,
         drilldownItems: nighttimeEfficiencyIcareDrilldownItems,
     });
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);

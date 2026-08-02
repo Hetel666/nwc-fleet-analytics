@@ -235,6 +235,13 @@ class NighttimeEfficiencyDashboardService
         };
         $status = $filters['status'] ?? $filters['work_category'] ?? $filters['day_status'] ?? null;
         $status = $this->canonicalStatus($status);
+        $hasVisibleStatusRestriction = array_key_exists('visible_statuses', $filters);
+        $visibleStatuses = collect($filters['visible_statuses'] ?? [])
+            ->map(fn ($visibleStatus): ?string => $this->canonicalStatus((string) $visibleStatus))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
         $vehicleTypes = collect($filters['vehicle_types'] ?? [$filters['vehicle_type'] ?? null])
             ->filter()
             ->map(fn ($type): string => FleetVehicleType::label((string) $type))
@@ -253,6 +260,7 @@ class NighttimeEfficiencyDashboardService
             'ownership_type' => $ownership,
             'vehicle_types' => $vehicleTypes,
             'status' => $status,
+            'visible_statuses' => $hasVisibleStatusRestriction ? $visibleStatuses : null,
             'search' => trim((string) ($filters['search'] ?? $filters['unit_name'] ?? '')),
             'sort' => (string) ($filters['sort'] ?? 'date'),
             'direction' => ($filters['direction'] ?? 'asc') === 'desc' ? 'desc' : 'asc',
@@ -273,6 +281,9 @@ class NighttimeEfficiencyDashboardService
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership', $owner))
             ->when($filters['vehicle_types'], fn (Builder $query, array $types): Builder => $query->whereIn('vehicle_type', $types))
             ->when($filters['status'], fn (Builder $query, string $status): Builder => $query->where('efficiency_status', $status))
+            ->when($filters['status'] === null && is_array($filters['visible_statuses']), fn (Builder $query): Builder => $filters['visible_statuses'] === []
+                ? $query->whereRaw('1 = 0')
+                : $query->whereIn('efficiency_status', $filters['visible_statuses']))
             ->when($filters['search'] !== '', fn (Builder $query): Builder => $query->where('unit_name', 'like', '%'.$filters['search'].'%'));
     }
 

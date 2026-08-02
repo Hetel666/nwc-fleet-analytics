@@ -13,6 +13,8 @@ class DashboardLayoutService
 {
     private const CACHE_KEY = 'dashboard:layout:default';
 
+    public function __construct(private DashboardDisplayConfigurationService $displayConfiguration) {}
+
     /**
      * @return array<string, array<string, mixed>>
      */
@@ -20,6 +22,7 @@ class DashboardLayoutService
     {
         return collect(config('dashboard.widgets', []))
             ->filter(fn (array $widget): bool => (bool) ($widget['active'] ?? true))
+            ->filter(fn (array $widget, string $key): bool => $this->displayConfiguration->isWidgetVisible($key))
             ->all();
     }
 
@@ -102,13 +105,18 @@ class DashboardLayoutService
             ->values()
             ->map(fn (array $item, int $index): array => [
                 ...$item,
-                'order' => ($index + 1) * 10,
+                'order' => $this->displayConfiguration->dashboardOrderForWidget(
+                    $item['key'],
+                    ($index + 1) * 10
+                ),
             ])
+            ->sortBy('order')
+            ->values()
             ->all();
     }
 
     /**
-     * @param array<int, array<string, mixed>> $widgets
+     * @param  array<int, array<string, mixed>>  $widgets
      */
     public function saveLayout(array $widgets, User $admin, ?string $ip = null): void
     {
@@ -155,7 +163,7 @@ class DashboardLayoutService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $widgets
+     * @param  array<int, array<string, mixed>>  $widgets
      * @return array<int, array<string, mixed>>
      */
     private function prepareLayoutForStorage(array $widgets): array
@@ -192,7 +200,7 @@ class DashboardLayoutService
     }
 
     /**
-     * @param array<string, mixed> $item
+     * @param  array<string, mixed>  $item
      * @return array<string, mixed>
      */
     private function normaliseWidget(string $key, array $item): array

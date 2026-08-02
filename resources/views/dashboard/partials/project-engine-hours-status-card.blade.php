@@ -1,13 +1,14 @@
 @php
-    $primaryCategoryKeys = collect([
+    $primaryCategoryKeys = collect($visibleStatuses ?? [
         '0_1',
         '1_7',
         '7_10',
         'over_10',
         'no_data',
-    ]);
+    ])->filter(fn (string $key): bool => $categoryLabels->has($key))->values();
     $additionalCategoryKeys = collect();
-    $total = (int) ($summary['total'] ?? 0);
+    $fullTotal = (int) ($summary['total'] ?? 0);
+    $total = (int) $primaryCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0));
     $hasRows = $total + (int) $additionalCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0)) > 0;
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
     $title = $title ?? null;
@@ -88,6 +89,11 @@
                             <td>Cəmi</td>
                             <td class="text-end">{{ number_format($total, 0, '.', ' ') }}</td>
                         </tr>
+                        @if ($fullTotal !== $total)
+                            <tr class="dashboard-work-status-note">
+                                <td colspan="2">Gosterilir: {{ number_format($total, 0, '.', ' ') }} / {{ number_format($fullTotal, 0, '.', ' ') }}</td>
+                            </tr>
+                        @endif
                         @foreach ($additionalCategoryKeys as $key)
                             @php
                                 $count = (int) ($summary[$key] ?? 0);

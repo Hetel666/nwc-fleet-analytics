@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\GenerateDashboardExportJob;
 use App\Models\DashboardExport;
+use App\Services\DashboardDisplayConfigurationService;
 use App\Services\EfficiencyDashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,28 +12,42 @@ use Illuminate\Validation\Rule;
 
 class EfficiencyDashboardController extends Controller
 {
-    public function summary(Request $request, EfficiencyDashboardService $dashboard): array
-    {
-        return ['data' => $dashboard->summary($this->filters($request))];
+    public function summary(
+        Request $request,
+        EfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
+        $filters = $this->visibleFilters($request, $displayConfiguration);
+
+        return ['data' => $displayConfiguration->filterSummaryRows($dashboard->summary($filters), 'general_efficiency')];
     }
 
-    public function projects(Request $request, EfficiencyDashboardService $dashboard): array
-    {
-        $rows = $dashboard->paginateProjects($this->filters($request));
+    public function projects(
+        Request $request,
+        EfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
+        $rows = $dashboard->paginateProjects($this->visibleFilters($request, $displayConfiguration));
 
         return $this->paginated($rows);
     }
 
-    public function units(Request $request, EfficiencyDashboardService $dashboard): array
-    {
-        $rows = $dashboard->paginateUnits($this->filters($request));
+    public function units(
+        Request $request,
+        EfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
+        $rows = $dashboard->paginateUnits($this->visibleFilters($request, $displayConfiguration));
 
         return $this->paginated($rows);
     }
 
-    public function export(Request $request, EfficiencyDashboardService $dashboard): JsonResponse
-    {
-        $filters = $dashboard->normalizeFilters($this->filters($request), 'export');
+    public function export(
+        Request $request,
+        EfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): JsonResponse {
+        $filters = $dashboard->normalizeFilters($this->visibleFilters($request, $displayConfiguration), 'export');
         $record = DashboardExport::query()->create([
             'user_id' => $request->user()->id,
             'block' => 'efficiency',
@@ -81,5 +96,17 @@ class EfficiencyDashboardController extends Controller
                 'total' => $rows->total(),
             ],
         ];
+    }
+
+    private function visibleFilters(Request $request, DashboardDisplayConfigurationService $displayConfiguration): array
+    {
+        $filters = $this->filters($request);
+        $displayConfiguration->assertDashboardVisibleForOwnership(
+            $filters,
+            'efficiency_general_nwc',
+            'efficiency_general_rental'
+        );
+
+        return $displayConfiguration->applyVisibleStatusesToFilters($filters, 'general_efficiency');
     }
 }

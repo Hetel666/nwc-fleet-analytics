@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\GenerateDashboardExportJob;
 use App\Models\DashboardExport;
+use App\Services\DashboardDisplayConfigurationService;
 use App\Services\DaytimeEfficiencyDashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,15 +13,23 @@ use Illuminate\View\View;
 
 class DaytimeEfficiencyDashboardController extends Controller
 {
-    public function summary(Request $request, DaytimeEfficiencyDashboardService $dashboard): array
-    {
-        return ['data' => $dashboard->summary($this->filters($request))];
+    public function summary(
+        Request $request,
+        DaytimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
+        $filters = $this->visibleFilters($request, $displayConfiguration);
+
+        return ['data' => $displayConfiguration->filterSummaryRows($dashboard->summary($filters), 'daytime_efficiency')];
     }
 
-    public function projects(Request $request, DaytimeEfficiencyDashboardService $dashboard): array
-    {
+    public function projects(
+        Request $request,
+        DaytimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
         abort_unless($dashboard->isReady(), 503, 'Daytime efficiency storage is not ready.');
-        $rows = $dashboard->paginateProjects($this->filters($request));
+        $rows = $dashboard->paginateProjects($this->visibleFilters($request, $displayConfiguration));
 
         return [
             'title' => 'Gündüz effektivliyi - '.($request->string('status')->toString() ?: 'Layihələr'),
@@ -37,10 +46,13 @@ class DaytimeEfficiencyDashboardController extends Controller
         ];
     }
 
-    public function units(Request $request, DaytimeEfficiencyDashboardService $dashboard): array
-    {
+    public function units(
+        Request $request,
+        DaytimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array {
         abort_unless($dashboard->isReady(), 503, 'Daytime efficiency storage is not ready.');
-        $rows = $dashboard->paginateUnits($this->filters($request));
+        $rows = $dashboard->paginateUnits($this->visibleFilters($request, $displayConfiguration));
 
         return [
             'title' => 'Gündüz effektivliyi - Texnika siyahısı',
@@ -61,10 +73,13 @@ class DaytimeEfficiencyDashboardController extends Controller
         ];
     }
 
-    public function export(Request $request, DaytimeEfficiencyDashboardService $dashboard): JsonResponse|View
-    {
+    public function export(
+        Request $request,
+        DaytimeEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): JsonResponse|View {
         abort_unless($dashboard->isReady(), 503, 'Daytime efficiency storage is not ready.');
-        $filters = $dashboard->normalizeFilters($this->filters($request), 'export');
+        $filters = $dashboard->normalizeFilters($this->visibleFilters($request, $displayConfiguration), 'export');
         $record = DashboardExport::query()->create([
             'user_id' => $request->user()->id,
             'block' => 'daytime_efficiency',
@@ -122,5 +137,17 @@ class DaytimeEfficiencyDashboardController extends Controller
                 'total' => $rows->total(),
             ],
         ];
+    }
+
+    private function visibleFilters(Request $request, DashboardDisplayConfigurationService $displayConfiguration): array
+    {
+        $filters = $this->filters($request);
+        $displayConfiguration->assertDashboardVisibleForOwnership(
+            $filters,
+            'efficiency_daytime_nwc',
+            'efficiency_daytime_rental'
+        );
+
+        return $displayConfiguration->applyVisibleStatusesToFilters($filters, 'daytime_efficiency');
     }
 }

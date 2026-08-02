@@ -905,6 +905,10 @@ class DashboardService
         $normalized = $this->normalizeFilters($filters, 'export');
         $normalized['_date_context'] = 'export';
 
+        if (array_key_exists('visible_statuses', $filters)) {
+            $normalized['visible_statuses'] = $filters['visible_statuses'];
+        }
+
         return [$normalized, $block];
     }
 

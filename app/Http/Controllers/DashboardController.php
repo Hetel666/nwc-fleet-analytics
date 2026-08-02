@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\EquipmentType;
 use App\Models\Project;
+use App\Services\DashboardDisplayConfigurationService;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\DaytimeEfficiencyDashboardService;
@@ -22,9 +23,10 @@ class DashboardController extends Controller
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         DashboardLayoutService $layout,
+        DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $geofenceViolations);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $displayConfiguration, $geofenceViolations);
     }
 
     public function tab(
@@ -34,12 +36,13 @@ class DashboardController extends Controller
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         DashboardLayoutService $layout,
+        DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $geofenceViolations, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $displayConfiguration, $geofenceViolations, $selectedTab, true);
     }
 
     private function renderDashboard(
@@ -48,6 +51,7 @@ class DashboardController extends Controller
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         DashboardLayoutService $layout,
+        DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
         ?string $selectedTab = null,
         bool $fragment = false
@@ -112,6 +116,7 @@ class DashboardController extends Controller
                 ? Project::query()->where('active', true)->find($filters['project_id'])
                 : null,
             'dashboardLayout' => $layout->getResolvedLayout(),
+            'dashboardDisplayConfiguration' => $displayConfiguration->getConfiguration(),
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
             'dashboardTabs' => $visibleDashboardTabs,
             'selectedDashboardTab' => $selectedTab,

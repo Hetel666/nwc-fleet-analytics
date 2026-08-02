@@ -541,6 +541,11 @@
                             <i data-lucide="database"></i><span>Dashboard mənbələri</span>
                         </a>
                     @endif
+                    @can('manage-dashboard-visibility')
+                        <a class="nav-link {{ request()->routeIs('admin.dashboard-visibility.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-visibility.index') }}">
+                            <i data-lucide="sliders-horizontal"></i><span>Dashboard idaretmesi</span>
+                        </a>
+                    @endcan
                     @can('view-wialon-catalog')
                         <a class="nav-link {{ request()->routeIs('admin.wialon-catalog.*') ? 'active' : '' }}" href="{{ route('admin.wialon-catalog.index') }}">
                             <i data-lucide="layers-3"></i><span>Wialon kataloqu</span>

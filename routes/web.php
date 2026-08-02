@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Admin\CleanupHistoricalRecalculationQueueController;
 use App\Http\Controllers\Admin\DashboardAnalyticsController;
+use App\Http\Controllers\Admin\DashboardVisibilityController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
 use App\Http\Controllers\Admin\WialonCatalogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DashboardDisplayConfigurationController;
 use App\Http\Controllers\DashboardDrilldownController;
 use App\Http\Controllers\DashboardExportController;
 use App\Http\Controllers\DashboardLayoutController;
@@ -41,6 +43,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/api/dashboard/display-configuration', DashboardDisplayConfigurationController::class)->name('api.dashboard.display-configuration');
     Route::get('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'show'])->name('api.user.dashboard-preferences.show');
     Route::put('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'update'])->name('api.user.dashboard-preferences.update');
     Route::delete('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'destroy'])->name('api.user.dashboard-preferences.destroy');
@@ -85,6 +88,23 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/admin/dashboard-analytics', [DashboardAnalyticsController::class, 'index'])
         ->middleware('admin')
         ->name('admin.dashboard-analytics.index');
+
+    Route::get('/admin/dashboard-visibility', [DashboardVisibilityController::class, 'index'])
+        ->middleware('can:manage-dashboard-visibility')
+        ->name('admin.dashboard-visibility.index');
+
+    Route::prefix('api/admin')
+        ->name('api.admin.')
+        ->middleware('can:manage-dashboard-visibility')
+        ->group(function (): void {
+            Route::get('/dashboard-visibility', [DashboardVisibilityController::class, 'show'])->name('dashboard-visibility.show');
+            Route::put('/dashboard-visibility/{dashboardCode}', [DashboardVisibilityController::class, 'updateDashboard'])->name('dashboard-visibility.update');
+            Route::get('/dashboard-status-visibility', [DashboardVisibilityController::class, 'statusVisibility'])->name('dashboard-status-visibility.index');
+            Route::put('/dashboard-status-visibility/{dashboardType}/{statusCode}', [DashboardVisibilityController::class, 'updateStatus'])->name('dashboard-status-visibility.update');
+            Route::put('/dashboard-order', [DashboardVisibilityController::class, 'updateOrder'])->name('dashboard-order.update');
+            Route::post('/dashboard-visibility/reset', [DashboardVisibilityController::class, 'reset'])->name('dashboard-visibility.reset');
+            Route::get('/dashboard-visibility/audit-log', [DashboardVisibilityController::class, 'auditLog'])->name('dashboard-visibility.audit-log');
+        });
 
     Route::get('/admin/wialon-catalog', [WialonCatalogController::class, 'index'])
         ->middleware('can:view-wialon-catalog')
