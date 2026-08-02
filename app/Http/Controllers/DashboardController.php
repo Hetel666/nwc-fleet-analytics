@@ -9,6 +9,7 @@ use App\Services\DashboardService;
 use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
 use App\Services\NighttimeEfficiencyDashboardService;
+use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
@@ -51,9 +52,16 @@ class DashboardController extends Controller
         ?string $selectedTab = null,
         bool $fragment = false
     ): View {
-        $selectedTab ??= array_key_exists((string) $request->query('tab'), config('dashboard.tabs', []))
-            ? (string) $request->query('tab')
-            : (string) config('dashboard.default_tab', 'overview');
+        $visibleDashboardTabs = $request->user()?->visibleDashboardTabs() ?? [];
+        [$selectedTab, $explicitTabRequest] = DashboardSectionAccess::resolveTabForRequest($request, $selectedTab);
+
+        if (! array_key_exists($selectedTab, $visibleDashboardTabs)) {
+            abort_if($explicitTabRequest, 403);
+
+            $selectedTab = array_key_first($visibleDashboardTabs);
+            abort_if($selectedTab === null, 403);
+        }
+
         $filters = $dashboard->normalizeFilters($request->only([
             'date_from',
             'date_to',
@@ -105,7 +113,7 @@ class DashboardController extends Controller
                 : null,
             'dashboardLayout' => $layout->getResolvedLayout(),
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
-            'dashboardTabs' => config('dashboard.tabs', []),
+            'dashboardTabs' => $visibleDashboardTabs,
             'selectedDashboardTab' => $selectedTab,
             'dashboardPreferences' => $dashboardPreferences,
             'dashboardTabFragment' => $fragment,

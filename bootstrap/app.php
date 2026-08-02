@@ -35,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'active' => App\Http\Middleware\EnsureActiveUser::class,
             'admin' => App\Http\Middleware\EnsureAdmin::class,
+            'dashboard.section' => App\Http\Middleware\EnsureDashboardSectionAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

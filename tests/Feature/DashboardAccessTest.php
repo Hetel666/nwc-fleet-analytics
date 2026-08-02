@@ -77,6 +77,66 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($viewer)->get('/projects')->assertForbidden();
     }
 
+    public function test_viewer_can_be_limited_to_selected_dashboard_sections(): void
+    {
+        $this->seed(DemoSeeder::class);
+
+        $viewer = User::factory()->create([
+            'role' => User::ROLE_VIEWER,
+            'active' => true,
+            'dashboard_sections' => [User::DASHBOARD_SECTION_EFFICIENCY],
+        ]);
+
+        $this->actingAs($viewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('data-dashboard-active-tab="efficiency"', false)
+            ->assertSee('data-dashboard-tab="efficiency"', false)
+            ->assertDontSee('data-dashboard-tab="overview"', false)
+            ->assertDontSee('data-dashboard-tab="geozones"', false);
+
+        $this->actingAs($viewer)
+            ->get(route('dashboard', ['tab' => User::DASHBOARD_SECTION_OVERVIEW]))
+            ->assertForbidden();
+
+        $this->actingAs($viewer)
+            ->get(route('dashboard.tabs.show', ['tab' => User::DASHBOARD_SECTION_GEOZONES]))
+            ->assertForbidden();
+
+        $this->actingAs($viewer)
+            ->getJson(route('api.dashboard.efficiency.summary'))
+            ->assertOk();
+
+        $this->actingAs($viewer)
+            ->getJson(route('dashboard.geofence-violations.drilldown'))
+            ->assertForbidden();
+    }
+
+    public function test_admin_can_assign_dashboard_section_access_to_viewer(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $viewer = User::factory()->create(['role' => User::ROLE_VIEWER, 'active' => true]);
+
+        $this->actingAs($admin)
+            ->put(route('users.update', $viewer), [
+                'name' => $viewer->name,
+                'email' => $viewer->email,
+                'role' => User::ROLE_VIEWER,
+                'active' => '1',
+                'dashboard_sections_present' => '1',
+                'dashboard_sections' => [
+                    User::DASHBOARD_SECTION_EFFICIENCY,
+                    User::DASHBOARD_SECTION_GEOZONES,
+                ],
+            ])
+            ->assertRedirect(route('users.index'));
+
+        $this->assertSame(
+            [User::DASHBOARD_SECTION_EFFICIENCY, User::DASHBOARD_SECTION_GEOZONES],
+            $viewer->fresh()->dashboard_sections
+        );
+    }
+
     public function test_only_admin_sees_object_list_sync_button(): void
     {
         $this->seed(DemoSeeder::class);

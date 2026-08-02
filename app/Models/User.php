@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Support\DashboardSectionAccess;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -19,6 +20,12 @@ class User extends Authenticatable
 
     public const ROLE_VIEWER = 'viewer';
 
+    public const DASHBOARD_SECTION_OVERVIEW = 'overview';
+
+    public const DASHBOARD_SECTION_EFFICIENCY = 'efficiency';
+
+    public const DASHBOARD_SECTION_GEOZONES = 'geozones';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -30,6 +37,7 @@ class User extends Authenticatable
         'password',
         'role',
         'active',
+        'dashboard_sections',
     ];
 
     /**
@@ -51,6 +59,7 @@ class User extends Authenticatable
     {
         return [
             'active' => 'boolean',
+            'dashboard_sections' => 'array',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
@@ -64,6 +73,55 @@ class User extends Authenticatable
     public function isActive(): bool
     {
         return (bool) $this->active;
+    }
+
+    /** @return array<string> */
+    public static function dashboardSectionKeys(): array
+    {
+        return [
+            self::DASHBOARD_SECTION_OVERVIEW,
+            self::DASHBOARD_SECTION_EFFICIENCY,
+            self::DASHBOARD_SECTION_GEOZONES,
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function dashboardSectionOptions(): array
+    {
+        return [
+            self::DASHBOARD_SECTION_OVERVIEW => __('app.dashboard_tab_overview'),
+            self::DASHBOARD_SECTION_EFFICIENCY => __('app.dashboard_tab_efficiency'),
+            self::DASHBOARD_SECTION_GEOZONES => __('app.dashboard_tab_geozones'),
+        ];
+    }
+
+    /** @return array<string> */
+    public function allowedDashboardSections(): array
+    {
+        if ($this->isAdmin() || $this->dashboard_sections === null) {
+            return self::dashboardSectionKeys();
+        }
+
+        return collect($this->dashboard_sections)
+            ->map(fn ($section): string => (string) $section)
+            ->intersect(self::dashboardSectionKeys())
+            ->values()
+            ->all();
+    }
+
+    public function canAccessDashboardSection(?string $section): bool
+    {
+        if ($section === null) {
+            return true;
+        }
+
+        return in_array($section, $this->allowedDashboardSections(), true);
+    }
+
+    /** @return array<string, array<string, string>> */
+    public function visibleDashboardTabs(): array
+    {
+        return DashboardSectionAccess::visibleTabsFor($this);
     }
 
     public function dashboardPreference(): HasOne

@@ -7,6 +7,7 @@ use App\Models\DashboardExport;
 use App\Models\Equipment;
 use App\Services\DashboardService;
 use App\Services\XlsxExportService;
+use App\Support\DashboardSectionAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -129,8 +130,15 @@ class DashboardExportController extends Controller
 
     private function authorizeExport(Request $request, DashboardExport $export): void
     {
+        $user = $request->user();
+
         abort_unless(
-            $request->user()?->id === $export->user_id || $request->user()?->isAdmin(),
+            $user?->id === $export->user_id || $user?->isAdmin(),
+            403
+        );
+
+        abort_unless(
+            $user?->canAccessDashboardSection(DashboardSectionAccess::sectionForExportBlock($export->block)),
             403
         );
     }

@@ -514,28 +514,36 @@
 
             @php
                 $dashboardYesterday = now(config('app.timezone'))->subDay()->toDateString();
+                $currentUser = auth()->user();
+                $currentDashboardTab = $selectedDashboardTab ?? request('tab', 'overview');
             @endphp
 
             <nav class="sidebar-scroll">
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Dashboard</div>
-                    <a class="nav-link {{ request()->routeIs('dashboard') && request('tab', 'overview') === 'overview' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'overview', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Ümumi baxış">
+                    @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_OVERVIEW))
+                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'overview' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'overview', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Ümumi baxış">
                         <i data-lucide="layout-dashboard"></i><span>Ümumi baxış</span>
                     </a>
-                    <a class="nav-link {{ request()->routeIs('dashboard') && request('tab') === 'efficiency' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'efficiency', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Effektivlik">
+                    @endif
+                    @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_EFFICIENCY))
+                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'efficiency' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'efficiency', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Effektivlik">
                         <i data-lucide="gauge"></i><span>Effektivlik</span>
                     </a>
-                    <a class="nav-link {{ request()->routeIs('dashboard') && request('tab') === 'geozones' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'geozones', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Geozonalar">
+                    @endif
+                    @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_GEOZONES))
+                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'geozones' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'geozones', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Geozonalar">
                         <i data-lucide="map-pinned"></i><span>Geozonalar</span>
                     </a>
-                    @if (auth()->user()?->isAdmin())
+                    @endif
+                    @if ($currentUser?->isAdmin())
                         <a class="nav-link {{ request()->routeIs('admin.dashboard-analytics.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-analytics.index') }}">
                             <i data-lucide="database"></i><span>Dashboard mənbələri</span>
                         </a>
                     @endif
                 </div>
 
-                @if (auth()->user()?->isAdmin())
+                @if ($currentUser?->isAdmin())
                     <div class="sidebar-section">
                         <div class="sidebar-section-title">Fleet</div>
                         <a class="nav-link {{ request()->routeIs('projects.*') ? 'active' : '' }}" href="{{ route('projects.index') }}">

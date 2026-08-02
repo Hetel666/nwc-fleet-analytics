@@ -18,6 +18,7 @@
                         <th>{{ __('app.name') }}</th>
                         <th>{{ __('app.email') }}</th>
                         <th>{{ __('app.role') }}</th>
+                        <th>{{ __('app.dashboard_access') }}</th>
                         <th>{{ __('app.status') }}</th>
                         <th class="text-end"></th>
                     </tr>
@@ -36,6 +37,25 @@
                                 <span class="badge text-bg-{{ $user->isAdmin() ? 'primary' : 'secondary' }}">
                                     {{ $user->isAdmin() ? 'Admin' : 'Viewer' }}
                                 </span>
+                            </td>
+                            <td>
+                                @php
+                                    $allowedDashboardSections = $user->allowedDashboardSections();
+                                    $dashboardSectionLabels = collect(\App\Models\User::dashboardSectionOptions())
+                                        ->only($allowedDashboardSections);
+                                @endphp
+
+                                @if ($user->isAdmin() || count($allowedDashboardSections) === count(\App\Models\User::dashboardSectionKeys()))
+                                    <span class="badge text-bg-primary">{{ __('app.dashboard_access_all') }}</span>
+                                @elseif ($dashboardSectionLabels->isEmpty())
+                                    <span class="badge text-bg-secondary">{{ __('app.dashboard_access_none') }}</span>
+                                @else
+                                    <div class="d-flex flex-wrap gap-1">
+                                        @foreach ($dashboardSectionLabels as $label)
+                                            <span class="badge text-bg-light">{{ $label }}</span>
+                                        @endforeach
+                                    </div>
+                                @endif
                             </td>
                             <td>
                                 <span class="badge text-bg-{{ $user->active ? 'success' : 'secondary' }}">

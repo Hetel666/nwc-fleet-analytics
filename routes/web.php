@@ -44,31 +44,35 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::put('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'update'])->name('api.user.dashboard-preferences.update');
     Route::delete('/api/user/dashboard-preferences', [DashboardPreferencesController::class, 'destroy'])->name('api.user.dashboard-preferences.destroy');
     Route::get('/geofence-violations', GeofenceViolationsDashboardController::class)
+        ->middleware('dashboard.section:geozones')
         ->name('geofence-violations.index');
     Route::get('/dashboard/geofence-violations/drilldown', GeofenceViolationsDrilldownController::class)
+        ->middleware('dashboard.section:geozones')
         ->name('dashboard.geofence-violations.drilldown');
-    Route::get('/dashboard/tabs/{tab}', [DashboardController::class, 'tab'])->name('dashboard.tabs.show');
-    Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->name('dashboard.drilldown.units');
-    Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->name('dashboard.drilldown.units.export');
+    Route::get('/dashboard/tabs/{tab}', [DashboardController::class, 'tab'])->middleware('dashboard.section:tab')->name('dashboard.tabs.show');
+    Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units');
+    Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units.export');
     Route::put('/dashboard/layout', [DashboardLayoutController::class, 'update'])->middleware('admin')->name('dashboard.layout.update');
     Route::delete('/dashboard/layout', [DashboardLayoutController::class, 'destroy'])->middleware('admin')->name('dashboard.layout.destroy');
-    Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->name('dashboard.ownership.export');
-    Route::get('/dashboard/top-working-units/export', DashboardTopWorkingUnitsExportController::class)->name('dashboard.top-working-units.export');
-    Route::get('/dashboard/export', [DashboardExportController::class, 'create'])->name('dashboard.export');
+    Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->middleware('dashboard.section:overview')->name('dashboard.ownership.export');
+    Route::get('/dashboard/top-working-units/export', DashboardTopWorkingUnitsExportController::class)->middleware('dashboard.section:overview')->name('dashboard.top-working-units.export');
+    Route::get('/dashboard/export', [DashboardExportController::class, 'create'])->middleware('dashboard.section:export')->name('dashboard.export');
     Route::get('/dashboard/exports/{export}/status', [DashboardExportController::class, 'status'])->name('dashboard.exports.status');
     Route::get('/dashboard/exports/{export}/download', [DashboardExportController::class, 'download'])->name('dashboard.exports.download');
-    Route::get('/api/dashboard/efficiency/summary', [EfficiencyDashboardController::class, 'summary'])->name('api.dashboard.efficiency.summary');
-    Route::get('/api/dashboard/efficiency/projects', [EfficiencyDashboardController::class, 'projects'])->name('api.dashboard.efficiency.projects');
-    Route::get('/api/dashboard/efficiency/units', [EfficiencyDashboardController::class, 'units'])->name('api.dashboard.efficiency.units');
-    Route::get('/api/dashboard/efficiency/export', [EfficiencyDashboardController::class, 'export'])->name('api.dashboard.efficiency.export');
-    Route::get('/api/dashboard/daytime-efficiency/summary', [DaytimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.daytime-efficiency.summary');
-    Route::get('/api/dashboard/daytime-efficiency/projects', [DaytimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.daytime-efficiency.projects');
-    Route::get('/api/dashboard/daytime-efficiency/units', [DaytimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.daytime-efficiency.units');
-    Route::get('/api/dashboard/daytime-efficiency/export', [DaytimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.daytime-efficiency.export');
-    Route::get('/api/dashboard/nighttime-efficiency/summary', [NighttimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.nighttime-efficiency.summary');
-    Route::get('/api/dashboard/nighttime-efficiency/projects', [NighttimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.nighttime-efficiency.projects');
-    Route::get('/api/dashboard/nighttime-efficiency/units', [NighttimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.nighttime-efficiency.units');
-    Route::get('/api/dashboard/nighttime-efficiency/export', [NighttimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.nighttime-efficiency.export');
+    Route::middleware('dashboard.section:efficiency')->group(function (): void {
+        Route::get('/api/dashboard/efficiency/summary', [EfficiencyDashboardController::class, 'summary'])->name('api.dashboard.efficiency.summary');
+        Route::get('/api/dashboard/efficiency/projects', [EfficiencyDashboardController::class, 'projects'])->name('api.dashboard.efficiency.projects');
+        Route::get('/api/dashboard/efficiency/units', [EfficiencyDashboardController::class, 'units'])->name('api.dashboard.efficiency.units');
+        Route::get('/api/dashboard/efficiency/export', [EfficiencyDashboardController::class, 'export'])->name('api.dashboard.efficiency.export');
+        Route::get('/api/dashboard/daytime-efficiency/summary', [DaytimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.daytime-efficiency.summary');
+        Route::get('/api/dashboard/daytime-efficiency/projects', [DaytimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.daytime-efficiency.projects');
+        Route::get('/api/dashboard/daytime-efficiency/units', [DaytimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.daytime-efficiency.units');
+        Route::get('/api/dashboard/daytime-efficiency/export', [DaytimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.daytime-efficiency.export');
+        Route::get('/api/dashboard/nighttime-efficiency/summary', [NighttimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.nighttime-efficiency.summary');
+        Route::get('/api/dashboard/nighttime-efficiency/projects', [NighttimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.nighttime-efficiency.projects');
+        Route::get('/api/dashboard/nighttime-efficiency/units', [NighttimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.nighttime-efficiency.units');
+        Route::get('/api/dashboard/nighttime-efficiency/export', [NighttimeEfficiencyDashboardController::class, 'export'])->name('api.dashboard.nighttime-efficiency.export');
+    });
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
     Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');

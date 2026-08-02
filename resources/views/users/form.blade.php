@@ -4,6 +4,15 @@
 @section('page-title', $user->exists ? __('app.edit') : __('app.create'))
 
 @section('content')
+    @php
+        $selectedDashboardSections = old('dashboard_sections_present')
+            ? old('dashboard_sections', [])
+            : ($user->dashboard_sections ?? array_keys($dashboardSections));
+        $selectedDashboardSections = collect((array) $selectedDashboardSections)
+            ->map(fn ($section): string => (string) $section)
+            ->all();
+    @endphp
+
     <form method="POST" action="{{ $user->exists ? route('users.update', $user) : route('users.store') }}" class="panel p-4">
         @csrf
         @if($user->exists)
@@ -42,6 +51,38 @@
                 @if (auth()->id() === $user->id)
                     <input type="hidden" name="active" value="1">
                 @endif
+            </div>
+            <div class="col-12">
+                <div class="border rounded-3 p-3">
+                    <div class="d-flex flex-column flex-lg-row gap-2 justify-content-between mb-3">
+                        <div>
+                            <div class="fw-semibold">{{ __('app.dashboard_access') }}</div>
+                            <div class="form-text">{{ __('app.dashboard_access_hint') }}</div>
+                        </div>
+                        <span class="badge text-bg-light align-self-start">{{ __('app.dashboard') }}</span>
+                    </div>
+                    <input type="hidden" name="dashboard_sections_present" value="1">
+                    <div class="row g-2">
+                        @foreach ($dashboardSections as $value => $label)
+                            <div class="col-md-4">
+                                <label class="form-check">
+                                    <input
+                                        type="checkbox"
+                                        name="dashboard_sections[]"
+                                        value="{{ $value }}"
+                                        id="dashboardSection{{ \Illuminate\Support\Str::studly($value) }}"
+                                        class="form-check-input @error('dashboard_sections') is-invalid @enderror @error('dashboard_sections.*') is-invalid @enderror"
+                                        @checked(in_array($value, $selectedDashboardSections, true))
+                                    >
+                                    <span class="form-check-label">{{ $label }}</span>
+                                </label>
+                            </div>
+                        @endforeach
+                    </div>
+                    @error('dashboard_sections')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    @error('dashboard_sections.*')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    <div class="form-text mt-2">{{ __('app.dashboard_access_admin_hint') }}</div>
+                </div>
             </div>
             <div class="col-md-6">
                 <label class="form-label">{{ __('app.password') }}</label>

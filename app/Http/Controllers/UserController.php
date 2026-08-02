@@ -23,6 +23,7 @@ class UserController extends Controller
         return view('users.form', [
             'user' => new User(['role' => User::ROLE_VIEWER, 'active' => true]),
             'roles' => $this->roles(),
+            'dashboardSections' => User::dashboardSectionOptions(),
         ]);
     }
 
@@ -38,6 +39,7 @@ class UserController extends Controller
         return view('users.form', [
             'user' => $user,
             'roles' => $this->roles(),
+            'dashboardSections' => User::dashboardSectionOptions(),
         ]);
     }
 
@@ -92,10 +94,17 @@ class UserController extends Controller
             ],
             'role' => ['required', Rule::in(array_keys($this->roles()))],
             'active' => ['nullable', 'boolean'],
+            'dashboard_sections' => ['nullable', 'array'],
+            'dashboard_sections.*' => [Rule::in(User::dashboardSectionKeys())],
             'password' => $passwordRules,
         ]);
 
         $data['active'] = $request->boolean('active');
+        $data['dashboard_sections'] = match (true) {
+            $data['role'] === User::ROLE_ADMIN => null,
+            $request->has('dashboard_sections_present') => array_values($request->input('dashboard_sections', [])),
+            default => null,
+        };
 
         if (($data['password'] ?? '') === '') {
             unset($data['password']);
