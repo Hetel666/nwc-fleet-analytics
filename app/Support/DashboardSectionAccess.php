@@ -43,7 +43,7 @@ final class DashboardSectionAccess
     {
         $block = str_replace('-', '_', strtolower(trim((string) $block)));
 
-        if (in_array($block, ['efficiency', 'daytime_efficiency', 'nighttime_efficiency'], true)) {
+        if (in_array($block, ['efficiency', 'daytime_efficiency', 'nighttime_efficiency', 'night_day_efficiency'], true)) {
             return User::DASHBOARD_SECTION_EFFICIENCY;
         }
 

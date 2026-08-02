@@ -401,6 +401,7 @@ class DashboardReportPipelineService
             HistoricalRecalculation::SECTION_EFFICIENCY => 'Effektivlik',
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => 'Effektivlik gündüz',
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY => 'Effektivlik gecə',
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY => 'Gün daxilində gecə effektivliyi',
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS => 'Top 20',
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE => 'Geofence Transferləri',
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS => 'Geofence Pozuntuları',
@@ -855,6 +856,11 @@ class DashboardReportPipelineService
             'rows_saved' => 'facts_saved_count',
             'unmatched_rows' => 'unmatched_report_rows',
         ], $runIds->all(), 'nighttime_efficiency_sync_runs');
+        $metrics = $this->appendSyncTaskMetrics($metrics, 'night_day_efficiency_sync_tasks', [
+            'rows_received' => 'report_rows_received',
+            'rows_saved' => 'facts_saved_count',
+            'unmatched_rows' => 'unmatched_report_rows',
+        ], $runIds->all(), 'night_day_efficiency_sync_runs');
 
         foreach ($pipeline['steps'] ?? [] as $index => $step) {
             $started = isset($step['started_at']) ? strtotime((string) $step['started_at']) : false;
@@ -987,6 +993,12 @@ class DashboardReportPipelineService
                 'nighttime_efficiency_daily_facts',
                 'shift_date',
                 ['shift_date', 'project_id', 'wialon_unit_id'],
+                $dateRanges->all()
+            ),
+            'night_day_efficiency_daily_facts' => $this->duplicateCount(
+                'night_day_efficiency_daily_facts',
+                'business_date',
+                ['business_date', 'project_id', 'wialon_unit_id'],
                 $dateRanges->all()
             ),
             'engine_hours_report_unit_days' => $this->duplicateCount(

@@ -30,6 +30,7 @@ class QueueDashboardReportsSync extends Command
     private const DAILY_MODULES = [
         HistoricalRecalculation::SECTION_EFFICIENCY,
         HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
     ];
@@ -39,6 +40,7 @@ class QueueDashboardReportsSync extends Command
         HistoricalRecalculation::SECTION_EFFICIENCY,
         HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
         HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
         HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
@@ -51,6 +53,7 @@ class QueueDashboardReportsSync extends Command
         'daily_averages' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         'efficiency' => HistoricalRecalculation::SECTION_EFFICIENCY,
         'daytime_efficiency' => HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        'night_day_efficiency' => HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
         'nighttime_efficiency' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
         'top_20' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
         'top20' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,

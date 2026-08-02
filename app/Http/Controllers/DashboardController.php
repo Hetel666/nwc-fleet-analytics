@@ -9,6 +9,7 @@ use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
+use App\Services\NightDayEfficiencyDashboardService;
 use App\Services\NighttimeEfficiencyDashboardService;
 use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
@@ -22,11 +23,12 @@ class DashboardController extends Controller
         DashboardService $dashboard,
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
+        NightDayEfficiencyDashboardService $nightDayEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations
     ): View {
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $displayConfiguration, $geofenceViolations);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations);
     }
 
     public function tab(
@@ -35,6 +37,7 @@ class DashboardController extends Controller
         DashboardService $dashboard,
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
+        NightDayEfficiencyDashboardService $nightDayEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations
@@ -42,7 +45,7 @@ class DashboardController extends Controller
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $layout, $displayConfiguration, $geofenceViolations, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations, $selectedTab, true);
     }
 
     private function renderDashboard(
@@ -50,6 +53,7 @@ class DashboardController extends Controller
         DashboardService $dashboard,
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
+        NightDayEfficiencyDashboardService $nightDayEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
@@ -95,6 +99,14 @@ class DashboardController extends Controller
             $data['nighttimeEfficiencyByOwnership'] = [
                 'NWC' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'NWC'),
                 'ICARE' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'ICARE'),
+            ];
+            $nightDayFilters = [
+                ...$filters,
+                'search' => '',
+            ];
+            $data['nightDayEfficiencyByOwnership'] = [
+                'NWC' => $nightDayEfficiency->summaryForOwnership($nightDayFilters, 'NWC'),
+                'ICARE' => $nightDayEfficiency->summaryForOwnership($nightDayFilters, 'ICARE'),
             ];
         }
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);

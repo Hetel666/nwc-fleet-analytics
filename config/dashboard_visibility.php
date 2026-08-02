@@ -78,6 +78,18 @@ return [
             'default_order' => 311,
             'layout_widget' => null,
         ],
+        'night_day_efficiency_nwc' => [
+            'title_az' => 'Gun daxilinde gece effektivliyi: NWC',
+            'section' => 'efficiency',
+            'default_order' => 320,
+            'layout_widget' => null,
+        ],
+        'night_day_efficiency_rental' => [
+            'title_az' => 'Gun daxilinde gece effektivliyi: Icare',
+            'section' => 'efficiency',
+            'default_order' => 321,
+            'layout_widget' => null,
+        ],
         'average_engine_hours' => [
             'title_az' => 'Orta Engine hours',
             'section' => 'efficiency',
@@ -131,6 +143,9 @@ return [
         ],
         'nighttime_efficiency' => [
             'title_az' => 'Gece effektivliyi',
+        ],
+        'night_day_efficiency' => [
+            'title_az' => 'Gun daxilinde gece effektivliyi',
         ],
     ],
 

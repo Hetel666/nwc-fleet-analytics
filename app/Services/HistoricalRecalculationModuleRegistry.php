@@ -18,6 +18,7 @@ class HistoricalRecalculationModuleRegistry
         private EfficiencyRecalculationHandler $efficiency,
         private DaytimeEfficiencyRecalculationHandler $daytimeEfficiency,
         private NighttimeEfficiencyRecalculationHandler $nighttimeEfficiency,
+        private NightDayEfficiencyRecalculationHandler $nightDayEfficiency,
     ) {}
 
     /** @return array<string, array<string, mixed>> */
@@ -75,6 +76,19 @@ class HistoricalRecalculationModuleRegistry
                     'nighttime_efficiency_daily_facts',
                     'nighttime_efficiency_sync_runs',
                     'nighttime_efficiency_sync_tasks',
+                ],
+                'aliases' => [],
+            ],
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY => [
+                'label' => 'Gün daxilində gecə effektivliyi',
+                'handler' => 'executeNightDayEfficiency',
+                'service' => NightDayEfficiencyRecalculationHandler::class,
+                'job' => RunHistoricalRecalculationTaskJob::class,
+                'queue' => $queue,
+                'result_tables' => [
+                    'night_day_efficiency_daily_facts',
+                    'night_day_efficiency_sync_runs',
+                    'night_day_efficiency_sync_tasks',
                 ],
                 'aliases' => [],
             ],
@@ -173,6 +187,11 @@ class HistoricalRecalculationModuleRegistry
     private function executeNighttimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
         return $this->nighttimeEfficiency->execute($run, $task);
+    }
+
+    private function executeNightDayEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
+    {
+        return $this->nightDayEfficiency->execute($run, $task);
     }
 
     private function executeGeofenceOutside(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int

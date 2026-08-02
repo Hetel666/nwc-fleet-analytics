@@ -30,6 +30,9 @@ return [
         'night report Engine hours (api)' => [
             'Effektivlik gecə',
         ],
+        'night day report Engine hours (api)' => [
+            'Gün daxilində gecə effektivliyi',
+        ],
         'Geofence Pozuntuları api' => [
             'Geofence Pozuntuları',
         ],

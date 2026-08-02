@@ -29,6 +29,9 @@ class DashboardEfficiencyOrderTest extends TestCase
             'id="efficiency-nighttime"',
             'Effektivlik gecə: NWC üzrə',
             'Effektivlik gecə: İcarə üzrə',
+            'id="efficiency-night-day"',
+            'Gün daxilində gecə effektivliyi: NWC üzrə',
+            'Gün daxilində gecə effektivliyi: İcarə üzrə',
             'id="efficiency-averages"',
             'data-widget-key="average-engine-hours"',
             'data-widget-key="average-mileage"',
@@ -39,9 +42,11 @@ class DashboardEfficiencyOrderTest extends TestCase
 
         $this->assertStringContainsString('Seçilmiş dövr üçün məlumat yoxdur', $html);
         $this->assertStringContainsString('Seçilmiş dövr üçün gecə növbəsi məlumatı yoxdur', $html);
+        $this->assertStringContainsString('Seçilmiş dövr üçün gün daxilində gecə effektivliyi məlumatı yoxdur', $html);
         $this->assertStringContainsString('Qrup report Engine hours (api)', $html);
         $this->assertStringContainsString('day report Engine hours (api)', $html);
         $this->assertStringContainsString('night report Engine hours (api)', $html);
+        $this->assertStringContainsString('night day report Engine hours (api)', $html);
     }
 
     public function test_efficiency_order_is_identical_for_every_dashboard_layout(): void
@@ -64,6 +69,7 @@ class DashboardEfficiencyOrderTest extends TestCase
                 'id="efficiency-general"',
                 'id="efficiency-daytime"',
                 'id="efficiency-nighttime"',
+                'id="efficiency-night-day"',
                 'id="efficiency-averages"',
                 'id="efficiency-top20"',
             ], $layout);
@@ -88,6 +94,7 @@ class DashboardEfficiencyOrderTest extends TestCase
             'name="ownership_type"',
             '/api/dashboard/daytime-efficiency/export',
             '/api/dashboard/nighttime-efficiency/export',
+            '/api/dashboard/night-day-efficiency/export',
             'id="dashboardDrilldownSearch"',
             'block=least-working',
             'block=most-working',
@@ -183,6 +190,7 @@ class DashboardEfficiencyOrderTest extends TestCase
             'data-efficiency-section="general"',
             'data-efficiency-section="daytime"',
             'data-efficiency-section="nighttime"',
+            'data-efficiency-section="night-day"',
             'data-efficiency-section="averages"',
             'data-efficiency-section="top20"',
         ]);

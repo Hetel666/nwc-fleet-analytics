@@ -778,6 +778,10 @@ class DashboardService
             return app(NighttimeEfficiencyDashboardService::class)->export($filters);
         }
 
+        if (in_array($block, ['night_day_efficiency', 'night-day-efficiency'], true)) {
+            return app(NightDayEfficiencyDashboardService::class)->export($filters);
+        }
+
         if ($block === 'efficiency') {
             return $this->efficiency->export($filters);
         }

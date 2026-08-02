@@ -33,6 +33,7 @@ class DashboardAnalyticsController extends Controller
             'project-work-categories-nwc', 'project-work-categories-icare' => 'efficiency',
             'daytime-efficiency-nwc', 'daytime-efficiency-icare' => 'daytime_efficiency',
             'nighttime-efficiency-nwc', 'nighttime-efficiency-icare' => 'nighttime_efficiency',
+            'night-day-efficiency-nwc', 'night-day-efficiency-icare' => 'night_day_efficiency',
             default => 'static_fleet',
         };
     }

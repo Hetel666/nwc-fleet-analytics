@@ -574,6 +574,7 @@ class HistoricalRecalculationTest extends TestCase
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
@@ -589,6 +590,7 @@ class HistoricalRecalculationTest extends TestCase
             $this->assertStringContainsString('value="'.$moduleCode.'"', $view);
         }
         $this->assertStringContainsString('value="daytime_efficiency"', $view);
+        $this->assertStringContainsString('value="night_day_efficiency"', $view);
     }
 
     public function test_historical_page_exposes_pipeline_queue_snapshot(): void
@@ -788,7 +790,7 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
     }
 
-    public function test_sync_daily_command_queues_four_step_master_pipeline_without_nighttime(): void
+    public function test_sync_daily_command_queues_five_step_master_pipeline_without_cross_midnight_nighttime(): void
     {
         Queue::fake();
         Carbon::setTestNow(Carbon::parse('2026-08-02 00:00:00', 'Asia/Baku'));
@@ -817,6 +819,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame([
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
         ], collect($pipelines[0]['plans'])->pluck('section')->all());

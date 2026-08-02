@@ -7,6 +7,7 @@ use App\Jobs\RunHistoricalRecalculationTaskJob;
 use App\Models\Equipment;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
+use App\Models\NightDayEfficiencySyncRun;
 use App\Models\NighttimeEfficiencySyncRun;
 use App\Models\Project;
 use App\Models\User;
@@ -388,6 +389,16 @@ class HistoricalRecalculationService
                 ]);
         }
 
+        if ($run->dashboard_section === HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY
+            && Schema::hasTable('night_day_efficiency_sync_runs')) {
+            NightDayEfficiencySyncRun::query()
+                ->where('historical_recalculation_id', $run->id)
+                ->update([
+                    'status' => HistoricalRecalculation::STATUS_CANCELLED,
+                    'completed_at' => now(config('app.timezone')),
+                ]);
+        }
+
         $this->refreshProgress($run);
         $this->cleanupStuckQueue($run);
     }
@@ -662,6 +673,7 @@ class HistoricalRecalculationService
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
         ], true)) {
             return Project::query()
                 ->where('active', true)
@@ -729,6 +741,7 @@ class HistoricalRecalculationService
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
         ], true)
             && $operation === HistoricalRecalculation::OPERATION_RECALCULATE) {
             return true;
@@ -755,6 +768,7 @@ class HistoricalRecalculationService
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
