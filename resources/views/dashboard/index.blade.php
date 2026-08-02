@@ -7,6 +7,10 @@
 @php
     $nwc = \App\Models\Equipment::OWNERSHIP_NWC;
     $icare = \App\Models\Equipment::OWNERSHIP_ICARE;
+    $dashboardPreferences = array_replace(
+        \App\Models\UserDashboardPreference::defaults(),
+        is_array($dashboardPreferences ?? null) ? $dashboardPreferences : []
+    );
     $overview = $data['overview'] ?? [
         'ownership_share' => [],
         'total_hours' => 0,
