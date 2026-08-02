@@ -35,7 +35,7 @@ class NightDayEfficiencyModuleTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_report_service_resolves_only_the_night_day_template_and_keeps_calendar_day_window(): void
+    public function test_report_service_resolves_only_the_night_day_template_and_converts_baku_windows_for_api(): void
     {
         config()->set('fleet.wialon.night_day_efficiency_report_resource_id', 601701680);
         config()->set('fleet.wialon.night_day_efficiency_report_template_id', 22);
@@ -71,8 +71,8 @@ class NightDayEfficiencyModuleTest extends TestCase
         $this->assertSame(22, $result['template_id']);
         $this->assertSame('night day report Engine hours (api)', $result['template_name']);
         $this->assertSame(0, $execution[1]['tbl'][0]['sch']['f1']);
-        $this->assertSame(479, $execution[1]['tbl'][0]['sch']['t1']);
-        $this->assertSame(1080, $execution[1]['tbl'][0]['sch']['f2']);
+        $this->assertSame(239, $execution[1]['tbl'][0]['sch']['t1']);
+        $this->assertSame(840, $execution[1]['tbl'][0]['sch']['f2']);
         $this->assertSame(1439, $execution[1]['tbl'][0]['sch']['t2']);
         $this->assertSame(CarbonImmutable::parse('2026-07-31 00:00:00', 'Asia/Baku')->timestamp, $execution[3]);
         $this->assertSame(CarbonImmutable::parse('2026-07-31 23:59:59', 'Asia/Baku')->timestamp, $execution[4]);

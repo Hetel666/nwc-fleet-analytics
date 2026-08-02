@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ProjectWialonGroup;
 use Carbon\CarbonInterface;
+use DateTimeZone;
 use RuntimeException;
 use Throwable;
 
@@ -63,7 +64,7 @@ class WialonNightDayEfficiencyReportService
                 $this->wialon->cleanupReportResult($sid);
                 $result = $this->wialon->executeReportTemplate(
                     $settings['resource_id'],
-                    $this->apiTemplate($settings, $sid),
+                    $this->apiTemplate($settings, $from, $sid),
                     $group->wialon_group_id,
                     $from->timestamp,
                     $to->timestamp,
@@ -126,16 +127,18 @@ class WialonNightDayEfficiencyReportService
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
      */
-    private function apiTemplate(array $settings, string $sid): array
+    private function apiTemplate(array $settings, CarbonInterface $date, string $sid): array
     {
         $template = $this->sourceTemplate ??= $this->wialon->getReportTemplateData(
             $settings['resource_id'],
             $settings['template_id'],
             $sid,
         );
+        $timezone = (string) config('historical_recalculation.timezone', 'Asia/Baku');
+        $offsetMinutes = intdiv((new DateTimeZone($timezone))->getOffset($date), 60);
         $engineTableFound = false;
 
-        foreach ($template['tbl'] ?? [] as $table) {
+        foreach ($template['tbl'] ?? [] as $index => $table) {
             if (($table['n'] ?? null) !== 'unit_group_engine_hours') {
                 continue;
             }
@@ -146,6 +149,17 @@ class WialonNightDayEfficiencyReportService
             if ((int) ($schedule['fl'] ?? 0) !== 1 || $this->scheduleWindows($schedule) !== ['0-479', '1080-1439']) {
                 throw new RuntimeException('Wialon night day efficiency table must be limited to 00:00-07:59 and 18:00-23:59 Asia/Baku.');
             }
+
+            if ($offsetMinutes !== 240) {
+                throw new RuntimeException('Wialon night day efficiency currently requires the Asia/Baku UTC+04:00 offset.');
+            }
+
+            // Wialon applies table schedules in UTC. For one Baku calendar day
+            // we send the equivalent API windows: 20:00-03:59 and 14:00-23:59 UTC.
+            $template['tbl'][$index]['sch']['f1'] = 0;
+            $template['tbl'][$index]['sch']['t1'] = 239;
+            $template['tbl'][$index]['sch']['f2'] = 840;
+            $template['tbl'][$index]['sch']['t2'] = 1439;
         }
 
         if (! $engineTableFound) {
