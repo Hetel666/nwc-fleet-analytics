@@ -132,6 +132,12 @@
     <div class="row g-3 mb-4">
         <div class="col-12 col-md-4">
             <div class="analytics-map-stat p-3">
+                <div class="analytics-map-label mb-1">Dashboard sayı</div>
+                <div class="fs-3 fw-bold">{{ count($dashboards) }}</div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="analytics-map-stat p-3">
                 <div class="analytics-map-label mb-1">Vidjet sayı</div>
                 <div class="fs-3 fw-bold">{{ count($widgets) }}</div>
             </div>
@@ -142,13 +148,81 @@
                 <div class="fw-bold">Dashboard lokal cədvəllərdən oxuyur</div>
             </div>
         </div>
-        <div class="col-12 col-md-4">
-            <div class="analytics-map-stat p-3">
-                <div class="analytics-map-label mb-1">Dəyişiklik yeri</div>
-                <div class="fw-bold">config/dashboard_analytics.php</div>
-            </div>
-        </div>
     </div>
+
+    @if (! empty($dashboards))
+        <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+            <h3 class="h5 fw-bold mb-0">Dashboard məntiqi</h3>
+            <span class="text-secondary small">{{ count($dashboards) }} bölmə</span>
+        </div>
+
+        <div class="row g-3 mb-4">
+            @foreach ($dashboards as $key => $dashboard)
+                <div class="col-12 col-xl-6">
+                    <article class="analytics-map-binding h-100 p-3">
+                        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                            <div>
+                                <span class="analytics-map-key">{{ $key }}</span>
+                                <h4 class="h5 fw-bold mt-3 mb-1">{{ $dashboard['title'] }}</h4>
+                                <p class="text-secondary mb-0">{{ $dashboard['purpose'] }}</p>
+                            </div>
+                            <span class="analytics-map-chip"><i class="bi bi-hdd-network"></i> {{ $dashboard['route'] }}</span>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-12 col-md-6">
+                                <div class="analytics-map-label mb-1">Mənbə</div>
+                                <div class="small text-secondary">{{ $dashboard['source'] }}</div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="analytics-map-label mb-1">Worker / scheduler</div>
+                                <div class="small text-secondary">{{ $dashboard['worker'] }}</div>
+                            </div>
+                            <div class="col-12">
+                                <div class="analytics-map-label mb-1">Yenilənmə</div>
+                                <div class="small text-secondary">{{ $dashboard['refresh'] }}</div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <div class="analytics-map-label mb-2">Oxunan cədvəllər</div>
+                                <ul class="analytics-map-list small">
+                                    @foreach ($dashboard['reads'] as $item)
+                                        <li>{{ $item }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="analytics-map-label mb-2">Hesablama qaydası</div>
+                                <ul class="analytics-map-list small">
+                                    @foreach ($dashboard['calculation'] as $item)
+                                        <li>{{ $item }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="analytics-map-label mb-2">Dashboard blokları</div>
+                                <ul class="analytics-map-list small">
+                                    @foreach ($dashboard['widgets'] as $item)
+                                        <li>{{ $item }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="analytics-map-label mb-2">Klik / export</div>
+                                <ul class="analytics-map-list small">
+                                    @foreach ($dashboard['controls'] as $item)
+                                        <li>{{ $item }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            @endforeach
+        </div>
+    @endif
 
     <div class="row g-3 mb-4">
         @foreach ($updateSections as $key => $section)

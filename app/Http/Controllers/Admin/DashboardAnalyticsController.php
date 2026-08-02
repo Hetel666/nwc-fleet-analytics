@@ -12,6 +12,7 @@ class DashboardAnalyticsController extends Controller
         $updateSections = config('dashboard_analytics.update_sections', []);
 
         return view('admin.dashboard-analytics.index', [
+            'dashboards' => config('dashboard_analytics.dashboards', []),
             'widgets' => collect(config('dashboard_analytics.widgets', []))
                 ->map(fn (array $widget): array => $widget + [
                     'update_section' => $this->updateSectionForWidget((string) ($widget['key'] ?? '')),
@@ -30,6 +31,8 @@ class DashboardAnalyticsController extends Controller
             'geofence-analysis' => 'geofence_outside',
             'geofence-violations-report' => 'geofence_violations',
             'project-work-categories-nwc', 'project-work-categories-icare' => 'efficiency',
+            'daytime-efficiency-nwc', 'daytime-efficiency-icare' => 'daytime_efficiency',
+            'nighttime-efficiency-nwc', 'nighttime-efficiency-icare' => 'nighttime_efficiency',
             default => 'static_fleet',
         };
     }
