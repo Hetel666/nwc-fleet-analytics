@@ -920,6 +920,45 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
     }
 
+    public function test_legacy_task_lock_does_not_block_pending_task_claim(): void
+    {
+        Queue::fake();
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '76705dbb-57c3-4085-9db7-a95eebc40a85',
+            'signature' => 'legacy-task-lock-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $task = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+        ]);
+        $taskLock = Cache::lock('historical-recalculation-task:'.$task->id, 7200);
+        $this->assertTrue($taskLock->get());
+
+        try {
+            Artisan::shouldReceive('call')->once()->andReturn(0);
+
+            (new RunHistoricalRecalculationTaskJob($task->id))->handle(
+                app(HistoricalRecalculationModuleRegistry::class),
+                app(HistoricalRecalculationService::class)
+            );
+        } finally {
+            $taskLock->release();
+        }
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_COMPLETED, $task->refresh()->status);
+    }
+
     public function test_diagnose_runs_can_recover_stale_running_task_for_explicit_run(): void
     {
         Queue::fake();

@@ -10,7 +10,7 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -65,32 +65,30 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $lock = Cache::lock('historical-recalculation-task:'.$task->id, (int) config('historical_recalculation.lock_seconds', 7200));
+        $claimed = HistoricalRecalculationTask::query()
+            ->whereKey($task->id)
+            ->where('status', HistoricalRecalculationTask::STATUS_PENDING)
+            ->update([
+                'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+                'attempts' => DB::raw('COALESCE(attempts, 0) + 1'),
+                'started_at' => $task->started_at ?: now(config('app.timezone')),
+                'last_heartbeat_at' => now(config('app.timezone')),
+                'error_message' => null,
+            ]);
 
-        if (! $lock->get()) {
-            Log::info('Historical recalculation task lock is already held; duplicate job skipped.', [
+        if ($claimed !== 1) {
+            Log::info('Historical recalculation task was already claimed; duplicate job skipped.', [
                 'run_id' => $run->id,
                 'task_id' => $task->id,
                 'module' => $run->dashboard_section,
             ]);
+            $service->dispatchNextPendingFetchTask($run->refresh());
 
             return;
         }
 
         try {
             $task = $task->refresh();
-
-            if ($task->status !== HistoricalRecalculationTask::STATUS_PENDING) {
-                return;
-            }
-
-            $task->forceFill([
-                'status' => HistoricalRecalculationTask::STATUS_RUNNING,
-                'attempts' => $task->attempts + 1,
-                'started_at' => $task->started_at ?: now(config('app.timezone')),
-                'last_heartbeat_at' => now(config('app.timezone')),
-                'error_message' => null,
-            ])->save();
 
             $run->forceFill([
                 'status' => HistoricalRecalculation::STATUS_RUNNING,
@@ -113,7 +111,6 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
         } catch (Throwable $exception) {
             $service->markTaskFailed($task, $exception->getMessage());
         } finally {
-            optional($lock)->release();
             $service->dispatchNextPendingFetchTask($run->refresh());
         }
     }
