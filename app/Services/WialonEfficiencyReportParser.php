@@ -26,7 +26,7 @@ class WialonEfficiencyReportParser
             throw new RuntimeException('Wialon efficiency report tables are missing.');
         }
 
-        foreach ($reportTables as $reportTable) {
+        foreach ($reportTables as $tablePosition => $reportTable) {
             $table = $reportTable['table'] ?? [];
             $headers = array_map(fn ($value): string => trim((string) $value), $table['header'] ?? []);
             $types = $table['header_type'] ?? [];
@@ -41,6 +41,8 @@ class WialonEfficiencyReportParser
             }
 
             $matchedTable = true;
+            $tableName = (string) (($table['name'] ?? null) ?: ($table['label'] ?? 'Qrup report Engine hours'));
+            $tableIndex = (int) ($reportTable['index'] ?? $tablePosition);
 
             foreach (($reportTable['rows'] ?? []) as $row) {
                 if (! is_array($row)) {
@@ -64,6 +66,10 @@ class WialonEfficiencyReportParser
                     'ended_at' => $indexes['end'] === null ? null : $this->dateTime($cells[$indexes['end']] ?? null),
                     'mileage_km' => $this->decimal($cells[$indexes['mileage']] ?? null),
                     'mileage_raw' => $mileageRaw,
+                    'source_table' => $tableName,
+                    'source_table_index' => $tableIndex,
+                    'engine_hours_column_index' => $indexes['engine_hours'],
+                    'engine_hours_column_label' => $headers[$indexes['engine_hours']] ?? 'Engine hours',
                     'raw_row_json' => $row,
                 ];
             }

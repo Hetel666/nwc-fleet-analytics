@@ -495,10 +495,14 @@ class HistoricalRecalculationService
             'error_summary' => $failed > 0 ? "{$failed} of {$total} tasks failed." : null,
         ])->save();
 
-        Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+        $pipelines = app(DashboardReportPipelineService::class);
+
+        if (! $pipelines->containsRun((int) $run->id)) {
+            Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+        }
 
         try {
-            app(DashboardReportPipelineService::class)->handleRunFinished($run->refresh());
+            $pipelines->handleRunFinished($run->refresh());
         } catch (\Throwable $exception) {
             Log::error('Dashboard report pipeline could not continue after historical run finalization.', [
                 'run_id' => $run->id,

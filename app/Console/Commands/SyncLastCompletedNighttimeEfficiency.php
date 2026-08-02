@@ -16,7 +16,20 @@ class SyncLastCompletedNighttimeEfficiency extends Command
     public function handle(HistoricalRecalculationService $service, DashboardReportPipelineService $pipelines): int
     {
         $timezone = (string) config('historical_recalculation.timezone', 'Asia/Baku');
-        $shiftDate = now($timezone)->subDay()->toDateString();
+        $now = now($timezone);
+        $shiftDate = $now->copy()->subDay()->toDateString();
+        $readyAt = $now->copy()->subDay()->startOfDay()->addDay()->setTime(8, 5);
+
+        if ($now->lt($readyAt)) {
+            $this->line(sprintf(
+                'Nighttime efficiency shift %s is not complete yet; ready after %s.',
+                $shiftDate,
+                $readyAt->toDateTimeString(),
+            ));
+
+            return self::SUCCESS;
+        }
+
         $query = HistoricalRecalculation::query()
             ->where('dashboard_section', HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY)
             ->whereDate('date_from', $shiftDate)
@@ -49,7 +62,7 @@ class SyncLastCompletedNighttimeEfficiency extends Command
             'section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'project_ids' => [],
-            'force' => true,
+            'force' => (bool) $this->option('force'),
         ];
         $preview = $service->preview([
             'date_from' => $shiftDate,
@@ -59,7 +72,7 @@ class SyncLastCompletedNighttimeEfficiency extends Command
             'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'project_ids' => [],
-            'force' => true,
+            'force' => (bool) $this->option('force'),
         ]);
         $result = $pipelines->queue([$plan], 'nightly', $pipelines->priorityForSource('nightly'));
 

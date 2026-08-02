@@ -205,7 +205,7 @@ class DaytimeEfficiencyModuleTest extends TestCase
     public function test_scheduler_queues_dashboard_reports_at_0000_baku(): void
     {
         $events = collect(app(Schedule::class)->events());
-        $event = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:queue-sync --daily --force'));
+        $event = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:sync-daily'));
 
         $this->assertNotNull($event);
         $this->assertSame('0 0 * * *', $event->expression);

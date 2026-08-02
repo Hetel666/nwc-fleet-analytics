@@ -28,9 +28,7 @@ class QueueDashboardReportsSync extends Command
 
     /** @var array<int, string> */
     private const DAILY_MODULES = [
-        HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         HistoricalRecalculation::SECTION_EFFICIENCY,
-        HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
         HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,

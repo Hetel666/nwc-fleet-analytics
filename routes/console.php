@@ -2,15 +2,15 @@
 
 use Illuminate\Support\Facades\Schedule;
 
-Schedule::command('dashboard-reports:queue-sync --daily --force')
+Schedule::command('dashboard-reports:sync-daily')
     ->dailyAt('00:00')
     ->timezone(config('app.timezone', 'Asia/Baku'))
-    ->withoutOverlapping(180);
+    ->withoutOverlapping();
 
-Schedule::command('nighttime-efficiency:sync-last-completed-shift --force')
+Schedule::command('nighttime-efficiency:sync-last-completed-shift')
     ->dailyAt('08:30')
     ->timezone(config('app.timezone', 'Asia/Baku'))
-    ->withoutOverlapping(180);
+    ->withoutOverlapping();
 
 Schedule::command('dashboard-reports:pipeline-tick')
     ->hourly()

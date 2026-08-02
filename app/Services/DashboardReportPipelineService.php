@@ -6,6 +6,8 @@ use App\Models\HistoricalRecalculation;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -124,6 +126,30 @@ class DashboardReportPipelineService
 
         foreach ($pipelines as $pipeline) {
             if (in_array($pipeline['status'] ?? null, [self::STATUS_PENDING, self::STATUS_RUNNING], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function containsRun(int $runId): bool
+    {
+        if ($runId <= 0) {
+            return false;
+        }
+
+        foreach ($this->load() as $pipeline) {
+            if ((int) ($pipeline['current_run_id'] ?? 0) === $runId) {
+                return true;
+            }
+
+            $runIds = collect($pipeline['run_ids'] ?? [])
+                ->map(fn (mixed $id): int => (int) $id)
+                ->filter()
+                ->all();
+
+            if (in_array($runId, $runIds, true)) {
                 return true;
             }
         }
@@ -377,12 +403,241 @@ class DashboardReportPipelineService
     /** @param  array<string, mixed>  $pipeline */
     private function completePipeline(array &$pipeline): void
     {
+        $metrics = $this->pipelineMetrics($pipeline);
+        $validation = $this->validatePipeline($pipeline, $metrics);
+
+        if (($validation['errors'] ?? []) !== []) {
+            $pipeline['errors'] = array_values(array_unique(array_merge(
+                $pipeline['errors'] ?? [],
+                $validation['errors'],
+            )));
+        }
+
+        $pipeline['metrics'] = $metrics;
+        $pipeline['validation'] = $validation;
         $pipeline['current_run_id'] = null;
         $pipeline['status'] = empty($pipeline['errors'])
             ? self::STATUS_COMPLETED
             : self::STATUS_COMPLETED_WITH_ERRORS;
         $pipeline['completed_at'] = now(config('app.timezone'))->toDateTimeString();
         $pipeline['updated_at'] = now(config('app.timezone'))->toDateTimeString();
+
+        if (empty($pipeline['errors'])) {
+            Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+            $pipeline['cache_refreshed_at'] = now(config('app.timezone'))->toDateTimeString();
+        }
+    }
+
+    /** @param  array<string, mixed>  $pipeline */
+    private function pipelineMetrics(array $pipeline): array
+    {
+        $runIds = collect($pipeline['run_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+        $runs = HistoricalRecalculation::query()
+            ->with('tasks')
+            ->whereIn('id', $runIds->all())
+            ->get();
+        $metrics = [
+            'total_tasks' => 0,
+            'completed_tasks' => 0,
+            'failed_tasks' => 0,
+            'cancelled_tasks' => 0,
+            'processed_objects' => 0,
+            'rows_received' => 0,
+            'rows_saved' => 0,
+            'unmatched_rows' => 0,
+            'retry_count' => 0,
+            'durations' => [],
+        ];
+
+        foreach ($runs as $run) {
+            $metrics['total_tasks'] += (int) $run->total_tasks;
+            $metrics['completed_tasks'] += (int) $run->completed_tasks;
+            $metrics['failed_tasks'] += (int) $run->failed_tasks;
+            $metrics['cancelled_tasks'] += (int) $run->cancelled_tasks;
+            $metrics['processed_objects'] += (int) $run->processed_objects;
+            $metrics['retry_count'] += (int) $run->tasks->sum(fn ($task): int => max(0, (int) $task->attempts - 1));
+        }
+
+        $metrics = $this->appendSyncTaskMetrics($metrics, 'efficiency_sync_tasks', [
+            'rows_received' => 'report_rows_received',
+            'rows_saved' => 'facts_saved_count',
+            'unmatched_rows' => 'unmatched_report_rows',
+        ], $runIds->all(), 'efficiency_sync_runs');
+        $metrics = $this->appendSyncTaskMetrics($metrics, 'daytime_efficiency_sync_tasks', [
+            'rows_received' => 'report_rows_received',
+            'rows_saved' => 'facts_saved_count',
+            'unmatched_rows' => 'unmatched_report_rows',
+        ], $runIds->all(), 'daytime_efficiency_sync_runs');
+        $metrics = $this->appendSyncTaskMetrics($metrics, 'nighttime_efficiency_sync_tasks', [
+            'rows_received' => 'report_rows_received',
+            'rows_saved' => 'facts_saved_count',
+            'unmatched_rows' => 'unmatched_report_rows',
+        ], $runIds->all(), 'nighttime_efficiency_sync_runs');
+
+        foreach ($pipeline['steps'] ?? [] as $index => $step) {
+            $started = isset($step['started_at']) ? strtotime((string) $step['started_at']) : false;
+            $completed = isset($step['completed_at']) ? strtotime((string) $step['completed_at']) : false;
+
+            $metrics['durations'][] = [
+                'index' => (int) $index,
+                'section' => (string) ($step['section'] ?? ''),
+                'seconds' => $started !== false && $completed !== false ? max(0, $completed - $started) : null,
+            ];
+        }
+
+        if ((int) $metrics['rows_saved'] === 0) {
+            $metrics['rows_saved'] = (int) $metrics['processed_objects'];
+        }
+
+        return $metrics;
+    }
+
+    private function appendSyncTaskMetrics(array $metrics, string $taskTable, array $columns, array $historicalRunIds, string $runTable): array
+    {
+        if ($historicalRunIds === [] || ! Schema::hasTable($taskTable) || ! Schema::hasTable($runTable)) {
+            return $metrics;
+        }
+
+        $availableColumns = collect(Schema::getColumnListing($taskTable));
+        $selects = [];
+
+        foreach ($columns as $metric => $column) {
+            if ($availableColumns->contains($column)) {
+                $selects[$metric] = $column;
+            }
+        }
+
+        if ($selects === []) {
+            return $metrics;
+        }
+
+        $query = DB::table($taskTable)
+            ->join($runTable, $runTable.'.id', '=', $taskTable.'.run_id')
+            ->whereIn($runTable.'.historical_recalculation_id', $historicalRunIds);
+
+        foreach ($selects as $metric => $column) {
+            $metrics[$metric] = (int) $metrics[$metric] + (int) (clone $query)->sum($taskTable.'.'.$column);
+        }
+
+        return $metrics;
+    }
+
+    /** @param  array<string, mixed>  $pipeline */
+    private function validatePipeline(array $pipeline, array $metrics): array
+    {
+        $errors = [];
+        $runIds = collect($pipeline['run_ids'] ?? [])
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+        $runs = HistoricalRecalculation::query()->whereIn('id', $runIds->all())->get()->keyBy('id');
+
+        foreach ($runIds as $runId) {
+            $run = $runs->get($runId);
+
+            if (! $run) {
+                $errors[] = "Run {$runId} is missing during validation.";
+
+                continue;
+            }
+
+            if ($run->status !== HistoricalRecalculation::STATUS_COMPLETED) {
+                $errors[] = "Run {$run->id} finished as {$run->status}.";
+            }
+
+            if ((int) $run->total_tasks <= 0) {
+                $errors[] = "Run {$run->id} has no tasks.";
+            }
+
+            if ((int) $run->failed_tasks > 0 || (int) $run->cancelled_tasks > 0) {
+                $errors[] = "Run {$run->id} has failed or cancelled tasks.";
+            }
+        }
+
+        if ((int) ($metrics['total_tasks'] ?? 0) > 0
+            && (int) ($metrics['completed_tasks'] ?? 0) + (int) ($metrics['failed_tasks'] ?? 0) + (int) ($metrics['cancelled_tasks'] ?? 0) < (int) $metrics['total_tasks']) {
+            $errors[] = 'Pipeline has incomplete task accounting.';
+        }
+
+        foreach ($this->duplicateFactChecks($pipeline) as $label => $count) {
+            if ($count > 0) {
+                $errors[] = "{$label} has {$count} duplicate keys.";
+            }
+        }
+
+        return [
+            'status' => $errors === [] ? 'passed' : 'failed',
+            'errors' => $errors,
+            'checked_at' => now(config('app.timezone'))->toDateTimeString(),
+        ];
+    }
+
+    /** @param  array<string, mixed>  $pipeline */
+    private function duplicateFactChecks(array $pipeline): array
+    {
+        $dateRanges = collect($pipeline['plans'] ?? [])
+            ->map(fn (array $plan): array => [
+                'from' => (string) ($plan['date_from'] ?? ''),
+                'to' => (string) ($plan['date_to'] ?? ''),
+            ])
+            ->filter(fn (array $range): bool => $range['from'] !== '' && $range['to'] !== '')
+            ->values();
+
+        if ($dateRanges->isEmpty()) {
+            return [];
+        }
+
+        return [
+            'efficiency_daily_facts' => $this->duplicateCount(
+                'efficiency_daily_facts',
+                'business_date',
+                ['business_date', 'project_id', 'wialon_unit_id'],
+                $dateRanges->all()
+            ),
+            'daytime_efficiency_daily_facts' => $this->duplicateCount(
+                'daytime_efficiency_daily_facts',
+                'business_date',
+                ['business_date', 'project_id', 'wialon_unit_id'],
+                $dateRanges->all()
+            ),
+            'nighttime_efficiency_daily_facts' => $this->duplicateCount(
+                'nighttime_efficiency_daily_facts',
+                'shift_date',
+                ['shift_date', 'project_id', 'wialon_unit_id'],
+                $dateRanges->all()
+            ),
+            'engine_hours_report_unit_days' => $this->duplicateCount(
+                'engine_hours_report_unit_days',
+                'stat_date',
+                ['stat_date', 'equipment_id'],
+                $dateRanges->all()
+            ),
+        ];
+    }
+
+    private function duplicateCount(string $table, string $dateColumn, array $keys, array $dateRanges): int
+    {
+        if (! Schema::hasTable($table)) {
+            return 0;
+        }
+
+        $query = DB::table($table)
+            ->select($keys)
+            ->selectRaw('COUNT(*) as total')
+            ->where(function ($query) use ($dateColumn, $dateRanges): void {
+                foreach ($dateRanges as $range) {
+                    $query->orWhereBetween($dateColumn, [$range['from'], $range['to']]);
+                }
+            })
+            ->groupBy($keys)
+            ->havingRaw('COUNT(*) > 1');
+
+        return DB::query()->fromSub($query, 'duplicates')->count();
     }
 
     /** @param  array<int, array<string, mixed>>  $pipelines */

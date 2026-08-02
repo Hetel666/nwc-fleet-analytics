@@ -2,14 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Models\DailyUnitAggregate;
 use App\Models\EfficiencyDailyFact;
+use App\Models\EngineHoursReportUnitDay;
 use App\Models\Equipment;
+use App\Models\EquipmentDailyStat;
 use App\Models\EquipmentType;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
+use App\Models\WialonReportSyncItem;
 use App\Services\EfficiencyDashboardService;
 use App\Services\EfficiencyRecalculationHandler;
 use App\Services\WialonEfficiencyReportParser;
@@ -69,11 +73,19 @@ class NewEfficiencyModuleTest extends TestCase
             'efficiency_status' => EfficiencyStatus::NO_DATA,
             'engine_seconds' => 0,
         ]);
+        $this->assertSame(1, EquipmentDailyStat::query()->count());
+        $this->assertSame(1, DailyUnitAggregate::query()->count());
+        $this->assertSame(1, EngineHoursReportUnitDay::query()->count());
+        $this->assertSame(1, WialonReportSyncItem::query()->count());
+        $this->assertSame(7.5, (float) EquipmentDailyStat::query()->value('worked_hours'));
+        $this->assertSame(4.25, (float) DailyUnitAggregate::query()->value('mileage'));
+        $this->assertSame('Qrup report Engine hours (api)', EngineHoursReportUnitDay::query()->value('report_template_name'));
         $firstIds = EfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
 
         $handler->execute($run->refresh(), $task->refresh());
 
         $this->assertSame(2, EfficiencyDailyFact::query()->count());
+        $this->assertSame(1, EngineHoursReportUnitDay::query()->count());
         $secondIds = EfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
         $this->assertSame([], array_values(array_intersect($firstIds, $secondIds)));
     }

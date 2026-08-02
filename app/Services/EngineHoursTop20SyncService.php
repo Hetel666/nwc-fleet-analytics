@@ -584,6 +584,8 @@ class EngineHoursTop20SyncService
         return str_contains($message, 'temporary')
             || str_contains($message, 'timeout')
             || str_contains($message, 'busy')
+            || str_contains($message, 'lock')
+            || str_contains($message, 'is busy')
             || str_contains($message, 'token/login')
             || str_contains($message, 'wialon api error 1003')
             || str_contains($message, 'wialon api error 1004');

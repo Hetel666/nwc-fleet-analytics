@@ -76,7 +76,9 @@ class DaytimeEfficiencyRecalculationHandler
             ])->save();
             $this->refreshRun($run);
 
-            Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+            if (! app(DashboardReportPipelineService::class)->containsRun((int) $historicalRun->id)) {
+                Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+            }
 
             return $result['facts_saved_count'];
         } catch (Throwable $exception) {

@@ -2,13 +2,18 @@
 
 namespace App\Services;
 
+use App\Models\DailyUnitAggregate;
 use App\Models\EfficiencyDailyFact;
 use App\Models\EfficiencySyncRun;
 use App\Models\EfficiencySyncTask;
+use App\Models\EngineHoursReportUnitDay;
 use App\Models\Equipment;
+use App\Models\EquipmentDailyStat;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\ProjectWialonGroup;
+use App\Models\WialonReportSyncItem;
+use App\Models\WialonSyncCheckpoint;
 use App\Support\EfficiencyStatus;
 use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
@@ -75,7 +80,9 @@ class EfficiencyRecalculationHandler
             ])->save();
             $this->refreshRun($run);
 
-            Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+            if (! app(DashboardReportPipelineService::class)->containsRun((int) $historicalRun->id)) {
+                Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+            }
 
             return $result['facts_saved_count'];
         } catch (Throwable $exception) {
@@ -121,6 +128,8 @@ class EfficiencyRecalculationHandler
         $reportRows = 0;
         $eligibleCount = 0;
         $missingCount = 0;
+        $sharedRecords = [];
+        $sharedSyncItems = [];
 
         foreach ($groups as $group) {
             $groupData = collect($this->wialon->getUnitGroups([$group->wialon_group_id]))->first();
@@ -149,6 +158,11 @@ class EfficiencyRecalculationHandler
             $report = $this->reports->execute($group, $date->startOfDay(), $date->endOfDay(), $sid);
             $parsed = $this->parser->parse($report);
             $reportRows += $parsed['rows_received'];
+            $sharedSyncItems[(string) $group->wialon_group_id] = [
+                'group' => $group,
+                'rows_received' => $parsed['rows_received'],
+                'rows_saved' => 0,
+            ];
             $matchedIds = [];
 
             foreach ($parsed['records'] as $record) {
@@ -177,6 +191,12 @@ class EfficiencyRecalculationHandler
 
                 $matchedIds[(string) $unitId] = true;
                 $facts[(string) $unitId] = $this->factRow($run, $group, $item, $date, $record, $settings);
+                $sharedRecords[(int) $item->id] = [
+                    'group' => $group,
+                    'equipment' => $item,
+                    'record' => $record,
+                    'settings' => $settings,
+                ];
             }
 
             foreach ($equipment as $unitId => $item) {
@@ -199,7 +219,7 @@ class EfficiencyRecalculationHandler
             }
         }
 
-        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force): void {
+        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force, $sharedRecords, &$sharedSyncItems): void {
             $unitIds = array_keys($facts);
             $stale = EfficiencyDailyFact::query()
                 ->where('project_id', $task->project_id)
@@ -236,6 +256,8 @@ class EfficiencyRecalculationHandler
                     array_map(fn (array $row): array => ['task_id' => $task->id, ...$row], $unmatched),
                 );
             }
+
+            $this->replaceSharedEngineHoursFacts($task, $date, $sharedRecords, $sharedSyncItems);
         });
 
         return [
@@ -245,6 +267,7 @@ class EfficiencyRecalculationHandler
             'facts_saved_count' => count($facts),
             'missing_units_count' => $missingCount,
             'unmatched_report_rows' => count($unmatched),
+            'shared_rows_saved' => count($sharedRecords),
         ];
     }
 
@@ -283,6 +306,174 @@ class EfficiencyRecalculationHandler
             'created_at' => now(),
             'updated_at' => now(),
         ];
+    }
+
+    /**
+     * @param  array<int, array{group: ProjectWialonGroup, equipment: Equipment, record: array<string, mixed>, settings: array<string, mixed>}>  $sharedRecords
+     * @param  array<string, array<string, mixed>>  $syncItems
+     */
+    private function replaceSharedEngineHoursFacts(
+        EfficiencySyncTask $task,
+        CarbonImmutable $date,
+        array $sharedRecords,
+        array &$syncItems,
+    ): void {
+        $projectId = (int) $task->project_id;
+        $timezone = (string) config('historical_recalculation.timezone', config('app.timezone', 'Asia/Baku'));
+
+        EquipmentDailyStat::query()
+            ->where('stat_date', $date->toDateString())
+            ->where('project_id', $projectId)
+            ->where('calculation_source', 'wialon_engine_hours_report')
+            ->delete();
+
+        DailyUnitAggregate::query()
+            ->where('date', $date->toDateString())
+            ->where('project_id', $projectId)
+            ->delete();
+
+        EngineHoursReportUnitDay::query()
+            ->where('stat_date', $date->toDateString())
+            ->where('project_id', $projectId)
+            ->delete();
+
+        foreach ($sharedRecords as $payload) {
+            $group = $payload['group'];
+            $equipment = $payload['equipment'];
+            $record = $payload['record'];
+            $settings = $payload['settings'];
+            $workedHours = round(max(0, (float) ($record['engine_hours_decimal'] ?? 0)), 2);
+            $distanceKm = round(max(0, (float) ($record['mileage_km'] ?? 0)), 2);
+            $utilization = $equipment->planned_daily_hours > 0
+                ? min(100, ($workedHours / (float) $equipment->planned_daily_hours) * 100)
+                : 0;
+            $dailyStat = EquipmentDailyStat::query()->create([
+                'stat_date' => $date->toDateString(),
+                'equipment_id' => $equipment->id,
+                'project_id' => $equipment->project_id,
+                'ownership_type' => $equipment->ownership_type,
+                'worked_hours' => $workedHours,
+                'distance_km' => $distanceKm,
+                'utilization_percent' => round($utilization, 2),
+                'calculation_source' => 'wialon_engine_hours_report',
+                'calculation_status' => 'success',
+                'report_resource_id' => (string) ($settings['resource_id'] ?? ''),
+                'report_template_id' => (string) ($settings['template_id'] ?? ''),
+                'source_group_id' => (string) $group->wialon_group_id,
+                'calculated_at' => now($timezone),
+            ]);
+
+            if (trim((string) $equipment->wialon_unit_id) !== '') {
+                DailyUnitAggregate::query()->create([
+                    'date' => $date->toDateString(),
+                    'unit_id' => (string) $equipment->wialon_unit_id,
+                    'equipment_id' => $equipment->id,
+                    'project_id' => $equipment->project_id,
+                    'equipment_type_id' => $equipment->equipment_type_id,
+                    'ownership_type' => $equipment->ownership_type,
+                    'engine_hours' => $workedHours,
+                    'mileage' => $distanceKm,
+                    'geofence_outside_hours' => round(((float) $dailyStat->outside_geofence_minutes) / 60, 2),
+                ]);
+            }
+
+            if ($this->isTopWorkingType($equipment)) {
+                EngineHoursReportUnitDay::query()->create([
+                    'stat_date' => $date->toDateString(),
+                    'equipment_id' => $equipment->id,
+                    'project_id' => $equipment->project_id,
+                    'equipment_type_id' => $equipment->equipment_type_id,
+                    'ownership_type' => $equipment->ownership_type,
+                    'wialon_unit_id' => (string) $equipment->wialon_unit_id,
+                    'unit_name' => (string) ($record['unit_name'] ?: $equipment->name),
+                    'vehicle_type' => FleetVehicleType::display($equipment->type?->name),
+                    'engine_hours' => $workedHours,
+                    'engine_hours_source' => EngineHoursReportUnitDay::SOURCE,
+                    'parse_status' => 'ok',
+                    'report_resource_id' => (string) ($settings['resource_id'] ?? ''),
+                    'report_template_id' => (string) ($settings['template_id'] ?? ''),
+                    'report_template_name' => (string) ($settings['template_name'] ?? ''),
+                    'source_table' => (string) ($record['source_table'] ?? 'Qrup report Engine hours'),
+                    'engine_hours_column_index' => $record['engine_hours_column_index'] ?? null,
+                    'engine_hours_column_label' => (string) ($record['engine_hours_column_label'] ?? 'Engine hours'),
+                    'source_group_ids_json' => [(string) $group->wialon_group_id],
+                    'raw_value_json' => [
+                        't' => $record['engine_hours_raw'] ?? null,
+                        'v' => $workedHours,
+                    ],
+                    'synced_at' => now($timezone),
+                ]);
+
+                $syncItems[(string) $group->wialon_group_id]['rows_saved'] =
+                    (int) ($syncItems[(string) $group->wialon_group_id]['rows_saved'] ?? 0) + 1;
+            }
+        }
+
+        foreach ($syncItems as $syncItem) {
+            $group = $syncItem['group'];
+            $item = WialonReportSyncItem::query()->firstOrNew([
+                'sync_type' => WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20,
+                'report_date' => $date->toDateString(),
+                'wialon_group_id' => (string) $group->wialon_group_id,
+            ]);
+            $item->forceFill([
+                'wialon_group_name' => $group->name,
+                'status' => WialonReportSyncItem::STATUS_COMPLETED,
+                'attempts' => (int) $item->attempts + 1,
+                'rows_received' => (int) ($syncItem['rows_received'] ?? 0),
+                'rows_saved' => (int) ($syncItem['rows_saved'] ?? 0),
+                'started_at' => $task->started_at ?: now($timezone),
+                'finished_at' => now($timezone),
+                'next_retry_at' => null,
+                'last_error_code' => null,
+                'last_error_message' => null,
+                'run_id' => 'efficiency-sync:'.$task->run_id.':'.$task->id,
+            ])->save();
+
+            WialonSyncCheckpoint::query()->updateOrCreate(
+                [
+                    'checkpoint_key' => $this->sharedEngineHoursCheckpointKey($date, $group),
+                ],
+                [
+                    'sync_type' => WialonSyncCheckpoint::TYPE_DAILY_ENGINE_STATS,
+                    'report_date' => $date->toDateString(),
+                    'project_id' => $projectId,
+                    'ownership_type' => $group->ownership_type,
+                    'wialon_group_id' => (string) $group->wialon_group_id,
+                    'status' => 'success',
+                    'equipment_count' => (int) ($syncItem['rows_saved'] ?? 0),
+                    'payload' => [
+                        'status' => 'success',
+                        'source' => 'Qrup report Engine hours (api)',
+                        'rows_received' => (int) ($syncItem['rows_received'] ?? 0),
+                        'rows_saved' => (int) ($syncItem['rows_saved'] ?? 0),
+                        'synced_at' => now($timezone)->toIso8601String(),
+                    ],
+                    'completed_at' => now($timezone),
+                ],
+            );
+        }
+    }
+
+    private function isTopWorkingType(Equipment $equipment): bool
+    {
+        $allowed = collect(config('fleet_efficiency.top_working_vehicle_types', []))
+            ->map(fn (string $type): string => FleetVehicleType::slug($type))
+            ->all();
+
+        return in_array(FleetVehicleType::slug(FleetVehicleType::display($equipment->type?->name)), $allowed, true);
+    }
+
+    private function sharedEngineHoursCheckpointKey(CarbonImmutable $date, ProjectWialonGroup $group): string
+    {
+        return 'wialon_daily_engine_sync:'.sha1(json_encode([
+            'version' => 2,
+            'source' => 'qrup_engine_hours',
+            'project_id' => $group->project_id,
+            'ownership_type' => $group->ownership_type,
+            'group_id' => $group->wialon_group_id,
+            'date' => $date->toDateString(),
+        ]));
     }
 
     private function syncRun(HistoricalRecalculation $historicalRun): EfficiencySyncRun

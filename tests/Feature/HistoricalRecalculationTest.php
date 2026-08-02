@@ -544,6 +544,10 @@ class HistoricalRecalculationTest extends TestCase
             'efficiency_daily_facts',
             'efficiency_sync_runs',
             'efficiency_sync_tasks',
+            'equipment_daily_stats',
+            'daily_unit_aggregates',
+            'engine_hours_report_unit_days',
+            'wialon_report_sync_items',
         ], $definition['result_tables']);
     }
 
@@ -654,6 +658,48 @@ class HistoricalRecalculationTest extends TestCase
         ]);
         $this->assertDatabaseCount('historical_recalculations', 2);
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
+    }
+
+    public function test_sync_daily_command_queues_four_step_master_pipeline_without_nighttime(): void
+    {
+        Queue::fake();
+        Carbon::setTestNow(Carbon::parse('2026-08-02 00:00:00', 'Asia/Baku'));
+
+        try {
+            $project = Project::query()->create(['name' => 'Daily sync command', 'active' => true]);
+            $group = ProjectWialonGroup::query()->create([
+                'project_id' => $project->id,
+                'wialon_group_id' => '711',
+                'name' => 'Daily sync command - NWC',
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+            ]);
+            $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '71101');
+
+            $this->artisan('dashboard-reports:sync-daily')->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+
+        $this->assertCount(1, $pipelines);
+        $this->assertSame('daily', $pipelines[0]['source']);
+        $this->assertSame([
+            HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+            HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+        ], collect($pipelines[0]['plans'])->pluck('section')->all());
+        $this->assertTrue(collect($pipelines[0]['plans'])->every(fn (array $plan): bool => (bool) $plan['force']));
+        $this->assertDatabaseCount('historical_recalculations', 1);
+        $this->assertDatabaseHas('historical_recalculations', [
+            'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+            'date_from' => '2026-08-01 00:00:00',
+            'date_to' => '2026-08-01 00:00:00',
+        ]);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
     }
 
     public function test_dashboard_reports_historical_queue_splits_ranges_into_weekly_pipeline_steps(): void

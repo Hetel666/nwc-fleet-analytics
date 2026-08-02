@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Closure;
 use Illuminate\Support\Facades\Cache;
+use RuntimeException;
 
 class WialonReportSessionLock
 {
@@ -12,8 +13,16 @@ class WialonReportSessionLock
         $key = (string) config('fleet.wialon.report_session_lock_key', 'wialon-report-execution');
         $store = (string) config('fleet.wialon.report_session_lock_store', 'database');
         $seconds = max(30, (int) config('fleet.wialon.report_session_lock_seconds', 300));
-        $waitSeconds = max(1, (int) config('fleet.wialon.report_session_lock_wait_seconds', 300));
+        $lock = Cache::store($store)->lock($key, $seconds);
 
-        return Cache::store($store)->lock($key, $seconds)->block($waitSeconds, $callback);
+        if (! $lock->get()) {
+            throw new RuntimeException("Wialon report execution lock '{$key}' is busy.");
+        }
+
+        try {
+            return $callback();
+        } finally {
+            optional($lock)->release();
+        }
     }
 }

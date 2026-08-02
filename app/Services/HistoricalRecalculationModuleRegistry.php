@@ -41,7 +41,15 @@ class HistoricalRecalculationModuleRegistry
                 'service' => EfficiencyRecalculationHandler::class,
                 'job' => RunHistoricalRecalculationTaskJob::class,
                 'queue' => $queue,
-                'result_tables' => ['efficiency_daily_facts', 'efficiency_sync_runs', 'efficiency_sync_tasks'],
+                'result_tables' => [
+                    'efficiency_daily_facts',
+                    'efficiency_sync_runs',
+                    'efficiency_sync_tasks',
+                    'equipment_daily_stats',
+                    'daily_unit_aggregates',
+                    'engine_hours_report_unit_days',
+                    'wialon_report_sync_items',
+                ],
                 'aliases' => [],
             ],
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => [

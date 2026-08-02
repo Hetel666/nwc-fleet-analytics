@@ -23,6 +23,7 @@ use App\Services\WialonService;
 use App\Services\WialonSessionManager;
 use App\Support\EfficiencyStatus;
 use App\Support\NighttimeShiftWindow;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -236,8 +237,8 @@ class NighttimeEfficiencyModuleTest extends TestCase
     public function test_scheduler_uses_dashboard_report_pipeline_and_night_shift_at_baku_times(): void
     {
         $events = collect(app(Schedule::class)->events());
-        $dailyEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:queue-sync --daily --force'));
-        $nightEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'nighttime-efficiency:sync-last-completed-shift --force'));
+        $dailyEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:sync-daily'));
+        $nightEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'nighttime-efficiency:sync-last-completed-shift'));
         $tickEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:pipeline-tick'));
         $pruneEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'fleet:prune-dashboard-exports --skip-when-sync-active'));
 
@@ -287,22 +288,28 @@ class NighttimeEfficiencyModuleTest extends TestCase
 
     public function test_automatic_command_does_not_duplicate_a_completed_shift(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-08-02 08:30:00', 'Asia/Baku'));
         $shiftDate = now('Asia/Baku')->subDay()->toDateString();
-        HistoricalRecalculation::query()->create([
-            'uuid' => fake()->uuid(),
-            'signature' => sha1(fake()->uuid()),
-            'status' => HistoricalRecalculation::STATUS_COMPLETED,
-            'dashboard_section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
-            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
-            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
-            'date_from' => $shiftDate,
-            'date_to' => $shiftDate,
-            'timezone' => 'Asia/Baku',
-            'force' => true,
-            'project_ids' => [],
-        ]);
 
-        $this->artisan('nighttime-efficiency:sync-last-completed-shift')->assertSuccessful();
+        try {
+            HistoricalRecalculation::query()->create([
+                'uuid' => fake()->uuid(),
+                'signature' => sha1(fake()->uuid()),
+                'status' => HistoricalRecalculation::STATUS_COMPLETED,
+                'dashboard_section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'date_from' => $shiftDate,
+                'date_to' => $shiftDate,
+                'timezone' => 'Asia/Baku',
+                'force' => false,
+                'project_ids' => [],
+            ]);
+
+            $this->artisan('nighttime-efficiency:sync-last-completed-shift')->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
 
         $this->assertSame(1, HistoricalRecalculation::query()
             ->where('dashboard_section', HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY)
@@ -368,9 +375,14 @@ class NighttimeEfficiencyModuleTest extends TestCase
             'ownership_type' => Equipment::OWNERSHIP_NWC,
             'active' => true,
         ]);
-        $expectedShiftDate = now('Asia/Baku')->subDay()->toDateString();
+        Carbon::setTestNow(Carbon::parse('2026-08-02 08:30:00', 'Asia/Baku'));
+        $expectedShiftDate = '2026-08-01';
 
-        $this->artisan('nighttime-efficiency:sync-last-completed-shift')->assertSuccessful();
+        try {
+            $this->artisan('nighttime-efficiency:sync-last-completed-shift')->assertSuccessful();
+        } finally {
+            Carbon::setTestNow();
+        }
 
         $run = HistoricalRecalculation::query()
             ->where('dashboard_section', HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY)
