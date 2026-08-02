@@ -67,6 +67,9 @@
         .catalog-tab-pane[hidden] {
             display: none !important;
         }
+        .wialon-catalog-sync-status[hidden] {
+            display: none !important;
+        }
     </style>
 @endpush
 
@@ -96,6 +99,10 @@
             @endif
         </div>
     </div>
+
+    @if ($canSync)
+        <div class="alert alert-info border-0 shadow-sm wialon-catalog-sync-status" data-catalog-sync-status aria-live="polite" hidden></div>
+    @endif
 
     <section class="panel p-3 mb-3">
         <div class="wialon-catalog-kpi">
@@ -281,7 +288,12 @@
                 projects: @json($canManageProjects ? route('api.projects.wialon-options') : null),
             };
             const syncUrl = @json(route('api.wialon-catalog.sync'));
+            const syncRunBaseUrl = @json(url('/api/wialon-catalog/sync-runs'));
             const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const syncStatus = document.querySelector('[data-catalog-sync-status]');
+            const syncButtons = Array.from(document.querySelectorAll('.js-catalog-sync'));
+            const terminalSyncStatuses = ['completed', 'completed_with_errors', 'failed', 'cancelled'];
+            let syncPollTimer = null;
             const columns = {
                 resources: ['wialon_resource_id', 'name', 'account_id', 'report_templates_count', 'geofences_count', 'geofence_groups_count', 'status', 'last_synced_at'],
                 'unit-groups': ['wialon_group_id', 'name', 'resource_id', 'units_count', 'project', 'ownership_type', 'status', 'last_synced_at'],
@@ -374,11 +386,13 @@
                 }
             });
 
-            document.querySelectorAll('.js-catalog-sync').forEach((button) => {
+            syncButtons.forEach((button) => {
                 button.addEventListener('click', async () => {
-                    button.disabled = true;
                     const label = button.innerHTML;
+                    setSyncButtonsDisabled(true);
                     button.innerHTML = '<span class="spinner-border spinner-border-sm"></span><span>Queue...</span>';
+                    showSyncStatus('Sinxronizasiya növbəyə əlavə edilir...', 'info');
+
                     try {
                         const response = await fetch(syncUrl, {
                             method: 'POST',
@@ -389,12 +403,23 @@
                             },
                             body: JSON.stringify({sections: [button.dataset.section]}),
                         });
-                        const payload = await response.json();
-                        alert(`Run ID: ${payload.run_id || '-'}\nStatus: ${payload.status || response.status}`);
+                        const payload = await parseJsonResponse(response);
+
+                        if (!response.ok) {
+                            throw new Error(payload.message || `HTTP ${response.status}`);
+                        }
+
+                        if (payload.run_id) {
+                            showSyncStatus(`Run #${payload.run_id}: ${payload.status || 'queued'}. Status yoxlanılır...`, 'info');
+                            pollSyncRun(payload.run_id);
+                        } else {
+                            showSyncStatus('Sinxronizasiya yaradıldı, amma Run ID qaytarılmadı.', 'warning');
+                            setSyncButtonsDisabled(false);
+                        }
                     } catch (error) {
-                        alert(error.message || 'Sync failed');
+                        showSyncStatus(error.message || 'Sync failed', 'danger');
+                        setSyncButtonsDisabled(false);
                     } finally {
-                        button.disabled = false;
                         button.innerHTML = label;
                     }
                 });
@@ -407,6 +432,8 @@
                 button.classList.add('text-success');
                 setTimeout(() => button.classList.remove('text-success'), 800);
             });
+
+            checkActiveSyncRun();
 
             function activateTab() {
                 overviewPane.hidden = activeTab !== 'overview';
@@ -432,14 +459,35 @@
                 exportLink.href = `${endpoint}?${params.toString()}&export=xlsx`;
                 renderLoading();
 
-                const response = await fetch(`${endpoint}?${params.toString()}`, {headers: {'Accept': 'application/json'}});
-                const payload = await response.json();
-                renderTable(payload.data || [], payload.meta || {});
+                try {
+                    const response = await fetch(`${endpoint}?${params.toString()}`, {headers: {'Accept': 'application/json'}});
+                    const payload = await parseJsonResponse(response);
+
+                    if (!response.ok) {
+                        throw new Error(payload.message || `HTTP ${response.status}`);
+                    }
+
+                    renderTable(payload.data || [], payload.meta || {});
+                } catch (error) {
+                    renderTableError(error.message || 'Məlumat yüklənmədi');
+                }
             }
 
             function renderLoading() {
                 const body = document.getElementById('catalogTableBody');
                 body.innerHTML = '<tr><td class="text-secondary">Məlumat yüklənir...</td></tr>';
+            }
+
+            function renderTableError(message) {
+                const head = document.getElementById('catalogTableHead');
+                const body = document.getElementById('catalogTableBody');
+                const metaBox = document.getElementById('catalogTableMeta');
+                const activeColumns = columns[activeTab] || [];
+                head.innerHTML = activeColumns.map((column) => `<th>${escapeHtml(labels[column] || column)}</th>`).join('');
+                body.innerHTML = `<tr><td colspan="${activeColumns.length || 1}" class="text-danger">${escapeHtml(message)}</td></tr>`;
+                metaBox.textContent = '';
+                document.getElementById('catalogPrev').disabled = true;
+                document.getElementById('catalogNext').disabled = true;
             }
 
             function renderTable(rows, meta) {
@@ -470,17 +518,26 @@
                 }
 
                 container.innerHTML = '<div class="col-12 text-secondary">Məlumat yüklənir...</div>';
-                const response = await fetch(endpoints.projects, {headers: {'Accept': 'application/json'}});
-                const payload = await response.json();
-                const groups = payload.unit_groups || [];
-                const geofences = payload.geofences || [];
-                const resources = payload.resources || [];
+                try {
+                    const response = await fetch(endpoints.projects, {headers: {'Accept': 'application/json'}});
+                    const payload = await parseJsonResponse(response);
 
-                container.innerHTML = [
-                    projectOptionCard('Wialon obyekt qrupları', groups, 'wialon_group_id', 'units_count'),
-                    projectOptionCard('Ev geozonaları', geofences, 'wialon_geofence_id', 'resource_id'),
-                    projectOptionCard('Hesabat resursları', resources, 'wialon_resource_id', null),
-                ].join('');
+                    if (!response.ok) {
+                        throw new Error(payload.message || `HTTP ${response.status}`);
+                    }
+
+                    const groups = payload.unit_groups || [];
+                    const geofences = payload.geofences || [];
+                    const resources = payload.resources || [];
+
+                    container.innerHTML = [
+                        projectOptionCard('Wialon obyekt qrupları', groups, 'wialon_group_id', 'units_count'),
+                        projectOptionCard('Ev geozonaları', geofences, 'wialon_geofence_id', 'resource_id'),
+                        projectOptionCard('Hesabat resursları', resources, 'wialon_resource_id', null),
+                    ].join('');
+                } catch (error) {
+                    container.innerHTML = `<div class="col-12 text-danger">${escapeHtml(error.message || 'Məlumat yüklənmədi')}</div>`;
+                }
             }
 
             function projectOptionCard(title, rows, idKey, secondaryKey) {
@@ -517,6 +574,97 @@
                     return `<span class="badge text-bg-secondary">${escapeHtml(value)}</span>`;
                 }
                 return escapeHtml(value);
+            }
+
+            async function pollSyncRun(runId) {
+                window.clearTimeout(syncPollTimer);
+
+                try {
+                    const response = await fetch(`${syncRunBaseUrl}/${encodeURIComponent(runId)}`, {headers: {'Accept': 'application/json'}});
+                    const payload = await parseJsonResponse(response);
+
+                    if (!response.ok) {
+                        throw new Error(payload.message || `HTTP ${response.status}`);
+                    }
+
+                    const run = payload.run || {};
+                    const status = run.status || 'unknown';
+                    const sections = Array.isArray(run.sections) ? run.sections.join(', ') : '-';
+                    const processed = Number(run.added_count || 0) + Number(run.updated_count || 0) + Number(run.deactivated_count || 0);
+                    const errors = Number(run.error_count || 0);
+
+                    showSyncStatus(
+                        `Run #${run.id || runId}: ${status}. Bölmələr: ${sections}. İşləndi: ${processed}. Xəta: ${errors}.`,
+                        errors > 0 || status === 'failed' ? 'warning' : 'info'
+                    );
+
+                    if (terminalSyncStatuses.includes(status)) {
+                        setSyncButtonsDisabled(false);
+
+                        if (activeTab === 'sync-runs') {
+                            loadTable();
+                        }
+
+                        return;
+                    }
+
+                    syncPollTimer = window.setTimeout(() => pollSyncRun(runId), 2500);
+                } catch (error) {
+                    showSyncStatus(error.message || 'Sync statusu yoxlanılmadı', 'danger');
+                    setSyncButtonsDisabled(false);
+                }
+            }
+
+            async function checkActiveSyncRun() {
+                if (!syncStatus || !endpoints['sync-runs']) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${endpoints['sync-runs']}?per_page=10`, {headers: {'Accept': 'application/json'}});
+                    const payload = await parseJsonResponse(response);
+
+                    if (!response.ok) {
+                        return;
+                    }
+
+                    const activeRun = (payload.data || []).find((run) => !terminalSyncStatuses.includes(run.status));
+
+                    if (activeRun?.id) {
+                        setSyncButtonsDisabled(true);
+                        showSyncStatus(`Run #${activeRun.id}: ${activeRun.status}. Status yoxlanılır...`, 'info');
+                        pollSyncRun(activeRun.id);
+                    }
+                } catch (error) {
+                    // The normal table endpoints still show their own errors when opened.
+                }
+            }
+
+            function setSyncButtonsDisabled(disabled) {
+                syncButtons.forEach((button) => {
+                    button.disabled = disabled;
+                });
+            }
+
+            function showSyncStatus(message, type = 'info') {
+                if (!syncStatus) return;
+                syncStatus.hidden = false;
+                syncStatus.className = `alert alert-${type} border-0 shadow-sm wialon-catalog-sync-status`;
+                syncStatus.textContent = message;
+            }
+
+            async function parseJsonResponse(response) {
+                const text = await response.text();
+
+                if (!text) {
+                    return {};
+                }
+
+                try {
+                    return JSON.parse(text);
+                } catch (error) {
+                    return {message: text.slice(0, 300)};
+                }
             }
 
             function escapeHtml(value) {
