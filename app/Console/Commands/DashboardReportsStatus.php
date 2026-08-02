@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
+use App\Services\DashboardReportPipelineService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -16,8 +17,23 @@ class DashboardReportsStatus extends Command
 
     protected $description = 'Show read-only dashboard report queue and historical recalculation progress.';
 
-    public function handle(): int
+    public function handle(DashboardReportPipelineService $pipelines): int
     {
+        $this->line('Pipelines');
+        $this->table(
+            ['ID', 'Source', 'Priority', 'Status', 'Step', 'Total', 'Current run', 'Updated at'],
+            collect($pipelines->all())->map(fn (array $pipeline): array => [
+                $pipeline['id'] ?? '-',
+                $pipeline['source'] ?? '-',
+                (int) ($pipeline['priority'] ?? 0),
+                $pipeline['status'] ?? '-',
+                (int) ($pipeline['current_index'] ?? 0) + 1,
+                count($pipeline['plans'] ?? []),
+                $pipeline['current_run_id'] ?? '-',
+                $pipeline['updated_at'] ?? '-',
+            ])->all()
+        );
+
         $this->line('Queue');
         $jobs = DB::table('jobs')
             ->selectRaw('queue, COUNT(*) as total, SUM(reserved_at IS NULL) as available, SUM(reserved_at IS NOT NULL) as reserved, MIN(id) as min_id, MAX(id) as max_id')

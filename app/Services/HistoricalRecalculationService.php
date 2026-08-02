@@ -435,6 +435,22 @@ class HistoricalRecalculationService
         $this->refreshProgress($task->run);
     }
 
+    public function markTaskRetryPending(HistoricalRecalculationTask $task, string $message, int $delaySeconds): void
+    {
+        $task->forceFill([
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'error_message' => mb_substr(
+                "Temporary failure; retry scheduled in {$delaySeconds} seconds. {$message}",
+                0,
+                4000
+            ),
+            'completed_at' => null,
+            'last_heartbeat_at' => now(config('app.timezone')),
+        ])->save();
+
+        $this->refreshProgress($task->run);
+    }
+
     public function finalize(int $runId): void
     {
         $run = HistoricalRecalculation::query()->with('tasks')->findOrFail($runId);
@@ -480,6 +496,16 @@ class HistoricalRecalculationService
         ])->save();
 
         Cache::forever('dashboard:data-version', ((int) Cache::get('dashboard:data-version', 1)) + 1);
+
+        try {
+            app(DashboardReportPipelineService::class)->handleRunFinished($run->refresh());
+        } catch (\Throwable $exception) {
+            Log::error('Dashboard report pipeline could not continue after historical run finalization.', [
+                'run_id' => $run->id,
+                'status' => $run->status,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     public function refreshProgress(HistoricalRecalculation $run): void

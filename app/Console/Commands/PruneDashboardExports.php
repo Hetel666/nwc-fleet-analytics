@@ -3,18 +3,27 @@
 namespace App\Console\Commands;
 
 use App\Models\DashboardExport;
+use App\Models\HistoricalRecalculation;
+use App\Services\DashboardReportPipelineService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 class PruneDashboardExports extends Command
 {
-    protected $signature = 'fleet:prune-dashboard-exports';
+    protected $signature = 'fleet:prune-dashboard-exports
+        {--skip-when-sync-active : Skip pruning while dashboard report synchronization is active}';
 
     protected $description = 'Delete expired generated dashboard export files.';
 
-    public function handle(): int
+    public function handle(DashboardReportPipelineService $pipelines): int
     {
+        if ((bool) $this->option('skip-when-sync-active') && $this->syncIsActive($pipelines)) {
+            $this->info('Dashboard export prune skipped because dashboard synchronization is active.');
+
+            return self::SUCCESS;
+        }
+
         $recordsPruned = 0;
         $orphansPruned = 0;
         $defaultDisk = (string) config('fleet.dashboard.export_disk', 'dashboard_exports');
@@ -78,5 +87,17 @@ class PruneDashboardExports extends Command
         $this->info("Pruned {$recordsPruned} dashboard export records and {$orphansPruned} orphan files.");
 
         return self::SUCCESS;
+    }
+
+    private function syncIsActive(DashboardReportPipelineService $pipelines): bool
+    {
+        if ($pipelines->hasActivePipeline()) {
+            return true;
+        }
+
+        return HistoricalRecalculation::query()
+            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
+            ->where('updated_at', '>=', now(config('app.timezone'))->subDay())
+            ->exists();
     }
 }

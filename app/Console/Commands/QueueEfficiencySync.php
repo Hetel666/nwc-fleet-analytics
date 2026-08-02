@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\HistoricalRecalculation;
+use App\Services\DashboardReportPipelineService;
 use App\Services\HistoricalRecalculationService;
 use Illuminate\Console\Command;
 
@@ -15,11 +16,11 @@ class QueueEfficiencySync extends Command
 
     protected $description = 'Queue the canonical Engine hours efficiency synchronization.';
 
-    public function handle(HistoricalRecalculationService $service): int
+    public function handle(HistoricalRecalculationService $service, DashboardReportPipelineService $pipelines): int
     {
         $from = $this->option('from') ?: now(config('app.timezone'))->subDay()->toDateString();
         $to = $this->option('to') ?: $from;
-        $run = $service->createRun([
+        $plan = [
             'date_from' => $from,
             'date_to' => $to,
             'timezone' => config('historical_recalculation.timezone', 'Asia/Baku'),
@@ -28,9 +29,16 @@ class QueueEfficiencySync extends Command
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'project_ids' => [],
             'force' => (bool) $this->option('force'),
-        ], null);
+        ];
+        $preview = $service->preview($plan);
+        $result = $pipelines->queue([$plan], 'manual', $pipelines->priorityForSource('manual'));
 
-        $this->line("Efficiency run {$run->id} queued with {$run->total_tasks} tasks.");
+        $this->line(sprintf(
+            'Efficiency pipeline %s queued with %d tasks. Started run: %s.',
+            is_array($result['pipeline'] ?? null) ? ($result['pipeline']['id'] ?? '-') : '-',
+            (int) ($preview['total_tasks'] ?? 0),
+            $result['started_run_id'] ?? '-'
+        ));
 
         return self::SUCCESS;
     }

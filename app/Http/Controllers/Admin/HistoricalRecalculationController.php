@@ -7,10 +7,12 @@ use App\Http\Requests\StoreHistoricalRecalculationRequest;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
+use App\Services\DashboardReportPipelineService;
 use App\Services\HistoricalRecalculationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class HistoricalRecalculationController extends Controller
@@ -36,13 +38,41 @@ class HistoricalRecalculationController extends Controller
         return response()->json($service->preview($request->validated()));
     }
 
-    public function store(StoreHistoricalRecalculationRequest $request, HistoricalRecalculationService $service): RedirectResponse
+    public function store(
+        StoreHistoricalRecalculationRequest $request,
+        HistoricalRecalculationService $service,
+        DashboardReportPipelineService $pipelines
+    ): RedirectResponse
     {
-        $run = $service->createRun($request->validated(), $request->user());
+        $payload = $request->validated();
+        $preview = $service->preview($payload);
+
+        if ((int) ($preview['total_tasks'] ?? 0) === 0) {
+            throw ValidationException::withMessages([
+                'project_ids' => 'Seçilmiş tarix və layihə üçün icra edilə bilən tapşırıq tapılmadı.',
+            ]);
+        }
+
+        $result = $pipelines->queue(
+            [$payload],
+            'manual',
+            $pipelines->priorityForSource('manual'),
+            false,
+            $request->user()
+        );
+        $runId = $result['started_run_id']
+            ?? (is_array($result['pipeline'] ?? null) ? ($result['pipeline']['current_run_id'] ?? null) : null);
+        $run = $runId ? HistoricalRecalculation::query()->find((int) $runId) : null;
+
+        if (! $run) {
+            return redirect()
+                ->route('admin.historical-recalculations.index')
+                ->with('status', 'Tarixi məlumatların yenilənməsi pipeline növbəsinə əlavə edildi.');
+        }
 
         return redirect()
             ->route('admin.historical-recalculations.show', $run)
-            ->with('status', 'Tarixi məlumatların yenilənməsi növbəyə əlavə edildi.');
+            ->with('status', 'Tarixi məlumatların yenilənməsi pipeline növbəsinə əlavə edildi.');
     }
 
     public function show(HistoricalRecalculation $historicalRecalculation): View

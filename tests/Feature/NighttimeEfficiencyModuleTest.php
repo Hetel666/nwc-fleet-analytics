@@ -233,14 +233,26 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $this->assertSame('night report Engine hours (api)', $export['filters'][4][1]);
     }
 
-    public function test_scheduler_uses_unified_dashboard_reports_queue_at_1800_baku(): void
+    public function test_scheduler_uses_dashboard_report_pipeline_and_night_shift_at_baku_times(): void
     {
         $events = collect(app(Schedule::class)->events());
-        $event = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:queue-sync --daily --force'));
+        $dailyEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:queue-sync --daily --force'));
+        $nightEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'nighttime-efficiency:sync-last-completed-shift --force'));
+        $tickEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:pipeline-tick'));
+        $pruneEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'fleet:prune-dashboard-exports --skip-when-sync-active'));
 
-        $this->assertNotNull($event);
-        $this->assertSame('0 18 * * *', $event->expression);
-        $this->assertSame('Asia/Baku', $event->timezone);
+        $this->assertNotNull($dailyEvent);
+        $this->assertSame('0 0 * * *', $dailyEvent->expression);
+        $this->assertSame('Asia/Baku', $dailyEvent->timezone);
+        $this->assertNotNull($nightEvent);
+        $this->assertSame('30 8 * * *', $nightEvent->expression);
+        $this->assertSame('Asia/Baku', $nightEvent->timezone);
+        $this->assertNotNull($tickEvent);
+        $this->assertSame('0 * * * *', $tickEvent->expression);
+        $this->assertSame('Asia/Baku', $tickEvent->timezone);
+        $this->assertNotNull($pruneEvent);
+        $this->assertSame('30 4 * * *', $pruneEvent->expression);
+        $this->assertSame('Asia/Baku', $pruneEvent->timezone);
     }
 
     public function test_shift_window_crosses_month_year_and_leap_day_boundaries(): void

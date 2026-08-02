@@ -3,11 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Models\HistoricalRecalculation;
+use App\Services\DashboardReportPipelineService;
 use App\Services\HistoricalRecalculationService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
-use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class QueueDashboardReportsSync extends Command
@@ -20,18 +20,28 @@ class QueueDashboardReportsSync extends Command
         {--module=* : Dashboard module code to queue}
         {--project=* : Restrict to project IDs}
         {--force : Rebuild data where the module supports forced refresh}
+        {--chunk-days=7 : Date range chunk size for historical pipelines}
         {--allow-active : Queue even when an overlapping active run already exists}
         {--dry-run : Show the queue plan without creating runs}';
 
     protected $description = 'Queue dashboard report recalculations without executing Wialon reports inside the scheduler.';
 
     /** @var array<int, string> */
-    private const DEFAULT_MODULES = [
+    private const DAILY_MODULES = [
+        HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         HistoricalRecalculation::SECTION_EFFICIENCY,
+        HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+        HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+        HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+    ];
+
+    private const RANGE_MODULES = [
+        HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+        HistoricalRecalculation::SECTION_EFFICIENCY,
+        HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
         HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
         HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
-        HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
-        HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
     ];
@@ -52,11 +62,12 @@ class QueueDashboardReportsSync extends Command
         'geofence_outside' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
     ];
 
-    public function handle(HistoricalRecalculationService $service): int
+    public function handle(HistoricalRecalculationService $service, DashboardReportPipelineService $pipelines): int
     {
         $timezone = (string) config('historical_recalculation.timezone', config('app.timezone', 'Asia/Baku'));
         $plans = $this->plans($timezone);
         $rows = [];
+        $queuePlans = collect();
 
         if ($plans->isEmpty()) {
             $this->warn('No dashboard report runs were planned.');
@@ -66,8 +77,7 @@ class QueueDashboardReportsSync extends Command
 
         foreach ($plans as $plan) {
             $preview = null;
-            $run = null;
-            $decision = 'queued';
+            $decision = $this->option('dry-run') ? 'dry-run' : 'pipeline pending';
 
             try {
                 $preview = $service->preview($this->payload($plan));
@@ -83,27 +93,41 @@ class QueueDashboardReportsSync extends Command
                 continue;
             }
 
-            if ($this->option('dry-run')) {
-                $rows[] = $this->row($plan, $preview, 'dry-run', null);
-
-                continue;
+            if ($queuePlans->isEmpty() && ! $this->option('dry-run')) {
+                $decision = 'pipeline first step';
             }
 
-            try {
-                $run = $service->createRun($this->payload($plan), null);
-            } catch (ValidationException $exception) {
-                $decision = 'invalid: '.collect($exception->errors())->flatten()->implode(' ');
-            } catch (Throwable $exception) {
-                $decision = 'failed: '.$exception->getMessage();
-            }
+            $rows[] = $this->row($plan, $preview, $decision, null);
+            $queuePlans->push($plan);
+        }
 
-            $rows[] = $this->row($plan, $preview, $decision, $run?->id);
+        $result = null;
+
+        if (! $this->option('dry-run') && $queuePlans->isNotEmpty()) {
+            $validPlans = $queuePlans->values()->all();
+            $source = $this->source($validPlans);
+            $result = $pipelines->queue(
+                $validPlans,
+                $source,
+                $pipelines->priorityForSource($source),
+                (bool) $this->option('allow-active')
+            );
         }
 
         $this->table(
             ['Module', 'Date from', 'Date to', 'Scope', 'Tasks', 'Decision', 'Run ID'],
             $rows
         );
+
+        if ($result !== null) {
+            $pipeline = $result['pipeline'] ?? null;
+            $this->line(sprintf(
+                'Pipeline %s: %s; started run: %s',
+                is_array($pipeline) ? ($pipeline['id'] ?? '-') : '-',
+                $result['status'] ?? '-',
+                $result['started_run_id'] ?? '-'
+            ));
+        }
 
         return self::SUCCESS;
     }
@@ -113,7 +137,7 @@ class QueueDashboardReportsSync extends Command
      */
     private function plans(string $timezone): Collection
     {
-        $sections = $this->sections();
+        $sections = $this->sections((bool) $this->option('daily'));
 
         if ((bool) $this->option('daily')) {
             $businessDate = Carbon::parse(
@@ -145,35 +169,34 @@ class QueueDashboardReportsSync extends Command
             [$from, $to] = [$to, $from];
         }
 
-        return $sections->flatMap(function (string $section) use ($from, $to, $timezone): array {
-            if ($section === HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY) {
-                $lastCompletedShiftDate = $this->lastCompletedNightShiftDate(now($timezone));
-                $nightTo = min($to, $lastCompletedShiftDate);
+        return $this->dateChunks($from, $to, $timezone)
+            ->flatMap(function (array $chunk) use ($sections, $timezone): array {
+                return $sections->flatMap(function (string $section) use ($chunk, $timezone): array {
+                    if ($section === HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY) {
+                        $lastCompletedShiftDate = $this->lastCompletedNightShiftDate(now($timezone));
+                        $nightTo = min($chunk['to'], $lastCompletedShiftDate);
 
-                if ($from > $nightTo) {
-                    return [];
-                }
+                        if ($chunk['from'] > $nightTo) {
+                            return [];
+                        }
 
-                return [$this->plan($section, $from, $nightTo)];
-            }
+                        return [$this->plan($section, $chunk['from'], $nightTo)];
+                    }
 
-            if ($section === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
-                return $this->geofenceViolationChunks($section, $from, $to, $timezone);
-            }
-
-            return [$this->plan($section, $from, $to)];
+                    return [$this->plan($section, $chunk['from'], $chunk['to'])];
+                })->all();
         })->values();
     }
 
     /** @return Collection<int, string> */
-    private function sections(): Collection
+    private function sections(bool $daily): Collection
     {
         $requested = collect($this->option('module'))
             ->map(fn (mixed $module): string => trim((string) $module))
             ->filter();
 
         if ($requested->isEmpty()) {
-            return collect(self::DEFAULT_MODULES);
+            return collect($daily ? self::DAILY_MODULES : self::RANGE_MODULES);
         }
 
         return $requested
@@ -205,21 +228,24 @@ class QueueDashboardReportsSync extends Command
         ];
     }
 
-    /** @return array<int, array{section: string, date_from: string, date_to: string, scope: string, project_ids: array<int, int>, force: bool}> */
-    private function geofenceViolationChunks(string $section, string $from, string $to, string $timezone): array
+    /** @return Collection<int, array{from: string, to: string}> */
+    private function dateChunks(string $from, string $to, string $timezone): Collection
     {
-        $maxDays = max(1, (int) config('geofence_violations.max_report_period_days', 31));
+        $chunkDays = max(1, min(31, (int) $this->option('chunk-days')));
         $cursor = Carbon::parse($from, $timezone)->startOfDay();
         $end = Carbon::parse($to, $timezone)->startOfDay();
         $chunks = [];
 
         while ($cursor->lte($end)) {
-            $chunkTo = $cursor->copy()->addDays($maxDays - 1)->min($end);
-            $chunks[] = $this->plan($section, $cursor->toDateString(), $chunkTo->toDateString());
+            $chunkTo = $cursor->copy()->addDays($chunkDays - 1)->min($end);
+            $chunks[] = [
+                'from' => $cursor->toDateString(),
+                'to' => $chunkTo->toDateString(),
+            ];
             $cursor = $chunkTo->copy()->addDay();
         }
 
-        return $chunks;
+        return collect($chunks);
     }
 
     /** @param  array{section: string, date_from: string, date_to: string, scope: string, project_ids: array<int, int>, force: bool}  $plan */
@@ -258,6 +284,20 @@ class QueueDashboardReportsSync extends Command
         return $now->lt($cutoff)
             ? $now->copy()->subDays(2)->toDateString()
             : $now->copy()->subDay()->toDateString();
+    }
+
+    /** @param  array<int, array{section: string, date_from: string, date_to: string, scope: string, project_ids: array<int, int>, force: bool}>  $plans */
+    private function source(array $plans): string
+    {
+        if ((bool) $this->option('daily')) {
+            return 'daily';
+        }
+
+        $dates = collect($plans)
+            ->flatMap(fn (array $plan): array => [$plan['date_from'], $plan['date_to']])
+            ->unique();
+
+        return $dates->count() > 1 ? 'historical' : 'manual';
     }
 
     /**

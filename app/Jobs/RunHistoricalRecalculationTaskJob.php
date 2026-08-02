@@ -20,7 +20,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 900;
 
-    public int $tries = 3;
+    public int $tries = 8;
 
     public bool $failOnTimeout = true;
 
@@ -30,7 +30,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 
     public function backoff(): array
     {
-        return [60, 300];
+        return [60, 180, 300, 600, 900, 1800, 3600];
     }
 
     public function uniqueId(): string
@@ -87,6 +87,8 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        $releasedForRetry = false;
+
         try {
             $task = $task->refresh();
 
@@ -109,9 +111,20 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 
             $service->markFetchTaskCompleted($task, $equipmentCount);
         } catch (Throwable $exception) {
+            if ($this->shouldRetryTemporaryFailure($task->refresh(), $exception)) {
+                $delay = $this->retryDelaySeconds((int) $task->attempts);
+                $service->markTaskRetryPending($task->refresh(), $exception->getMessage(), $delay);
+                $releasedForRetry = true;
+                $this->releaseOrRedispatch($delay);
+
+                return;
+            }
+
             $service->markTaskFailed($task, $exception->getMessage());
         } finally {
-            $service->dispatchNextPendingFetchTask($run->refresh());
+            if (! $releasedForRetry) {
+                $service->dispatchNextPendingFetchTask($run->refresh());
+            }
         }
     }
 
@@ -130,5 +143,47 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
         $service->releaseExecutionLocks($task->run, [$task]);
         $service->markTaskFailed($task, $exception?->getMessage() ?: 'Queue worker failed before task completion.');
         $service->dispatchNextPendingFetchTask($task->run->refresh());
+    }
+
+    private function shouldRetryTemporaryFailure(HistoricalRecalculationTask $task, Throwable $exception): bool
+    {
+        if ((int) $task->attempts >= $this->tries) {
+            return false;
+        }
+
+        $message = strtolower($exception->getMessage());
+
+        return str_contains($message, 'temporary')
+            || str_contains($message, 'timeout')
+            || str_contains($message, 'timed out')
+            || str_contains($message, 'request deadline')
+            || str_contains($message, 'too many requests')
+            || str_contains($message, 'rate limit')
+            || str_contains($message, 'wialon api error 1004')
+            || str_contains($message, 'http 429')
+            || str_contains($message, 'http 502')
+            || str_contains($message, 'http 503')
+            || str_contains($message, 'http 504');
+    }
+
+    private function retryDelaySeconds(int $attempts): int
+    {
+        $backoff = $this->backoff();
+
+        return $backoff[max(0, min(count($backoff) - 1, $attempts - 1))];
+    }
+
+    private function releaseOrRedispatch(int $delay): void
+    {
+        if ($this->job) {
+            $this->release($delay);
+
+            return;
+        }
+
+        RunHistoricalRecalculationTaskJob::dispatch($this->taskId)
+            ->onConnection((string) config('historical_recalculation.connection', 'database'))
+            ->onQueue((string) config('historical_recalculation.queue', 'historical-recalculations'))
+            ->delay(now(config('app.timezone'))->addSeconds($delay));
     }
 }

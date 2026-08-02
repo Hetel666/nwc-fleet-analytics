@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\HistoricalRecalculation;
+use App\Services\DashboardReportPipelineService;
 use App\Services\HistoricalRecalculationService;
 use Illuminate\Console\Command;
 
@@ -12,7 +13,7 @@ class SyncLastCompletedNighttimeEfficiency extends Command
 
     protected $description = 'Queue the last completed 18:00-07:59 Asia/Baku efficiency shift.';
 
-    public function handle(HistoricalRecalculationService $service): int
+    public function handle(HistoricalRecalculationService $service, DashboardReportPipelineService $pipelines): int
     {
         $timezone = (string) config('historical_recalculation.timezone', 'Asia/Baku');
         $shiftDate = now($timezone)->subDay()->toDateString();
@@ -42,7 +43,15 @@ class SyncLastCompletedNighttimeEfficiency extends Command
             return self::SUCCESS;
         }
 
-        $run = $service->createRun([
+        $plan = [
+            'date_from' => $shiftDate,
+            'date_to' => $shiftDate,
+            'section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'project_ids' => [],
+            'force' => true,
+        ];
+        $preview = $service->preview([
             'date_from' => $shiftDate,
             'date_to' => $shiftDate,
             'timezone' => $timezone,
@@ -51,9 +60,16 @@ class SyncLastCompletedNighttimeEfficiency extends Command
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'project_ids' => [],
             'force' => true,
-        ], null);
+        ]);
+        $result = $pipelines->queue([$plan], 'nightly', $pipelines->priorityForSource('nightly'));
 
-        $this->line("Nighttime efficiency run {$run->id} queued for shift {$shiftDate} with {$run->total_tasks} tasks.");
+        $this->line(sprintf(
+            'Nighttime efficiency pipeline %s queued for shift %s with %d tasks. Started run: %s.',
+            is_array($result['pipeline'] ?? null) ? ($result['pipeline']['id'] ?? '-') : '-',
+            $shiftDate,
+            (int) ($preview['total_tasks'] ?? 0),
+            $result['started_run_id'] ?? '-'
+        ));
 
         return self::SUCCESS;
     }

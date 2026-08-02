@@ -10,7 +10,9 @@ use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\DashboardReportPipelineService;
 use App\Services\EfficiencyRecalculationHandler;
 use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
@@ -197,8 +199,16 @@ class HistoricalRecalculationTest extends TestCase
 
         $this->assertDatabaseHas('historical_recalculations', [
             'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
             'force' => true,
+            'requested_by' => $admin->id,
         ]);
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+        $this->assertSame('manual', $pipelines[0]['source']);
+        $this->assertSame($admin->id, $pipelines[0]['requested_by']);
+        $this->assertSame(HistoricalRecalculation::OPERATION_RECALCULATE, $pipelines[0]['plans'][0]['operation']);
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class);
     }
 
@@ -440,6 +450,47 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertStringContainsString('exit code 1', (string) $task->error_message);
     }
 
+    public function test_temporary_wialon_error_is_retried_before_task_is_failed(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Temporary command project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '501',
+            'name' => 'Temporary command project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '5010');
+        $service = app(HistoricalRecalculationService::class);
+        $run = $service->createRun([
+            'date_from' => '2026-07-28',
+            'date_to' => '2026-07-28',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => true,
+        ], $admin);
+        $task = $run->tasks()->where('operation', HistoricalRecalculation::OPERATION_FETCH)->firstOrFail();
+
+        Artisan::shouldReceive('call')->once()->andReturn(1);
+        Artisan::shouldReceive('output')->once()->andReturn('Wialon API error 1004: temporary report execution limit.');
+
+        $job = (new RunHistoricalRecalculationTaskJob($task->id))->withFakeQueueInteractions();
+        $job->handle(
+            app(HistoricalRecalculationModuleRegistry::class),
+            $service
+        );
+        $job->assertReleased(60);
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_PENDING, $task->refresh()->status);
+        $this->assertSame(1, (int) $task->attempts);
+        $this->assertStringContainsString('Temporary failure', (string) $task->error_message);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+    }
+
     public function test_geofence_violations_history_uses_its_own_fetch_command(): void
     {
         Queue::fake();
@@ -501,10 +552,10 @@ class HistoricalRecalculationTest extends TestCase
         $taskJob = new RunHistoricalRecalculationTaskJob(1);
         $finalizeJob = new FinalizeHistoricalRecalculationJob(1);
 
-        $this->assertSame(3, $taskJob->tries);
+        $this->assertSame(8, $taskJob->tries);
         $this->assertSame(900, $taskJob->timeout);
         $this->assertTrue($taskJob->failOnTimeout);
-        $this->assertSame([60, 300], $taskJob->backoff());
+        $this->assertSame([60, 180, 300, 600, 900, 1800, 3600], $taskJob->backoff());
         $this->assertSame(3, $finalizeJob->tries);
         $this->assertSame(300, $finalizeJob->timeout);
         $this->assertTrue($finalizeJob->failOnTimeout);
@@ -562,19 +613,86 @@ class HistoricalRecalculationTest extends TestCase
             Carbon::setTestNow();
         }
 
+        $firstRun = HistoricalRecalculation::query()
+            ->where('dashboard_section', HistoricalRecalculation::SECTION_EFFICIENCY)
+            ->firstOrFail();
+
+        $this->assertDatabaseCount('historical_recalculations', 1);
         $this->assertDatabaseHas('historical_recalculations', [
             'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
             'date_from' => '2026-08-01 00:00:00',
             'date_to' => '2026-08-01 00:00:00',
             'force' => 1,
         ]);
+
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+        $this->assertCount(1, $pipelines);
+        $this->assertSame('daily', $pipelines[0]['source']);
+        $this->assertSame(100, $pipelines[0]['priority']);
+        $this->assertSame($firstRun->id, $pipelines[0]['current_run_id']);
+        $this->assertCount(2, $pipelines[0]['plans']);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+
+        $firstRun->tasks()->update([
+            'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+            'completed_at' => now('Asia/Baku'),
+        ]);
+        $firstRun->forceFill([
+            'status' => HistoricalRecalculation::STATUS_COMPLETED,
+            'completed_at' => now('Asia/Baku'),
+        ])->save();
+
+        app(DashboardReportPipelineService::class)->handleRunFinished($firstRun->refresh());
+
         $this->assertDatabaseHas('historical_recalculations', [
             'dashboard_section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
             'date_from' => '2026-07-31 00:00:00',
             'date_to' => '2026-07-31 00:00:00',
             'force' => 1,
         ]);
+        $this->assertDatabaseCount('historical_recalculations', 2);
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
+    }
+
+    public function test_dashboard_reports_historical_queue_splits_ranges_into_weekly_pipeline_steps(): void
+    {
+        Queue::fake();
+        $project = Project::query()->create(['name' => 'Chunked dashboard sync', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '720',
+            'name' => 'Chunked dashboard sync - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '72001');
+
+        $this->artisan('dashboard-reports:queue-sync', [
+            '--from' => '2026-06-01',
+            '--to' => '2026-06-15',
+            '--module' => [HistoricalRecalculation::SECTION_TOP_WORKING_UNITS],
+            '--chunk-days' => 7,
+            '--force' => true,
+        ])->assertSuccessful();
+
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+
+        $this->assertCount(1, $pipelines);
+        $this->assertSame('historical', $pipelines[0]['source']);
+        $this->assertSame(10, $pipelines[0]['priority']);
+        $this->assertSame([
+            ['from' => '2026-06-01', 'to' => '2026-06-07'],
+            ['from' => '2026-06-08', 'to' => '2026-06-14'],
+            ['from' => '2026-06-15', 'to' => '2026-06-15'],
+        ], collect($pipelines[0]['plans'])->map(fn (array $plan): array => [
+            'from' => $plan['date_from'],
+            'to' => $plan['date_to'],
+        ])->all());
+        $this->assertDatabaseCount('historical_recalculations', 1);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
     }
 
     public function test_store_rejects_run_when_selected_project_has_no_executable_tasks(): void
