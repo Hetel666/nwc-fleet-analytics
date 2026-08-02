@@ -24,6 +24,7 @@ class UserController extends Controller
             'user' => new User(['role' => User::ROLE_VIEWER, 'active' => true]),
             'roles' => $this->roles(),
             'dashboardSections' => User::dashboardSectionOptions(),
+            'permissions' => User::permissionOptions(),
         ]);
     }
 
@@ -40,6 +41,7 @@ class UserController extends Controller
             'user' => $user,
             'roles' => $this->roles(),
             'dashboardSections' => User::dashboardSectionOptions(),
+            'permissions' => User::permissionOptions(),
         ]);
     }
 
@@ -96,6 +98,8 @@ class UserController extends Controller
             'active' => ['nullable', 'boolean'],
             'dashboard_sections' => ['nullable', 'array'],
             'dashboard_sections.*' => [Rule::in(User::dashboardSectionKeys())],
+            'permissions' => ['nullable', 'array'],
+            'permissions.*' => [Rule::in(User::permissionKeys())],
             'password' => $passwordRules,
         ]);
 
@@ -104,6 +108,11 @@ class UserController extends Controller
             $data['role'] === User::ROLE_ADMIN => null,
             $request->has('dashboard_sections_present') => array_values($request->input('dashboard_sections', [])),
             default => null,
+        };
+        $data['permissions'] = match (true) {
+            $data['role'] === User::ROLE_ADMIN => null,
+            $request->has('permissions_present') => array_values($request->input('permissions', [])),
+            default => [],
         };
 
         if (($data['password'] ?? '') === '') {

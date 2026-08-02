@@ -541,22 +541,33 @@
                             <i data-lucide="database"></i><span>Dashboard mənbələri</span>
                         </a>
                     @endif
+                    @can('view-wialon-catalog')
+                        <a class="nav-link {{ request()->routeIs('admin.wialon-catalog.*') ? 'active' : '' }}" href="{{ route('admin.wialon-catalog.index') }}">
+                            <i data-lucide="layers-3"></i><span>Wialon kataloqu</span>
+                        </a>
+                    @endcan
                 </div>
 
-                @if ($currentUser?->isAdmin())
+                @if ($currentUser?->isAdmin() || $currentUser?->can('manage-projects'))
                     <div class="sidebar-section">
                         <div class="sidebar-section-title">Fleet</div>
+                        @can('manage-projects')
                         <a class="nav-link {{ request()->routeIs('projects.*') ? 'active' : '' }}" href="{{ route('projects.index') }}">
                             <i data-lucide="folder-kanban"></i><span>{{ __('app.projects') }}</span>
                         </a>
+                        @endcan
+                        @if ($currentUser?->isAdmin())
                         <a class="nav-link {{ request()->routeIs('equipment.*') ? 'active' : '' }}" href="{{ route('equipment.index') }}">
                             <i data-lucide="truck"></i><span>{{ __('app.equipment') }}</span>
                         </a>
                         <a class="nav-link {{ request()->routeIs('equipment-types.*') ? 'active' : '' }}" href="{{ route('equipment-types.index') }}">
                             <i data-lucide="layers-3"></i><span>{{ __('app.equipment_types') }}</span>
                         </a>
+                        @endif
                     </div>
+                @endif
 
+                @if ($currentUser?->isAdmin())
                     <div class="sidebar-section">
                         <div class="sidebar-section-title">Monitoring</div>
                         <a class="nav-link {{ request()->routeIs('geofences.*') ? 'active' : '' }}" href="{{ route('geofences.index') }}">

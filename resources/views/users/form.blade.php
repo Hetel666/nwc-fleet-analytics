@@ -11,6 +11,12 @@
         $selectedDashboardSections = collect((array) $selectedDashboardSections)
             ->map(fn ($section): string => (string) $section)
             ->all();
+        $selectedPermissions = old('permissions_present')
+            ? old('permissions', [])
+            : ($user->permissions ?? []);
+        $selectedPermissions = collect((array) $selectedPermissions)
+            ->map(fn ($permission): string => (string) $permission)
+            ->all();
     @endphp
 
     <form method="POST" action="{{ $user->exists ? route('users.update', $user) : route('users.store') }}" class="panel p-4">
@@ -82,6 +88,39 @@
                     @error('dashboard_sections')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                     @error('dashboard_sections.*')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                     <div class="form-text mt-2">{{ __('app.dashboard_access_admin_hint') }}</div>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="border rounded-3 p-3">
+                    <div class="d-flex flex-column flex-lg-row gap-2 justify-content-between mb-3">
+                        <div>
+                            <div class="fw-semibold">Əlavə giriş hüquqları</div>
+                            <div class="form-text">Viewer istifadəçiyə yalnız lazım olan inzibati imkanları seçin.</div>
+                        </div>
+                        <span class="badge text-bg-light align-self-start">Permissions</span>
+                    </div>
+                    <input type="hidden" name="permissions_present" value="1">
+                    <div class="row g-2">
+                        @foreach ($permissions as $value => $label)
+                            <div class="col-md-4">
+                                <label class="form-check">
+                                    <input
+                                        type="checkbox"
+                                        name="permissions[]"
+                                        value="{{ $value }}"
+                                        id="permission{{ \Illuminate\Support\Str::studly(str_replace('.', '_', $value)) }}"
+                                        class="form-check-input @error('permissions') is-invalid @enderror @error('permissions.*') is-invalid @enderror"
+                                        @checked(in_array($value, $selectedPermissions, true))
+                                    >
+                                    <span class="form-check-label">{{ $label }}</span>
+                                    <span class="form-text d-block">{{ $value }}</span>
+                                </label>
+                            </div>
+                        @endforeach
+                    </div>
+                    @error('permissions')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    @error('permissions.*')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    <div class="form-text mt-2">Admin istifadəçilər bu hüquqları avtomatik alır; adi istifadəçilərdə yalnız seçilənlər aktivdir.</div>
                 </div>
             </div>
             <div class="col-md-6">

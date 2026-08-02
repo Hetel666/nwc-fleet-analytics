@@ -26,6 +26,12 @@ class User extends Authenticatable
 
     public const DASHBOARD_SECTION_GEOZONES = 'geozones';
 
+    public const PERMISSION_WIALON_CATALOG_VIEW = 'wialon_catalog.view';
+
+    public const PERMISSION_WIALON_CATALOG_SYNC = 'wialon_catalog.sync';
+
+    public const PERMISSION_PROJECTS_MANAGE = 'projects.manage';
+
     /**
      * The attributes that are mass assignable.
      *
@@ -38,6 +44,7 @@ class User extends Authenticatable
         'role',
         'active',
         'dashboard_sections',
+        'permissions',
     ];
 
     /**
@@ -60,6 +67,7 @@ class User extends Authenticatable
         return [
             'active' => 'boolean',
             'dashboard_sections' => 'array',
+            'permissions' => 'array',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
@@ -93,6 +101,45 @@ class User extends Authenticatable
             self::DASHBOARD_SECTION_EFFICIENCY => __('app.dashboard_tab_efficiency'),
             self::DASHBOARD_SECTION_GEOZONES => __('app.dashboard_tab_geozones'),
         ];
+    }
+
+    /** @return array<string> */
+    public static function permissionKeys(): array
+    {
+        return [
+            self::PERMISSION_WIALON_CATALOG_VIEW,
+            self::PERMISSION_WIALON_CATALOG_SYNC,
+            self::PERMISSION_PROJECTS_MANAGE,
+        ];
+    }
+
+    /** @return array<string, string> */
+    public static function permissionOptions(): array
+    {
+        return [
+            self::PERMISSION_WIALON_CATALOG_VIEW => 'Wialon kataloquna baxış',
+            self::PERMISSION_WIALON_CATALOG_SYNC => 'Wialon kataloqu sinxronizasiya',
+            self::PERMISSION_PROJECTS_MANAGE => 'Layihələri yaratmaq və dəyişmək',
+        ];
+    }
+
+    /** @return array<string> */
+    public function allowedPermissions(): array
+    {
+        if ($this->isAdmin()) {
+            return self::permissionKeys();
+        }
+
+        return collect($this->permissions ?? [])
+            ->map(fn ($permission): string => (string) $permission)
+            ->intersect(self::permissionKeys())
+            ->values()
+            ->all();
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        return in_array($permission, $this->allowedPermissions(), true);
     }
 
     /** @return array<string> */

@@ -1,8 +1,9 @@
 <?php
 
-use App\Http\Controllers\Admin\DashboardAnalyticsController;
 use App\Http\Controllers\Admin\CleanupHistoricalRecalculationQueueController;
+use App\Http\Controllers\Admin\DashboardAnalyticsController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
+use App\Http\Controllers\Admin\WialonCatalogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardDrilldownController;
@@ -75,7 +76,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     });
     Route::get('/projects/{project}/dashboard', [ProjectDashboardController::class, 'show'])->name('projects.dashboard');
 
-    Route::resource('projects', ProjectController::class)->except(['show'])->middleware('admin');
+    Route::resource('projects', ProjectController::class)->except(['show'])->middleware('can:manage-projects');
     Route::resource('equipment-types', EquipmentTypeController::class)->except(['show'])->middleware('admin');
     Route::resource('equipment', EquipmentController::class)->except(['show'])->middleware('admin');
     Route::resource('geofences', GeofenceController::class)->except(['show'])->middleware('admin');
@@ -84,6 +85,36 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/admin/dashboard-analytics', [DashboardAnalyticsController::class, 'index'])
         ->middleware('admin')
         ->name('admin.dashboard-analytics.index');
+
+    Route::get('/admin/wialon-catalog', [WialonCatalogController::class, 'index'])
+        ->middleware('can:view-wialon-catalog')
+        ->name('admin.wialon-catalog.index');
+
+    Route::prefix('api/wialon-catalog')
+        ->name('api.wialon-catalog.')
+        ->middleware('can:view-wialon-catalog')
+        ->group(function (): void {
+            Route::get('/overview', [WialonCatalogController::class, 'overview'])->name('overview');
+            Route::get('/resources', [WialonCatalogController::class, 'resources'])->name('resources');
+            Route::get('/unit-groups', [WialonCatalogController::class, 'unitGroups'])->name('unit-groups');
+            Route::get('/units', [WialonCatalogController::class, 'units'])->name('units');
+            Route::get('/geofence-groups', [WialonCatalogController::class, 'geofenceGroups'])->name('geofence-groups');
+            Route::get('/geofences', [WialonCatalogController::class, 'geofences'])->name('geofences');
+            Route::get('/report-templates', [WialonCatalogController::class, 'reportTemplates'])->name('report-templates');
+            Route::post('/sync', [WialonCatalogController::class, 'sync'])->middleware('can:sync-wialon-catalog')->name('sync');
+            Route::get('/sync-runs', [WialonCatalogController::class, 'syncRuns'])->name('sync-runs');
+            Route::get('/sync-runs/{run}', [WialonCatalogController::class, 'syncRun'])->name('sync-runs.show');
+        });
+
+    Route::prefix('api/projects')
+        ->name('api.projects.')
+        ->middleware('can:manage-projects')
+        ->group(function (): void {
+            Route::get('/wialon-options', [WialonCatalogController::class, 'projectOptions'])->name('wialon-options');
+            Route::post('/', [WialonCatalogController::class, 'storeProject'])->name('store');
+            Route::put('/{project}/wialon-mapping', [WialonCatalogController::class, 'updateProjectMapping'])->name('wialon-mapping.update');
+            Route::post('/{project}/validate-wialon-mapping', [WialonCatalogController::class, 'validateProjectMapping'])->name('wialon-mapping.validate');
+        });
 
     Route::prefix('admin/historical-recalculations')
         ->name('admin.historical-recalculations.')

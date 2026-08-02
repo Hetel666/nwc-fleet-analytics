@@ -25,11 +25,33 @@
             </div>
             <div class="col-md-6">
                 <label class="form-label">Wialon NWC qrup ID</label>
-                <input name="wialon_group_nwc" value="{{ old('wialon_group_nwc', $wialonGroups[\App\Models\Equipment::OWNERSHIP_NWC] ?? '') }}" class="form-control">
+                @if (($wialonGroupOptions ?? collect())->isNotEmpty())
+                    <select name="wialon_group_nwc" class="form-select">
+                        <option value="">Seçilməyib</option>
+                        @foreach ($wialonGroupOptions as $group)
+                            <option value="{{ $group->wialon_group_id }}" @selected(old('wialon_group_nwc', $wialonGroups[\App\Models\Equipment::OWNERSHIP_NWC] ?? '') === $group->wialon_group_id)>
+                                {{ $group->name }} | ID: {{ $group->wialon_group_id }} | {{ $group->units_count }} obyekt
+                            </option>
+                        @endforeach
+                    </select>
+                @else
+                    <input name="wialon_group_nwc" value="{{ old('wialon_group_nwc', $wialonGroups[\App\Models\Equipment::OWNERSHIP_NWC] ?? '') }}" class="form-control">
+                @endif
             </div>
             <div class="col-md-6">
                 <label class="form-label">Wialon Icare qrup ID</label>
-                <input name="wialon_group_icare" value="{{ old('wialon_group_icare', $wialonGroups[\App\Models\Equipment::OWNERSHIP_ICARE] ?? '') }}" class="form-control">
+                @if (($wialonGroupOptions ?? collect())->isNotEmpty())
+                    <select name="wialon_group_icare" class="form-select">
+                        <option value="">Seçilməyib</option>
+                        @foreach ($wialonGroupOptions as $group)
+                            <option value="{{ $group->wialon_group_id }}" @selected(old('wialon_group_icare', $wialonGroups[\App\Models\Equipment::OWNERSHIP_ICARE] ?? '') === $group->wialon_group_id)>
+                                {{ $group->name }} | ID: {{ $group->wialon_group_id }} | {{ $group->units_count }} obyekt
+                            </option>
+                        @endforeach
+                    </select>
+                @else
+                    <input name="wialon_group_icare" value="{{ old('wialon_group_icare', $wialonGroups[\App\Models\Equipment::OWNERSHIP_ICARE] ?? '') }}" class="form-control">
+                @endif
             </div>
             <div class="col-12">
                 <label class="form-check">

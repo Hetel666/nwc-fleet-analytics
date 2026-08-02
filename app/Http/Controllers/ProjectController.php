@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\Equipment;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Models\WialonUnitGroup;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Unique;
 use Illuminate\View\View;
@@ -40,6 +42,7 @@ class ProjectController extends Controller
         return view('projects.form', [
             'project' => new Project(),
             'wialonGroups' => [],
+            'wialonGroupOptions' => $this->wialonCatalogGroups(),
         ]);
     }
 
@@ -58,6 +61,7 @@ class ProjectController extends Controller
         return view('projects.form', [
             'project' => $project,
             'wialonGroups' => $this->wialonGroupValues($project),
+            'wialonGroupOptions' => $this->wialonCatalogGroups(),
         ]);
     }
 
@@ -135,6 +139,18 @@ class ProjectController extends Controller
         return $project->wialonGroups
             ->mapWithKeys(fn (ProjectWialonGroup $group): array => [$group->ownership_type => $group->wialon_group_id])
             ->all();
+    }
+
+    private function wialonCatalogGroups()
+    {
+        if (! Schema::hasTable('wialon_unit_groups')) {
+            return collect();
+        }
+
+        return WialonUnitGroup::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['wialon_group_id', 'name', 'units_count', 'linked_project_id', 'ownership_type']);
     }
 
     private function ownershipLabel(string $ownership): string
