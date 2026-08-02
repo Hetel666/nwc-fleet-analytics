@@ -25,6 +25,7 @@ class SettingsController extends Controller
             'syncIntervalOptions' => $this->syncIntervalOptions(),
             'syncStatusRows' => $this->syncStatusRows(),
             'latestHistoricalRun' => $this->latestHistoricalRun(),
+            'cleanupHistoricalRun' => $this->cleanupHistoricalRun(),
             'historicalQueueSize' => $this->historicalQueueSize(),
         ]);
     }
@@ -73,7 +74,13 @@ class SettingsController extends Controller
 
     public function cleanupHistoricalRuns(HistoricalRecalculationService $service): RedirectResponse
     {
-        $summary = $service->cleanupStuckQueue();
+        $run = $this->cleanupHistoricalRun();
+
+        if (! $run) {
+            return back()->with('error', 'Recent active historical run tapilmadi. Kohne REVIEW run-lari yalniz run sehifesinden temizleyin.');
+        }
+
+        $summary = $service->cleanupStuckQueue($run);
 
         $message = sprintf(
             'Historical queue cleanup: %d stale job deleted, %d stale task marked failed, %d active run resumed.',
@@ -147,6 +154,15 @@ class SettingsController extends Controller
             ->latest('updated_at')
             ->first()
             ?: HistoricalRecalculation::query()->latest('updated_at')->first();
+    }
+
+    private function cleanupHistoricalRun(): ?HistoricalRecalculation
+    {
+        return HistoricalRecalculation::query()
+            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
+            ->where('updated_at', '>=', now(config('app.timezone'))->subDay())
+            ->latest('updated_at')
+            ->first();
     }
 
     private function historicalQueueSize(): ?int

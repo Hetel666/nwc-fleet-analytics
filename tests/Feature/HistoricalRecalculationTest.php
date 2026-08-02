@@ -1098,6 +1098,25 @@ class HistoricalRecalculationTest extends TestCase
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'stat_date' => '2026-08-01',
         ]);
+        $activeRun = HistoricalRecalculation::query()->create([
+            'uuid' => 'd7bdf3b0-afb7-45fe-aa38-1f0198ff1525',
+            'signature' => 'settings-cleanup-active-target',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $activeRun->id,
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-08-01',
+        ]);
         $staleJobId = DB::table('jobs')->insertGetId($this->historicalQueueJobRow(
             new RunHistoricalRecalculationTaskJob($task->id)
         ));

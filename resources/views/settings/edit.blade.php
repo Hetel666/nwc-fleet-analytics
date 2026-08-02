@@ -124,14 +124,25 @@
                             -
                         @endif
                     </dd>
+                    <dt class="col-6 text-secondary">Cleanup target</dt>
+                    <dd class="col-6 text-end">
+                        @if ($cleanupHistoricalRun)
+                            #{{ $cleanupHistoricalRun->id }}
+                        @else
+                            -
+                        @endif
+                    </dd>
                 </dl>
 
                 <form method="POST" action="{{ route('settings.cleanup-historical-runs') }}" data-sync-form data-confirm="Zavis historical queue cleanup icra edilsin? Hesabat datasi silinmeyecek.">
                     @csrf
-                    <button type="submit" class="btn btn-outline-warning btn-icon" data-loading-text="Cleanup gedir...">
+                    <button type="submit" class="btn btn-outline-warning btn-icon" data-loading-text="Cleanup gedir..." @disabled(! $cleanupHistoricalRun)>
                         <i class="bi bi-tools"></i><span>Zavis run temizle</span>
                     </button>
                 </form>
+                @if (! $cleanupHistoricalRun)
+                    <div class="text-secondary small mt-2">Recent active run yoxdur. Kohne REVIEW run-lari yalniz run sehifesinden temizleyin.</div>
+                @endif
             </section>
 
             <section class="panel p-4">

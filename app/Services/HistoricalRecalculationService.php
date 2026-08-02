@@ -195,11 +195,16 @@ class HistoricalRecalculationService
             'deleted_job_ids' => [],
         ];
 
-        $activeRuns = HistoricalRecalculation::query()
-            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
-            ->when($run, fn ($query) => $query->whereKey($run->id))
-            ->orderBy('id')
-            ->get();
+        $activeRunsQuery = HistoricalRecalculation::query()
+            ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING]);
+
+        if ($run instanceof HistoricalRecalculation) {
+            $activeRunsQuery->whereKey($run->id);
+        } else {
+            $activeRunsQuery->latest('updated_at')->limit(1);
+        }
+
+        $activeRuns = $activeRunsQuery->get();
 
         foreach ($activeRuns as $activeRun) {
             $summary['active_runs_checked']++;
