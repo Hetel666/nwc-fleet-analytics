@@ -176,28 +176,17 @@ class DashboardEfficiencyOrderTest extends TestCase
         $this->assertStringContainsString('overflow-y: visible', $view);
     }
 
-    public function test_internal_navigation_only_scrolls_to_existing_sections(): void
+    public function test_dashboard_section_navigation_controls_are_not_rendered(): void
     {
         $view = file_get_contents(resource_path('views/dashboard/index.blade.php'));
-        $handlerStart = strpos($view, "document.getElementById('dashboardEfficiencySubnav')?.addEventListener");
-        $handlerEnd = strpos($view, 'applyDashboardPreferences(savedDashboardPreferences);', $handlerStart);
 
-        $this->assertNotFalse($handlerStart);
-        $this->assertNotFalse($handlerEnd);
-        $handler = substr($view, $handlerStart, $handlerEnd - $handlerStart);
-
-        $this->assertAppearsInOrder($view, [
-            'data-efficiency-section="general"',
-            'data-efficiency-section="daytime"',
-            'data-efficiency-section="nighttime"',
-            'data-efficiency-section="night-day"',
-            'data-efficiency-section="averages"',
-            'data-efficiency-section="top20"',
-        ]);
-        $this->assertStringContainsString('target.scrollIntoView', $handler);
-        $this->assertStringNotContainsString('fetch(', $handler);
-        $this->assertStringNotContainsString('.submit(', $handler);
-        $this->assertStringNotContainsString('window.location', $handler);
+        $this->assertStringNotContainsString('dashboard-tabs', $view);
+        $this->assertStringNotContainsString('dashboard-efficiency-subnav', $view);
+        $this->assertStringNotContainsString('dashboardEfficiencySubnav', $view);
+        $this->assertStringNotContainsString('data-dashboard-tab="', $view);
+        $this->assertStringNotContainsString('data-efficiency-section="', $view);
+        $this->assertStringNotContainsString('target.scrollIntoView', $view);
+        $this->assertStringNotContainsString('dashboardTabLoadError', $view);
     }
 
     private function efficiencyDashboardHtml(): string

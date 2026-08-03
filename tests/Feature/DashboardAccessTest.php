@@ -91,9 +91,8 @@ class DashboardAccessTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('data-dashboard-active-tab="efficiency"', false)
-            ->assertSee('data-dashboard-tab="efficiency"', false)
-            ->assertDontSee('data-dashboard-tab="overview"', false)
-            ->assertDontSee('data-dashboard-tab="geozones"', false);
+            ->assertDontSee('dashboard-tabs', false)
+            ->assertDontSee('data-dashboard-tab="', false);
 
         $this->actingAs($viewer)
             ->get(route('dashboard', ['tab' => User::DASHBOARD_SECTION_OVERVIEW]))
@@ -163,7 +162,7 @@ class DashboardAccessTest extends TestCase
         $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
 
         $this->assertStringContainsString('Geofence Transferləri', $html);
-        $this->assertStringContainsString('Öz layihəsinin geozonasından kənarda olan texnikalar', $html);
+        $this->assertStringContainsString('İdarə Paneli', $html);
         $this->assertStringNotContainsString('Cari geozona / layihə üzrə statistika', $html);
 
         foreach (['Ã', 'Ð', 'Р ', 'РЎ', 'Pё', 'SeP', 'вЂ'] as $marker) {

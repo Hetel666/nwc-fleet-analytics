@@ -1787,29 +1787,6 @@
         height: 14px;
     }
 
-    .dashboard-efficiency-subnav {
-        position: sticky;
-        top: 76px;
-        z-index: 20;
-        display: flex;
-        align-items: center;
-        gap: .35rem;
-        margin-bottom: 1rem;
-        overflow-x: auto;
-        padding: .45rem;
-        border: 1px solid var(--fleet-line);
-        border-radius: 8px;
-        background: color-mix(in srgb, var(--fleet-card) 94%, transparent);
-        box-shadow: 0 8px 20px rgba(15, 23, 42, .06);
-        backdrop-filter: blur(10px);
-        scrollbar-width: thin;
-    }
-
-    .dashboard-efficiency-subnav .btn {
-        flex: 0 0 auto;
-        white-space: nowrap;
-    }
-
     .dashboard-efficiency-section-heading,
     .dashboard-efficiency-shift-section {
         scroll-margin-top: 142px;
@@ -2276,10 +2253,6 @@
         }
     }
     @media (max-width: 767.98px) {
-        .dashboard-efficiency-subnav {
-            top: 88px;
-        }
-
         .dashboard-efficiency-section-heading,
         .dashboard-efficiency-shift-section {
             scroll-margin-top: 152px;
@@ -2310,7 +2283,6 @@
         data-dashboard-layout-editable="{{ $canManageDashboardLayout ? '1' : '0' }}"
         data-dashboard-layout-update-url="{{ route('dashboard.layout.update') }}"
         data-dashboard-layout-reset-url="{{ route('dashboard.layout.destroy') }}"
-        data-dashboard-tab-url-template="{{ route('dashboard.tabs.show', ['tab' => '__TAB__']) }}"
         data-dashboard-drilldown-url="{{ route('dashboard.drilldown.units') }}"
         data-dashboard-drilldown-export-url="{{ route('dashboard.drilldown.units.export') }}"
         data-geofence-violations-drilldown-url="{{ route('dashboard.geofence-violations.drilldown') }}"
@@ -2470,29 +2442,6 @@
         </div>
         @endif
 
-        <nav class="dashboard-tabs mb-3" aria-label="{{ __('app.dashboard_sections') }}">
-            <div class="nav nav-tabs" role="tablist">
-                @foreach ($dashboardTabs as $tabKey => $tab)
-                    @php
-                        $isSelectedDashboardTab = $selectedDashboardTab === $tabKey;
-                    @endphp
-                    <button
-                        type="button"
-                        class="nav-link{{ $isSelectedDashboardTab ? ' active' : '' }}"
-                        id="dashboardTab{{ \Illuminate\Support\Str::studly($tabKey) }}"
-                        role="tab"
-                        aria-selected="{{ $isSelectedDashboardTab ? 'true' : 'false' }}"
-                        aria-controls="dashboardGrid"
-                        tabindex="{{ $isSelectedDashboardTab ? '0' : '-1' }}"
-                        data-dashboard-tab="{{ $tabKey }}"
-                    >
-                        {{ __($tab['label_key']) }}
-                    </button>
-                @endforeach
-            </div>
-            <span class="visually-hidden" id="dashboardGeozonesDescription">Öz layihəsinin geozonasından kənarda olan texnikalar</span>
-        </nav>
-
         @if ($latestPublishedReportDate)
             <div class="alert alert-info py-2 px-3 mb-3" role="status" aria-live="polite" data-dashboard-freshness>
                 <i class="bi bi-database-check me-1" aria-hidden="true"></i>
@@ -2539,20 +2488,11 @@
         @include('dashboard.partials.design-preferences')
         @endunless
 
-        <nav class="dashboard-efficiency-subnav" id="dashboardEfficiencySubnav" aria-label="Effektivlik bölmələri" @hidden($selectedDashboardTab !== 'efficiency')>
-            <button type="button" class="btn btn-sm btn-primary" data-efficiency-section="general" aria-pressed="true">Ümumi</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="daytime" aria-pressed="false">Gündüz</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="nighttime" aria-pressed="false">Gecə</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="night-day" aria-pressed="false">Gecə — gün daxilində</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="averages" aria-pressed="false">Orta göstəricilər</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-efficiency-section="top20" aria-pressed="false">Top 20</button>
-        </nav>
-
         <div
             class="row g-3 dashboard-grid"
             id="dashboardGrid"
-            role="tabpanel"
-            aria-labelledby="dashboardTab{{ \Illuminate\Support\Str::studly($selectedDashboardTab) }}"
+            role="region"
+            aria-label="{{ __($dashboardTabs[$selectedDashboardTab]['label_key'] ?? 'app.dashboard_sections') }}"
             aria-live="polite"
             aria-busy="false"
             data-dashboard-active-tab="{{ $selectedDashboardTab }}"
@@ -3393,16 +3333,6 @@ let savedDashboardPreferences = {
     ...dashboardPreferenceDefaults,
     ...JSON.parse(dashboardPage?.dataset.dashboardPreferences || '{}'),
 };
-function setActiveEfficiencyNavigation(activeSection = null) {
-    activeSection = activeSection || document.querySelector('[data-efficiency-section]')?.dataset.efficiencySection || 'general';
-
-    document.querySelectorAll('[data-efficiency-section]').forEach(button => {
-        const active = button.dataset.efficiencySection === activeSection;
-        button.classList.toggle('btn-primary', active);
-        button.classList.toggle('btn-outline-secondary', !active);
-        button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-}
 
 const applyDashboardPreferences = preferences => {
     const resolved = { ...dashboardPreferenceDefaults, ...preferences };
@@ -3566,25 +3496,7 @@ document.addEventListener('keydown', event => {
     }
 });
 
-document.getElementById('dashboardEfficiencySubnav')?.addEventListener('click', event => {
-    const button = event.target.closest('[data-efficiency-section]');
-    if (!button) {
-        return;
-    }
-
-    const section = button.dataset.efficiencySection;
-    const target = document.getElementById(`efficiency-${section}`);
-    if (!target) {
-        return;
-    }
-
-    setActiveEfficiencyNavigation(section);
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-});
-
 applyDashboardPreferences(savedDashboardPreferences);
-const dashboardTabButtons = Array.from(document.querySelectorAll('[data-dashboard-tab]'));
-const dashboardTabUrlTemplate = dashboardPage?.dataset.dashboardTabUrlTemplate || '';
 const dashboardSelectedTabInput = document.getElementById('dashboardSelectedTabInput');
 const dashboardResetButton = document.getElementById('resetDashboardLayout');
 const dashboardEditButton = document.getElementById('editDashboardLayout');
@@ -3672,8 +3584,6 @@ const truncateLabel = value => String(value ?? '').length > 28 ? `${String(value
 let draggedWidget = null;
 let dragOverWidget = null;
 let dashboardLoadingTimer = null;
-let dashboardTabController = null;
-let dashboardTabRequestId = 0;
 
 const commonTooltip = {
     callbacks: {
@@ -4165,9 +4075,6 @@ const setDashboardLayoutEditing = enabled => {
     dashboardSaveButton?.classList.toggle('d-none', !enabled);
     dashboardCancelButton?.classList.toggle('d-none', !enabled);
     dashboardResetButton?.classList.toggle('d-none', !enabled);
-    dashboardTabButtons.forEach(button => {
-        button.disabled = enabled;
-    });
 
     dashboardWidgets().forEach(widget => {
         widget.classList.toggle('is-editable', enabled);
@@ -4379,184 +4286,6 @@ if (dashboardGrid) {
         setDragOverWidget(null);
     });
 }
-
-const setActiveDashboardTab = tab => {
-    dashboardTabButtons.forEach(button => {
-        const selected = button.dataset.dashboardTab === tab;
-        button.classList.toggle('active', selected);
-        button.setAttribute('aria-selected', selected ? 'true' : 'false');
-        button.tabIndex = selected ? 0 : -1;
-    });
-
-    if (dashboardGrid) {
-        dashboardGrid.dataset.dashboardActiveTab = tab;
-        dashboardGrid.setAttribute('aria-labelledby', `dashboardTab${tab.charAt(0).toUpperCase()}${tab.slice(1)}`);
-    }
-
-    if (dashboardSelectedTabInput) {
-        dashboardSelectedTabInput.value = tab;
-    }
-
-    const efficiencySubnav = document.getElementById('dashboardEfficiencySubnav');
-    if (efficiencySubnav) {
-        efficiencySubnav.hidden = tab !== 'efficiency';
-    }
-    if (tab === 'efficiency') {
-        setActiveEfficiencyNavigation();
-    }
-};
-
-const dashboardTabRequestUrl = tab => {
-    const path = dashboardTabUrlTemplate.replace('__TAB__', encodeURIComponent(tab));
-    const url = new URL(path, window.location.origin);
-    const globalFilters = {
-        date_from: dashboardPage?.dataset.dashboardDateFrom || '',
-        date_to: dashboardPage?.dataset.dashboardDateTo || '',
-        project_id: dashboardPage?.dataset.dashboardProjectId || '',
-        equipment_type_id: dashboardPage?.dataset.dashboardEquipmentTypeId || '',
-        ownership_type: dashboardPage?.dataset.dashboardOwnership === 'all' ? '' : (dashboardPage?.dataset.dashboardOwnership || ''),
-    };
-
-    Object.entries(globalFilters).forEach(([key, value]) => {
-        if (value !== '') {
-            url.searchParams.set(key, value);
-        }
-    });
-
-    return url;
-};
-
-const replaceDashboardTabWidgets = remoteGrid => {
-    const widgets = Array.from(remoteGrid.children)
-        .filter(node => node.classList?.contains('dashboard-widget') || node.dataset?.efficiencyGroup);
-    let chartData = {};
-
-    try {
-        chartData = JSON.parse(remoteGrid.dataset.dashboardChartData || '{}');
-    } catch (error) {
-        chartData = {};
-    }
-
-    dashboardGrid.querySelectorAll('canvas').forEach(canvas => {
-        window.Chart?.getChart?.(canvas)?.destroy();
-    });
-    dashboardGrid.replaceChildren(...widgets);
-    dashboardGrid.dataset.dashboardChartData = remoteGrid.dataset.dashboardChartData || '{}';
-    applyDashboardChartData(chartData);
-    sortWidgetsByServerOrder();
-    refreshWidgetVisibilityControls();
-    disableDashboardDragging();
-    bindDashboardWidgetControls();
-    initializeDashboardCharts();
-    setActiveEfficiencyNavigation();
-
-};
-
-const renderDashboardTabError = (tab, button) => {
-    document.getElementById('dashboardTabLoadError')?.remove();
-    const alert = document.createElement('div');
-    alert.id = 'dashboardTabLoadError';
-    alert.className = 'alert alert-danger';
-    alert.setAttribute('role', 'alert');
-    alert.textContent = @json(__('app.tab_load_failed'));
-
-    const retry = document.createElement('button');
-    retry.type = 'button';
-    retry.className = 'btn btn-sm btn-outline-danger ms-2';
-    retry.textContent = @json(__('app.tab_load_retry'));
-    retry.addEventListener('click', () => loadDashboardTab(tab, button));
-    alert.appendChild(retry);
-    dashboardGrid.before(alert);
-};
-
-const loadDashboardTab = async (tab, button, { updateHistory = true } = {}) => {
-    if (!dashboardGrid || !dashboardTabUrlTemplate || !dashboardTabButtons.some(item => item.dataset.dashboardTab === tab)) {
-        return;
-    }
-
-    dashboardTabController?.abort();
-    dashboardTabController = new AbortController();
-    const requestId = ++dashboardTabRequestId;
-    document.getElementById('dashboardTabLoadError')?.remove();
-    if (dashboardGrid.contains(document.activeElement)) {
-        dashboardTabButtons.find(item => item.getAttribute('aria-selected') === 'true')?.focus({ preventScroll: true });
-    }
-    dashboardGrid.setAttribute('aria-busy', 'true');
-    dashboardGrid.inert = true;
-    setDashboardLayoutStatus(@json(__('app.loading_tab')));
-
-    try {
-        const response = await fetch(dashboardTabRequestUrl(tab), {
-            headers: { 'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
-            signal: dashboardTabController.signal,
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const remoteDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
-        const remoteGrid = remoteDocument.getElementById('dashboardGrid');
-
-        if (!remoteGrid || requestId !== dashboardTabRequestId) {
-            throw new Error('Dashboard tab fragment is invalid.');
-        }
-
-        replaceDashboardTabWidgets(remoteGrid);
-        document.getElementById('dashboardTabLoadError')?.remove();
-        setActiveDashboardTab(tab);
-        setDashboardLayoutStatus('');
-
-        if (updateHistory) {
-            const locationUrl = new URL(window.location.href);
-            locationUrl.searchParams.set('tab', tab);
-            window.history.pushState({ dashboardTab: tab }, '', locationUrl);
-        }
-
-        button?.focus({ preventScroll: true });
-    } catch (error) {
-        if (error.name !== 'AbortError' && requestId === dashboardTabRequestId) {
-            renderDashboardTabError(tab, button);
-            setDashboardLayoutStatus(@json(__('app.tab_load_failed')), 'danger');
-        }
-    } finally {
-        if (requestId === dashboardTabRequestId) {
-            dashboardGrid.setAttribute('aria-busy', 'false');
-            dashboardGrid.inert = false;
-        }
-    }
-};
-
-dashboardTabButtons.forEach((button, index) => {
-    button.addEventListener('click', () => {
-        if (button.getAttribute('aria-selected') !== 'true') {
-            loadDashboardTab(button.dataset.dashboardTab, button);
-        }
-    });
-
-    button.addEventListener('keydown', event => {
-        let nextIndex = null;
-
-        if (event.key === 'ArrowRight') nextIndex = (index + 1) % dashboardTabButtons.length;
-        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + dashboardTabButtons.length) % dashboardTabButtons.length;
-        if (event.key === 'Home') nextIndex = 0;
-        if (event.key === 'End') nextIndex = dashboardTabButtons.length - 1;
-
-        if (nextIndex !== null) {
-            event.preventDefault();
-            dashboardTabButtons[nextIndex].focus();
-        }
-    });
-});
-
-window.addEventListener('popstate', () => {
-    const tab = new URL(window.location.href).searchParams.get('tab') || @json(config('dashboard.default_tab', 'overview'));
-    const button = dashboardTabButtons.find(item => item.dataset.dashboardTab === tab);
-
-    if (button && dashboardGrid?.dataset.dashboardActiveTab !== tab) {
-        loadDashboardTab(tab, button, { updateHistory: false });
-    }
-});
 
 dashboardEditButton?.addEventListener('click', () => {
     sortWidgetsByServerOrder();
@@ -5256,7 +4985,7 @@ drilldownModalElement?.addEventListener('hidden.bs.modal', () => {
     if (drilldownReturnFocus?.isConnected) {
         drilldownReturnFocus.focus({ preventScroll: true });
     } else {
-        document.querySelector('[data-dashboard-tab].active')?.focus?.({ preventScroll: true });
+        dashboardFilterButton?.focus?.({ preventScroll: true });
     }
 
     drilldownReturnFocus = null;
