@@ -560,17 +560,51 @@
                 $dashboardYesterday = now(config('app.timezone'))->subDay()->toDateString();
                 $currentUser = auth()->user();
                 $currentDashboardTab = $selectedDashboardTab ?? request('tab', 'overview');
+                $dashboardNavigationQueryKeys = [
+                    'period',
+                    'quick_range',
+                    'date_from',
+                    'date_to',
+                    'project_id',
+                    'equipment_type_id',
+                    'ownership_type',
+                ];
+                $dashboardAllowedPeriods = ['today', 'yesterday', 'last_7_days', 'this_month', 'last_month', 'custom'];
                 $dashboardQueryDefaults = [
                     'period' => 'yesterday',
                     'date_from' => $dashboardYesterday,
                     'date_to' => $dashboardYesterday,
                 ];
-                $dashboardCurrentQuery = request()->routeIs('dashboard')
-                    ? array_diff_key(request()->query(), array_flip(['search', 'daytime_search', 'nighttime_search', 'page', 'per_page']))
+                $dashboardCurrentQuery = request()->routeIs('dashboard') || request()->routeIs('projects.dashboard')
+                    ? array_intersect_key(request()->query(), array_flip($dashboardNavigationQueryKeys))
                     : [];
-                $dashboardEfficiencyQuery = array_replace(
+                $dashboardNormalizedFilterQuery = isset($filters) && is_array($filters)
+                    ? array_filter([
+                        'date_from' => $filters['from'] ?? null,
+                        'date_to' => $filters['to'] ?? null,
+                        'project_id' => $filters['project_id'] ?? null,
+                        'equipment_type_id' => $filters['equipment_type_id'] ?? null,
+                        'ownership_type' => $filters['ownership_type'] ?? null,
+                    ], fn ($value) => $value !== null && $value !== '')
+                    : [];
+                $dashboardNavigationBaseQuery = array_replace(
                     $dashboardQueryDefaults,
                     $dashboardCurrentQuery,
+                    $dashboardNormalizedFilterQuery
+                );
+                if ((request()->routeIs('dashboard') || request()->routeIs('projects.dashboard')) && ! request()->query->has('period')) {
+                    $dashboardNavigationBaseQuery['period'] = $dashboardSelectedPeriod ?? 'custom';
+                }
+                if (! in_array((string) ($dashboardNavigationBaseQuery['period'] ?? ''), $dashboardAllowedPeriods, true)) {
+                    $dashboardNavigationBaseQuery['period'] = 'custom';
+                }
+                unset($dashboardNavigationBaseQuery['quick_range']);
+                $dashboardNavigationSectionUrl = fn (string $section): string => route('dashboard', array_replace(
+                    $dashboardNavigationBaseQuery,
+                    ['tab' => $section]
+                ));
+                $dashboardEfficiencyQuery = array_replace(
+                    $dashboardNavigationBaseQuery,
                     ['tab' => \App\Models\User::DASHBOARD_SECTION_EFFICIENCY]
                 );
                 $dashboardEfficiencySectionUrl = fn (string $section): string => route('dashboard', $dashboardEfficiencyQuery).'#'.$section;
@@ -581,26 +615,26 @@
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Dashboard</div>
                     @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_OVERVIEW))
-                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'overview' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'overview', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Ümumi baxış">
+                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'overview' ? 'active' : '' }}" href="{{ $dashboardNavigationSectionUrl(\App\Models\User::DASHBOARD_SECTION_OVERVIEW) }}" data-dashboard-nav-link title="Ümumi baxış">
                         <i data-lucide="layout-dashboard"></i><span>Ümumi baxış</span>
                     </a>
                     @endif
                     @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_EFFICIENCY))
-                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'efficiency' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'efficiency', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Effektivlik">
+                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'efficiency' ? 'active' : '' }}" href="{{ $dashboardNavigationSectionUrl(\App\Models\User::DASHBOARD_SECTION_EFFICIENCY) }}" data-dashboard-nav-link title="Effektivlik">
                         <i data-lucide="gauge"></i><span>Effektivlik</span>
                     </a>
                     @if ($showDashboardEfficiencySubnav)
                         <div class="sidebar-subnav" aria-label="Effektivlik bölmələri">
-                            <a class="sidebar-subnav-link active" href="{{ $dashboardEfficiencySectionUrl('efficiency-general') }}" data-sidebar-efficiency-link>Ümumi 24 saat</a>
-                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-daytime') }}" data-sidebar-efficiency-link>Gündüz növbəsi</a>
-                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-nighttime') }}" data-sidebar-efficiency-link>Gecə növbəsi</a>
-                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-averages') }}" data-sidebar-efficiency-link>Orta göstəricilər</a>
-                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-top20') }}" data-sidebar-efficiency-link>TOP20 az / çox işləyən</a>
+                            <a class="sidebar-subnav-link active" href="{{ $dashboardEfficiencySectionUrl('efficiency-general') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Ümumi 24 saat</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-daytime') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gündüz növbəsi</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-nighttime') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gecə növbəsi</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-averages') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Orta göstəricilər</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-top20') }}" data-dashboard-nav-link data-sidebar-efficiency-link>TOP20 az / çox işləyən</a>
                         </div>
                     @endif
                     @endif
                     @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_GEOZONES))
-                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'geozones' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'geozones', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Geozonalar">
+                    <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'geozones' ? 'active' : '' }}" href="{{ $dashboardNavigationSectionUrl(\App\Models\User::DASHBOARD_SECTION_GEOZONES) }}" data-dashboard-nav-link title="Geozonalar">
                         <i data-lucide="map-pinned"></i><span>Geozonalar</span>
                     </a>
                     @endif
@@ -806,6 +840,198 @@
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
         document.body.classList.toggle('sidebar-open');
     });
+
+    const fleetDashboardFilterStorageKey = @json(auth()->id() ? 'fleet_dashboard_filters:'.auth()->id() : null);
+    const fleetDashboardFilterCookieName = @json(\App\Support\DashboardFilterState::COOKIE_NAME);
+    const fleetDashboardFilterUserId = @json(auth()->id() ? (string) auth()->id() : null);
+    const fleetDashboardFilterKeys = ['period', 'date_from', 'date_to', 'project_id', 'equipment_type_id', 'ownership_type'];
+    const fleetDashboardPeriods = ['today', 'yesterday', 'last_7_days', 'this_month', 'last_month', 'custom'];
+    const fleetDashboardDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const validFleetDashboardDate = value => fleetDashboardDatePattern.test(String(value || '').trim());
+    const normalizedFleetDashboardFilters = filters => {
+        if (!filters || typeof filters !== 'object') {
+            return null;
+        }
+
+        const dateFrom = String(filters.date_from || '').trim();
+        const dateTo = String(filters.date_to || '').trim();
+
+        if (!validFleetDashboardDate(dateFrom) || !validFleetDashboardDate(dateTo) || dateFrom > dateTo) {
+            return null;
+        }
+
+        const rawPeriod = String(filters.period || filters.quick_range || '').trim();
+        const period = fleetDashboardPeriods.includes(rawPeriod) ? rawPeriod : 'custom';
+        const normalized = {
+            period,
+            quick_range: period,
+            date_from: dateFrom,
+            date_to: dateTo,
+        };
+
+        ['project_id', 'equipment_type_id', 'ownership_type'].forEach(key => {
+            const value = String(filters[key] || '').trim();
+
+            if (value !== '' && value !== 'all') {
+                normalized[key] = value;
+            }
+        });
+
+        return normalized;
+    };
+    const readFleetDashboardCookieState = () => {
+        if (!fleetDashboardFilterCookieName || !fleetDashboardFilterUserId) {
+            return {};
+        }
+
+        const cookie = document.cookie
+            .split('; ')
+            .find(value => value.startsWith(`${fleetDashboardFilterCookieName}=`));
+
+        if (!cookie) {
+            return {};
+        }
+
+        try {
+            return JSON.parse(decodeURIComponent(cookie.slice(fleetDashboardFilterCookieName.length + 1))) || {};
+        } catch (error) {
+            return {};
+        }
+    };
+    const writeFleetDashboardCookieState = normalized => {
+        if (!fleetDashboardFilterCookieName || !fleetDashboardFilterUserId) {
+            return;
+        }
+
+        const state = readFleetDashboardCookieState();
+        state[fleetDashboardFilterUserId] = normalized;
+
+        let cookie = `${fleetDashboardFilterCookieName}=${encodeURIComponent(JSON.stringify(state))}; Max-Age=15552000; Path=/; SameSite=Lax`;
+
+        if (window.location.protocol === 'https:') {
+            cookie += '; Secure';
+        }
+
+        document.cookie = cookie;
+    };
+    const readFleetDashboardFilters = () => {
+        if (fleetDashboardFilterStorageKey) {
+            try {
+                const filters = normalizedFleetDashboardFilters(JSON.parse(window.localStorage.getItem(fleetDashboardFilterStorageKey) || 'null'));
+
+                if (filters) {
+                    return filters;
+                }
+            } catch (error) {
+                // Cookie fallback below keeps Dashboard navigation usable when localStorage is unavailable.
+            }
+        }
+
+        const cookieState = readFleetDashboardCookieState();
+
+        return normalizedFleetDashboardFilters(cookieState[fleetDashboardFilterUserId] || null);
+    };
+    const writeFleetDashboardFilters = filters => {
+        if (!fleetDashboardFilterStorageKey) {
+            return null;
+        }
+
+        const normalized = normalizedFleetDashboardFilters(filters);
+
+        if (!normalized) {
+            return null;
+        }
+
+        try {
+            window.localStorage.setItem(fleetDashboardFilterStorageKey, JSON.stringify(normalized));
+        } catch (error) {
+            // The server fallback cookie is still useful if localStorage fails.
+        }
+
+        writeFleetDashboardCookieState(normalized);
+
+        return normalized;
+    };
+    const collectFleetDashboardFilters = form => {
+        const page = document.querySelector('.dashboard-page');
+
+        if (!page || !form) {
+            return null;
+        }
+
+        return normalizedFleetDashboardFilters({
+            period: form.querySelector('[name="period"]')?.value || 'custom',
+            date_from: form.querySelector('[name="date_from"]')?.value || page.dataset.dashboardDateFrom,
+            date_to: form.querySelector('[name="date_to"]')?.value || page.dataset.dashboardDateTo,
+            project_id: form.querySelector('[name="project_id"]')?.value || page.dataset.dashboardProjectId,
+            equipment_type_id: form.querySelector('[name="equipment_type_id"]')?.value || page.dataset.dashboardEquipmentTypeId,
+            ownership_type: form.querySelector('[name="ownership_type"]')?.value || '',
+        });
+    };
+    const applyFleetDashboardFiltersToUrl = (href, filters) => {
+        const normalized = normalizedFleetDashboardFilters(filters);
+
+        if (!normalized) {
+            return href;
+        }
+
+        const url = new URL(href, window.location.origin);
+        ['search', 'daytime_search', 'nighttime_search', 'page', 'per_page'].forEach(key => url.searchParams.delete(key));
+
+        fleetDashboardFilterKeys.forEach(key => {
+            if (Object.prototype.hasOwnProperty.call(normalized, key)) {
+                url.searchParams.set(key, normalized[key]);
+            } else if (['project_id', 'equipment_type_id', 'ownership_type'].includes(key)) {
+                url.searchParams.delete(key);
+            }
+        });
+
+        return url.toString();
+    };
+    const refreshFleetDashboardNavigationLinks = filters => {
+        const normalized = normalizedFleetDashboardFilters(filters) || readFleetDashboardFilters();
+
+        if (!normalized) {
+            return;
+        }
+
+        document.querySelectorAll('[data-dashboard-nav-link]').forEach(link => {
+            link.href = applyFleetDashboardFiltersToUrl(link.href, normalized);
+        });
+    };
+    const dashboardStorageForm = document.getElementById('dashboardFilterForm');
+    const currentDashboardFilters = collectFleetDashboardFilters(dashboardStorageForm);
+
+    if (currentDashboardFilters) {
+        writeFleetDashboardFilters(currentDashboardFilters);
+        refreshFleetDashboardNavigationLinks(currentDashboardFilters);
+
+        if (window.location.pathname === @json(parse_url(route('dashboard'), PHP_URL_PATH))) {
+            const currentUrl = new URL(window.location.href);
+            const nextUrl = applyFleetDashboardFiltersToUrl(currentUrl.toString(), currentDashboardFilters);
+
+            if (nextUrl !== currentUrl.toString()) {
+                window.history.replaceState(window.history.state, '', nextUrl);
+            }
+        }
+    } else {
+        refreshFleetDashboardNavigationLinks();
+    }
+
+    dashboardStorageForm?.addEventListener('submit', () => {
+        const filters = collectFleetDashboardFilters(dashboardStorageForm);
+
+        if (filters) {
+            writeFleetDashboardFilters(filters);
+            refreshFleetDashboardNavigationLinks(filters);
+        }
+    });
+    window.fleetDashboardFilters = {
+        key: fleetDashboardFilterStorageKey,
+        read: readFleetDashboardFilters,
+        write: writeFleetDashboardFilters,
+        refreshNavigation: refreshFleetDashboardNavigationLinks,
+    };
 
     const sidebarEfficiencyLinks = Array.from(document.querySelectorAll('[data-sidebar-efficiency-link]'));
     const setActiveSidebarEfficiencyLink = () => {

@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\GeofenceViolationsDashboardService;
+use App\Support\DashboardFilterState;
 use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +20,8 @@ class ProjectDashboardController extends Controller
         Project $project,
         DashboardService $dashboard,
         DashboardLayoutService $layout,
-        GeofenceViolationsDashboardService $geofenceViolations
+        GeofenceViolationsDashboardService $geofenceViolations,
+        DashboardFilterState $filterState
     ): View {
         $visibleDashboardTabs = $request->user()?->visibleDashboardTabs() ?? [];
         [$selectedTab, $explicitTabRequest] = DashboardSectionAccess::resolveTabForRequest($request);
@@ -31,17 +33,11 @@ class ProjectDashboardController extends Controller
             abort_if($selectedTab === null, 403);
         }
 
-        $filters = $dashboard->normalizeFilters([
-            ...$request->only([
-                'date_from',
-                'date_to',
-                'from',
-                'to',
-                'equipment_type_id',
-                'ownership_type',
-            ]),
+        $filterInput = $filterState->filtersForRequest($request, [
             'project_id' => $project->id,
         ]);
+        $filters = $dashboard->normalizeFilters($filterInput);
+        $selectedPeriod = $filterState->selectedPeriod($request, $filterInput);
 
         $startedAt = microtime(true);
         $data = $dashboard->getDashboardTab($filters, $selectedTab);
@@ -65,6 +61,7 @@ class ProjectDashboardController extends Controller
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
             'dashboardTabs' => $visibleDashboardTabs,
             'selectedDashboardTab' => $selectedTab,
+            'dashboardSelectedPeriod' => $selectedPeriod,
             'dashboardTabFragment' => false,
             'geofenceViolationDashboardWidget' => $selectedTab === 'geozones'
                 ? $geofenceViolations->getDashboardWidget($filters)

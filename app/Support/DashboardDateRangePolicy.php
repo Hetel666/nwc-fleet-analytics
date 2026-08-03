@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
+use Throwable;
 
 class DashboardDateRangePolicy
 {
@@ -16,8 +17,8 @@ class DashboardDateRangePolicy
         $timezone = (string) config('app.timezone', 'Asia/Baku');
         $defaultFrom = $input['_default_from'] ?? now($timezone)->startOfMonth();
         $defaultTo = $input['_default_to'] ?? now($timezone);
-        $from = CarbonImmutable::parse($input['date_from'] ?? $input['from'] ?? $defaultFrom, $timezone)->toDateString();
-        $to = CarbonImmutable::parse($input['date_to'] ?? $input['to'] ?? $defaultTo, $timezone)->toDateString();
+        $from = $this->safeDate($input['date_from'] ?? $input['from'] ?? null, $defaultFrom, $timezone);
+        $to = $this->safeDate($input['date_to'] ?? $input['to'] ?? null, $defaultTo, $timezone);
 
         if ($from > $to) {
             if ($this->reversedRangeMode() === 'reject') {
@@ -57,5 +58,14 @@ class DashboardDateRangePolicy
         return config('fleet.dashboard.reversed_date_range_mode', 'swap') === 'reject'
             ? 'reject'
             : 'swap';
+    }
+
+    private function safeDate(mixed $value, mixed $fallback, string $timezone): string
+    {
+        try {
+            return CarbonImmutable::parse($value ?? $fallback, $timezone)->toDateString();
+        } catch (Throwable) {
+            return CarbonImmutable::parse($fallback, $timezone)->toDateString();
+        }
     }
 }

@@ -160,7 +160,7 @@
         'last_month' => ['label' => __('app.period_last_month'), 'from' => $reportThrough->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(), 'to' => $reportThrough->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()],
         'custom' => ['label' => __('app.period_custom'), 'from' => $filters['from'], 'to' => $filters['to']],
     ];
-    $selectedPeriod = request()->query('period', 'custom');
+    $selectedPeriod = $dashboardSelectedPeriod ?? request()->query('period', request()->query('quick_range', 'custom'));
 
     if (! array_key_exists($selectedPeriod, $periodPresets)) {
         $selectedPeriod = 'custom';

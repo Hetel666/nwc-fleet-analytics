@@ -55,4 +55,18 @@ class DashboardDateRangePolicyTest extends TestCase
             'date_to' => '2026-07-08',
         ], 'modal');
     }
+
+    public function test_it_falls_back_to_default_dates_for_invalid_url_values(): void
+    {
+        $range = app(DashboardDateRangePolicy::class)->normalize([
+            'date_from' => 'not-a-date',
+            'date_to' => '2026-07-07',
+            '_default_from' => '2026-07-01',
+            '_default_to' => '2026-07-03',
+        ]);
+
+        $this->assertSame('2026-07-01', $range['from']);
+        $this->assertSame('2026-07-07', $range['to']);
+        $this->assertSame(7, $range['days']);
+    }
 }

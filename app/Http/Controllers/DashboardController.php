@@ -11,6 +11,7 @@ use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
 use App\Services\NightDayEfficiencyDashboardService;
 use App\Services\NighttimeEfficiencyDashboardService;
+use App\Support\DashboardFilterState;
 use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -26,9 +27,10 @@ class DashboardController extends Controller
         NightDayEfficiencyDashboardService $nightDayEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
-        GeofenceViolationsDashboardService $geofenceViolations
+        GeofenceViolationsDashboardService $geofenceViolations,
+        DashboardFilterState $filterState
     ): View {
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState);
     }
 
     public function tab(
@@ -40,12 +42,13 @@ class DashboardController extends Controller
         NightDayEfficiencyDashboardService $nightDayEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
-        GeofenceViolationsDashboardService $geofenceViolations
+        GeofenceViolationsDashboardService $geofenceViolations,
+        DashboardFilterState $filterState
     ): View {
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
     }
 
     private function renderDashboard(
@@ -57,6 +60,7 @@ class DashboardController extends Controller
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
+        DashboardFilterState $filterState,
         ?string $selectedTab = null,
         bool $fragment = false
     ): View {
@@ -70,15 +74,9 @@ class DashboardController extends Controller
             abort_if($selectedTab === null, 403);
         }
 
-        $filters = $dashboard->normalizeFilters($request->only([
-            'date_from',
-            'date_to',
-            'from',
-            'to',
-            'project_id',
-            'equipment_type_id',
-            'ownership_type',
-        ]));
+        $filterInput = $filterState->filtersForRequest($request);
+        $filters = $dashboard->normalizeFilters($filterInput);
+        $selectedPeriod = $filterState->selectedPeriod($request, $filterInput);
 
         $startedAt = microtime(true);
         $data = $dashboard->getDashboardTab($filters, $selectedTab);
@@ -132,6 +130,7 @@ class DashboardController extends Controller
             'canManageDashboardLayout' => (bool) $request->user()?->isAdmin(),
             'dashboardTabs' => $visibleDashboardTabs,
             'selectedDashboardTab' => $selectedTab,
+            'dashboardSelectedPeriod' => $selectedPeriod,
             'dashboardPreferences' => $dashboardPreferences,
             'dashboardTabFragment' => $fragment,
             'geofenceViolationDashboardWidget' => $selectedTab === 'geozones'

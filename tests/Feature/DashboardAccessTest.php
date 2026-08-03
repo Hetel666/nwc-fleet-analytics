@@ -10,6 +10,7 @@ use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Services\WialonService;
+use App\Support\DashboardFilterState;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -115,6 +116,74 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($viewer)
             ->getJson(route('dashboard.geofence-violations.drilldown'))
             ->assertForbidden();
+    }
+
+    public function test_dashboard_sidebar_preserves_selected_period_between_sections(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $query = [
+            'period' => 'custom',
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+        ];
+
+        $html = $this->actingAs($user)
+            ->get(route('dashboard', [...$query, 'tab' => User::DASHBOARD_SECTION_OVERVIEW]))
+            ->assertOk()
+            ->getContent();
+
+        foreach ([User::DASHBOARD_SECTION_OVERVIEW, User::DASHBOARD_SECTION_EFFICIENCY, User::DASHBOARD_SECTION_GEOZONES] as $section) {
+            $this->assertStringContainsString(
+                'href="'.e(route('dashboard', [...$query, 'tab' => $section])).'" data-dashboard-nav-link',
+                $html
+            );
+        }
+
+        $this->assertStringContainsString('fleet_dashboard_filters:'.$user->id, $html);
+        $this->assertStringNotContainsString('period=yesterday&amp;tab=efficiency', $html);
+        $this->assertStringNotContainsString('date_from='.now(config('app.timezone'))->subDay()->toDateString().'&amp;date_to=', $html);
+    }
+
+    public function test_dashboard_uses_remembered_period_when_url_has_no_dates(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $cookie = rawurlencode(json_encode([
+            (string) $user->id => [
+                'period' => 'yesterday',
+                'quick_range' => 'yesterday',
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-01',
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $this->withUnencryptedCookie(DashboardFilterState::COOKIE_NAME, $cookie)
+            ->actingAs($user)
+            ->get(route('dashboard', ['tab' => User::DASHBOARD_SECTION_EFFICIENCY]))
+            ->assertOk()
+            ->assertSee('name="date_from" value="2026-08-01"', false)
+            ->assertSee('name="date_to" value="2026-08-01"', false)
+            ->assertSee('name="period" id="dashboardPeriodInput" value="yesterday"', false);
+    }
+
+    public function test_dashboard_does_not_use_another_users_remembered_period(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $otherUser = User::factory()->create(['active' => true]);
+        $cookie = rawurlencode(json_encode([
+            (string) $otherUser->id => [
+                'period' => 'custom',
+                'quick_range' => 'custom',
+                'date_from' => '2030-02-03',
+                'date_to' => '2030-02-04',
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $this->withUnencryptedCookie(DashboardFilterState::COOKIE_NAME, $cookie)
+            ->actingAs($user)
+            ->get(route('dashboard', ['tab' => User::DASHBOARD_SECTION_OVERVIEW]))
+            ->assertOk()
+            ->assertDontSee('value="2030-02-03"', false)
+            ->assertDontSee('value="2030-02-04"', false);
     }
 
     public function test_admin_can_assign_dashboard_section_access_to_viewer(): void
