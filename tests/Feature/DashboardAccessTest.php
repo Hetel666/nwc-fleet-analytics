@@ -96,6 +96,7 @@ class DashboardAccessTest extends TestCase
             ->assertSee('Ümumi 24 saat')
             ->assertSee('Gündüz növbəsi')
             ->assertSee('Gecə növbəsi')
+            ->assertSee('Gecə gün daxilində')
             ->assertSee('Orta göstəricilər')
             ->assertSee('TOP20 az / çox işləyən')
             ->assertDontSee('dashboard-tabs', false)

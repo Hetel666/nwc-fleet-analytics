@@ -628,6 +628,7 @@
                             <a class="sidebar-subnav-link active" href="{{ $dashboardEfficiencySectionUrl('efficiency-general') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Ümumi 24 saat</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-daytime') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gündüz növbəsi</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-nighttime') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gecə növbəsi</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-night-day') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gecə gün daxilində</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-averages') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Orta göstəricilər</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-top20') }}" data-dashboard-nav-link data-sidebar-efficiency-link>TOP20 az / çox işləyən</a>
                         </div>
@@ -1034,25 +1035,78 @@
     };
 
     const sidebarEfficiencyLinks = Array.from(document.querySelectorAll('[data-sidebar-efficiency-link]'));
+    const syncSidebarEfficiencyTargets = () => {
+        sidebarEfficiencyLinks.forEach(link => {
+            const target = link.hash ? document.getElementById(link.hash.slice(1)) : null;
+            link.hidden = !target;
+        });
+    };
     const setActiveSidebarEfficiencyLink = () => {
-        if (sidebarEfficiencyLinks.length === 0) {
+        const visibleLinks = sidebarEfficiencyLinks.filter(link => !link.hidden);
+
+        if (visibleLinks.length === 0) {
             return;
         }
 
-        const activeHash = window.location.hash || '#efficiency-general';
+        const activeHash = window.location.hash || visibleLinks[0].hash;
 
         sidebarEfficiencyLinks.forEach(link => {
-            link.classList.toggle('active', link.hash === activeHash);
+            link.classList.toggle('active', !link.hidden && link.hash === activeHash);
         });
     };
+    const scrollToSidebarEfficiencySection = hash => {
+        if (!hash) {
+            return false;
+        }
 
+        const target = document.getElementById(hash.slice(1));
+
+        if (!target) {
+            return false;
+        }
+
+        const nextUrl = new URL(window.location.href);
+        nextUrl.hash = hash;
+
+        if (window.location.href !== nextUrl.toString()) {
+            window.history.pushState(window.history.state, '', nextUrl);
+        }
+
+        target.scrollIntoView({
+            block: 'start',
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        });
+        setActiveSidebarEfficiencyLink();
+
+        return true;
+    };
+
+    syncSidebarEfficiencyTargets();
     sidebarEfficiencyLinks.forEach(link => {
-        link.addEventListener('click', () => {
-            window.setTimeout(setActiveSidebarEfficiencyLink, 0);
+        link.addEventListener('click', event => {
+            const linkUrl = new URL(link.href, window.location.origin);
+            const currentUrl = new URL(window.location.href);
+            const currentDashboardGrid = document.getElementById('dashboardGrid');
+            const isSameDashboardView = linkUrl.origin === currentUrl.origin
+                && linkUrl.pathname === currentUrl.pathname
+                && linkUrl.searchParams.get('tab') === 'efficiency'
+                && currentDashboardGrid?.dataset.dashboardActiveTab === 'efficiency';
+
+            if (isSameDashboardView && scrollToSidebarEfficiencySection(linkUrl.hash)) {
+                event.preventDefault();
+            } else {
+                window.setTimeout(setActiveSidebarEfficiencyLink, 0);
+            }
+
             document.body.classList.remove('sidebar-open');
         });
     });
     window.addEventListener('hashchange', setActiveSidebarEfficiencyLink);
+    window.addEventListener('load', () => {
+        syncSidebarEfficiencyTargets();
+        scrollToSidebarEfficiencySection(window.location.hash);
+        setActiveSidebarEfficiencyLink();
+    });
     setActiveSidebarEfficiencyLink();
 
     document.addEventListener('keydown', event => {

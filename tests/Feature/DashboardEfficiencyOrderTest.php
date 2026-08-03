@@ -78,6 +78,29 @@ class DashboardEfficiencyOrderTest extends TestCase
         }
     }
 
+    public function test_sidebar_efficiency_links_match_rendered_sections(): void
+    {
+        $html = $this->efficiencyDashboardHtml();
+
+        foreach ([
+            'efficiency-general' => 'Ümumi 24 saat',
+            'efficiency-daytime' => 'Gündüz növbəsi',
+            'efficiency-nighttime' => 'Gecə növbəsi',
+            'efficiency-night-day' => 'Gecə gün daxilində',
+            'efficiency-averages' => 'Orta göstəricilər',
+            'efficiency-top20' => 'TOP20 az / çox işləyən',
+        ] as $section => $label) {
+            $this->assertStringContainsString('#'.$section, $html);
+            $this->assertStringContainsString('id="'.$section.'"', $html);
+            $this->assertStringContainsString($label, $html);
+        }
+
+        $layout = file_get_contents(resource_path('views/layouts/app.blade.php'));
+        $this->assertStringContainsString('scrollToSidebarEfficiencySection', $layout);
+        $this->assertStringContainsString('target.scrollIntoView', $layout);
+        $this->assertStringContainsString('syncSidebarEfficiencyTargets', $layout);
+    }
+
     public function test_efficiency_top_search_is_removed_without_affecting_exports_and_drilldown(): void
     {
         $user = User::factory()->create(['active' => true]);
