@@ -52,8 +52,8 @@ return [
                 'Status raw engine_seconds ilə verilir: 0=no_data, <1 saat=0_1, <7 saat=1_7, <=10 saat=7_10, >10 saat=over_10.',
             ],
             'widgets' => [
-                'Effektivlik: NWC üzrə',
-                'Effektivlik: İcarə üzrə',
+                'Effektivlik: NWC üzrə 24 saat',
+                'Effektivlik: İcarə üzrə 24 saat',
                 'Layihələr drill-down',
                 'Texnika siyahısı drill-down',
             ],
@@ -386,7 +386,7 @@ return [
         ],
         [
             'key' => 'project-work-categories-nwc',
-            'title' => 'Effektivlik: NWC üzrə',
+            'title' => 'Effektivlik: NWC üzrə 24 saat',
             'purpose' => 'NWC texnika-günlərini Engine hours üzrə beş statusda göstərir.',
             'dashboard_block' => 'Donut beş qarşılıqlı istisna statusun texnika-gün sayını göstərir.',
             'wialon_report' => 'Qrup report Engine hours (api)',
@@ -403,7 +403,7 @@ return [
         ],
         [
             'key' => 'project-work-categories-icare',
-            'title' => 'Effektivlik: İcarə üzrə',
+            'title' => 'Effektivlik: İcarə üzrə 24 saat',
             'purpose' => 'İcarə texnika-günlərini Engine hours üzrə beş statusda göstərir.',
             'dashboard_block' => 'Donut beş qarşılıqlı istisna statusun texnika-gün sayını göstərir.',
             'wialon_report' => 'Qrup report Engine hours (api)',

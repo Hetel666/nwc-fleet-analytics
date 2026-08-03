@@ -2625,7 +2625,7 @@
                     'exportUrl' => $exportUrl('actual-work-hours-nwc'),
                     'filters' => $filters,
                     'visibleStatuses' => $visibleGeneralStatusKeys,
-                    'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Effektivlik: NWC üzrə'),
+                    'title' => $dashboardWidgetTitleFor('project-work-categories-nwc', 'Effektivlik: NWC üzrə 24 saat'),
                 ])
             </div>
 
@@ -2647,7 +2647,7 @@
                     'exportUrl' => $exportUrl('actual-work-hours-icare'),
                     'filters' => $filters,
                     'visibleStatuses' => $visibleGeneralStatusKeys,
-                    'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Effektivlik: İcarə üzrə'),
+                    'title' => $dashboardWidgetTitleFor('project-work-categories-icare', 'Effektivlik: İcarə üzrə 24 saat'),
                 ])
             </div>
 

@@ -22,7 +22,9 @@ class DashboardEfficiencyOrderTest extends TestCase
         $this->assertAppearsInOrder($html, [
             'id="efficiency-general"',
             'data-widget-key="project-work-categories-nwc"',
+            'Effektivlik: NWC üzrə 24 saat',
             'data-widget-key="project-work-categories-icare"',
+            'Effektivlik: İcarə üzrə 24 saat',
             'id="efficiency-daytime"',
             'Effektivlik gündüz: NWC üzrə',
             'Effektivlik gündüz: İcarə üzrə',
