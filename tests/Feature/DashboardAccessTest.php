@@ -91,6 +91,12 @@ class DashboardAccessTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('data-dashboard-active-tab="efficiency"', false)
+            ->assertSee('sidebar-subnav', false)
+            ->assertSee('Ümumi 24 saat')
+            ->assertSee('Gündüz növbəsi')
+            ->assertSee('Gecə növbəsi')
+            ->assertSee('Orta göstəricilər')
+            ->assertSee('TOP20 az / çox işləyən')
             ->assertDontSee('dashboard-tabs', false)
             ->assertDontSee('data-dashboard-tab="', false);
 

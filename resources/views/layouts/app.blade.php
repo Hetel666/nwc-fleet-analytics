@@ -226,6 +226,45 @@
             color: #fff;
             background: var(--fleet-blue);
         }
+        .sidebar-subnav {
+            display: grid;
+            gap: 2px;
+            margin: -2px 0 4px 42px;
+            padding: 2px 0 2px 10px;
+            border-left: 1px solid var(--fleet-line);
+        }
+        .sidebar-subnav-link {
+            position: relative;
+            display: flex;
+            align-items: center;
+            min-height: 30px;
+            padding: .34rem .7rem .34rem 1.05rem;
+            border-radius: 8px;
+            color: var(--fleet-muted);
+            font-size: 13px;
+            font-weight: 650;
+            line-height: 1.25;
+            text-decoration: none;
+            transition: color .15s ease, background .15s ease;
+        }
+        .sidebar-subnav-link::before {
+            content: "";
+            position: absolute;
+            left: .35rem;
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--fleet-blue) 58%, var(--fleet-muted));
+        }
+        .sidebar-subnav-link:hover,
+        .sidebar-subnav-link:focus-visible {
+            color: var(--fleet-blue);
+            background: var(--fleet-hover);
+        }
+        .sidebar-subnav-link.active {
+            color: var(--fleet-blue);
+            background: color-mix(in srgb, var(--fleet-blue) 10%, transparent);
+        }
         .nav-tabs {
             border-color: var(--fleet-line);
         }
@@ -398,6 +437,7 @@
             .brand-title,
             .sidebar-search,
             .sidebar-section-title,
+            .sidebar-subnav,
             .nav-link span,
             .sidebar-user-meta,
             .sidebar-version {
@@ -458,6 +498,9 @@
             html[data-sidebar-state="expanded"] .sidebar-search {
                 display: block !important;
             }
+            html[data-sidebar-state="expanded"] .sidebar-subnav {
+                display: grid !important;
+            }
             html[data-sidebar-state="expanded"] .nav-link {
                 justify-content: flex-start;
                 padding-inline: .75rem;
@@ -481,6 +524,7 @@
             html[data-sidebar-state="collapsed"] .brand-title,
             html[data-sidebar-state="collapsed"] .sidebar-search,
             html[data-sidebar-state="collapsed"] .sidebar-section-title,
+            html[data-sidebar-state="collapsed"] .sidebar-subnav,
             html[data-sidebar-state="collapsed"] .nav-link span,
             html[data-sidebar-state="collapsed"] .sidebar-user-meta,
             html[data-sidebar-state="collapsed"] .sidebar-version {
@@ -516,6 +560,21 @@
                 $dashboardYesterday = now(config('app.timezone'))->subDay()->toDateString();
                 $currentUser = auth()->user();
                 $currentDashboardTab = $selectedDashboardTab ?? request('tab', 'overview');
+                $dashboardQueryDefaults = [
+                    'period' => 'yesterday',
+                    'date_from' => $dashboardYesterday,
+                    'date_to' => $dashboardYesterday,
+                ];
+                $dashboardCurrentQuery = request()->routeIs('dashboard')
+                    ? array_diff_key(request()->query(), array_flip(['search', 'daytime_search', 'nighttime_search', 'page', 'per_page']))
+                    : [];
+                $dashboardEfficiencyQuery = array_replace(
+                    $dashboardQueryDefaults,
+                    $dashboardCurrentQuery,
+                    ['tab' => \App\Models\User::DASHBOARD_SECTION_EFFICIENCY]
+                );
+                $dashboardEfficiencySectionUrl = fn (string $section): string => route('dashboard', $dashboardEfficiencyQuery).'#'.$section;
+                $showDashboardEfficiencySubnav = request()->routeIs('dashboard') && $currentDashboardTab === \App\Models\User::DASHBOARD_SECTION_EFFICIENCY;
             @endphp
 
             <nav class="sidebar-scroll">
@@ -530,6 +589,15 @@
                     <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'efficiency' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'efficiency', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Effektivlik">
                         <i data-lucide="gauge"></i><span>Effektivlik</span>
                     </a>
+                    @if ($showDashboardEfficiencySubnav)
+                        <div class="sidebar-subnav" aria-label="Effektivlik bölmələri">
+                            <a class="sidebar-subnav-link active" href="{{ $dashboardEfficiencySectionUrl('efficiency-general') }}" data-sidebar-efficiency-link>Ümumi 24 saat</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-daytime') }}" data-sidebar-efficiency-link>Gündüz növbəsi</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-nighttime') }}" data-sidebar-efficiency-link>Gecə növbəsi</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-averages') }}" data-sidebar-efficiency-link>Orta göstəricilər</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-top20') }}" data-sidebar-efficiency-link>TOP20 az / çox işləyən</a>
+                        </div>
+                    @endif
                     @endif
                     @if ($currentUser?->canAccessDashboardSection(\App\Models\User::DASHBOARD_SECTION_GEOZONES))
                     <a class="nav-link {{ request()->routeIs('dashboard') && $currentDashboardTab === 'geozones' ? 'active' : '' }}" href="{{ route('dashboard', ['period' => 'yesterday', 'tab' => 'geozones', 'date_from' => $dashboardYesterday, 'date_to' => $dashboardYesterday]) }}" title="Geozonalar">
@@ -738,6 +806,28 @@
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
         document.body.classList.toggle('sidebar-open');
     });
+
+    const sidebarEfficiencyLinks = Array.from(document.querySelectorAll('[data-sidebar-efficiency-link]'));
+    const setActiveSidebarEfficiencyLink = () => {
+        if (sidebarEfficiencyLinks.length === 0) {
+            return;
+        }
+
+        const activeHash = window.location.hash || '#efficiency-general';
+
+        sidebarEfficiencyLinks.forEach(link => {
+            link.classList.toggle('active', link.hash === activeHash);
+        });
+    };
+
+    sidebarEfficiencyLinks.forEach(link => {
+        link.addEventListener('click', () => {
+            window.setTimeout(setActiveSidebarEfficiencyLink, 0);
+            document.body.classList.remove('sidebar-open');
+        });
+    });
+    window.addEventListener('hashchange', setActiveSidebarEfficiencyLink);
+    setActiveSidebarEfficiencyLink();
 
     document.addEventListener('keydown', event => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
