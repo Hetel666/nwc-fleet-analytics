@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Equipment;
 use App\Models\GeofenceViolationReportRow;
 use App\Models\ProjectWialonGroup;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 
 class GeofenceViolationReportImporter
 {
+    public function __construct(private GeofenceExcludedGroups $excludedGroups) {}
+
     /**
      * Imports normalized rows produced only by the "Geofence Pozuntuları api" report.
      *
@@ -48,6 +51,10 @@ class GeofenceViolationReportImporter
         ?CarbonInterface $reportGeneratedAt = null,
         bool $replace = false
     ): array {
+        if ($this->excludedGroups->isProjectWialonGroupExcluded($group)) {
+            return ['imported' => 0, 'rejected' => 0];
+        }
+
         $reportGeneratedAt ??= now(config('app.timezone'));
         [$normalizedRows, $rejected] = $this->normalizeRows($rows, $reportGeneratedAt, $group);
 
@@ -110,6 +117,10 @@ class GeofenceViolationReportImporter
             if ($normalized === null) {
                 $rejected++;
 
+                continue;
+            }
+
+            if ($this->normalizedRowBelongsToExcludedGroup($normalized)) {
                 continue;
             }
 
@@ -274,6 +285,18 @@ class GeofenceViolationReportImporter
             ->get();
 
         return $matches->count() === 1 ? $matches->first() : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function normalizedRowBelongsToExcludedGroup(array $row): bool
+    {
+        $projectWialonGroupId = (int) ($row['project_wialon_group_id'] ?? 0);
+        $projectId = (int) ($row['project_id'] ?? 0);
+
+        return ($projectWialonGroupId > 0 && in_array($projectWialonGroupId, $this->excludedGroups->projectWialonGroupIds(), true))
+            || ($projectId > 0 && in_array($projectId, $this->excludedGroups->projectIdsWithOnlyExcludedGroups(), true));
     }
 
     private function timestamp(mixed $value): ?Carbon

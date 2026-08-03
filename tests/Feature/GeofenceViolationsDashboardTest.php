@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\GeofenceViolationReportRow;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -261,6 +262,40 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertSee('Operational violation')
             ->assertSee('Repair violation')
             ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 2);
+    }
+
+    public function test_layihesiz_rows_are_hidden_from_geofence_violations_dashboard_and_kept_for_audit(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$allowedProject, $type] = $this->fleet();
+        $excludedProject = Project::create(['name' => 'Layihəsiz', 'active' => true]);
+        $excludedGroup = ProjectWialonGroup::create([
+            'project_id' => $excludedProject->id,
+            'wialon_group_id' => '601705305',
+            'name' => 'Layihəsiz - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+
+        $this->reportRow($allowedProject, $type, 'Visible violation', 14_400);
+        $this->reportRow($excludedProject, $type, 'Hidden Layihəsiz violation', 14_400, [
+            'project_wialon_group_id' => $excludedGroup->id,
+        ]);
+
+        $this->actingAs($user)->get(route('geofence-violations.index', [
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+        ]))
+            ->assertOk()
+            ->assertSee('Visible violation')
+            ->assertDontSee('Hidden Layihəsiz violation')
+            ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 1);
+
+        $this->artisan('geofence:purge-excluded-groups', ['--dry-run' => true])
+            ->assertSuccessful();
+        $this->assertDatabaseHas('geofence_violation_report_rows', [
+            'equipment_name' => 'Hidden Layihəsiz violation',
+        ]);
     }
 
     /**

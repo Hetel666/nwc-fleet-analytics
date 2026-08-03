@@ -11,6 +11,7 @@ use App\Models\NightDayEfficiencySyncRun;
 use App\Models\NighttimeEfficiencySyncRun;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Bus\UniqueLock;
@@ -26,7 +27,10 @@ use Illuminate\Validation\ValidationException;
 
 class HistoricalRecalculationService
 {
-    public function __construct(private HistoricalRecalculationModuleRegistry $modules) {}
+    public function __construct(
+        private HistoricalRecalculationModuleRegistry $modules,
+        private GeofenceExcludedGroups $geofenceExcludedGroups,
+    ) {}
 
     public function preview(array $payload): array
     {
@@ -697,10 +701,12 @@ class HistoricalRecalculationService
             ],
             true
         )) {
+            $this->assertSelectedGeofenceProjectsAreAllowed($projectIds);
+
             $query = Project::query()
                 ->where('active', true)
                 ->when($projectIds->isNotEmpty(), fn ($query) => $query->whereIn('id', $projectIds))
-                ->whereHas('wialonGroups');
+                ->whereHas('wialonGroups', fn ($query) => $this->geofenceExcludedGroups->applyAllowedProjectWialonGroups($query));
 
             if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
                 $query->excludeFromOperationalDashboard();
@@ -780,6 +786,27 @@ class HistoricalRecalculationService
             HistoricalRecalculation::OPERATION_RECALCULATE,
             HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
         ], true);
+    }
+
+    private function assertSelectedGeofenceProjectsAreAllowed(Collection $projectIds): void
+    {
+        if ($projectIds->isEmpty()) {
+            return;
+        }
+
+        $excludedProjectIds = $this->geofenceExcludedGroups->projectIdsWithOnlyExcludedGroups();
+
+        if ($excludedProjectIds === []) {
+            return;
+        }
+
+        if ($projectIds->intersect($excludedProjectIds)->isEmpty()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'project_ids' => GeofenceExcludedGroups::MESSAGE,
+        ]);
     }
 
     private function staleRunningTaskSeconds(): int

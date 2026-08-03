@@ -676,6 +676,10 @@ class DashboardService
         return 'dashboard:aggregate:'.md5(json_encode([
             'version' => 21,
             'data_version' => (int) Cache::get('dashboard:data-version', 1),
+            'geofence_versions' => str_contains($scope, 'geozones') ? [
+                'violations' => (string) Cache::get('geofence_violations:data_version', 'empty'),
+                'transfers' => (string) Cache::get('geofence_transfers:data_version', 'empty'),
+            ] : [],
             'scope' => $scope,
             'filters' => $filters,
         ]));

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\EquipmentType;
 use App\Models\GeofenceViolationReportRow;
+use App\Support\GeofenceExcludedGroups;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 class GeofenceViolationsDashboardService
 {
+    public function __construct(private GeofenceExcludedGroups $excludedGroups) {}
+
     /**
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
@@ -134,10 +137,24 @@ class GeofenceViolationsDashboardService
 
     private function facetQuery(): Builder
     {
+        $excludedGroupIds = $this->excludedGroups->projectWialonGroupIds();
+        $excludedProjectIds = $this->excludedGroups->projectIdsWithOnlyExcludedGroups();
+
         return GeofenceViolationReportRow::query()
             ->whereHas('project', fn (Builder $query) => $query
                 ->where('active', true)
                 ->excludeFromOperationalDashboard())
+            ->when($excludedGroupIds !== [], function (Builder $query) use ($excludedGroupIds): void {
+                $query->where(function (Builder $query) use ($excludedGroupIds): void {
+                    $query->whereNull('project_wialon_group_id')
+                        ->orWhereNotIn('project_wialon_group_id', $excludedGroupIds);
+                });
+            })
+            ->when($excludedProjectIds !== [], fn (Builder $query) => $query->whereNotIn('project_id', $excludedProjectIds))
+            ->where(function (Builder $query): void {
+                $query->whereNull('equipment_id')
+                    ->orWhereHas('equipment', fn (Builder $query): Builder => $this->excludedGroups->applyAllowedUnits($query));
+            })
             ->where('report_name', (string) config(
                 'geofence_violations.report_name',
                 GeofenceViolationReportRow::REPORT_NAME

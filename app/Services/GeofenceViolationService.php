@@ -9,6 +9,7 @@ use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
 use App\Support\FleetVehicleType;
 use App\Support\ForeignGeofenceSettings;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -33,6 +34,7 @@ class GeofenceViolationService
 
     public function __construct(
         private ForeignProjectGeofenceMonitoringService $monitoring,
+        private GeofenceExcludedGroups $excludedGroups,
     ) {}
 
     /**
@@ -401,6 +403,7 @@ class GeofenceViolationService
                         ->orWhere('types.name', 'like', $search);
                 });
             });
+        $this->excludedGroups->applyAllowedIntervalTables($query);
 
         if (! (bool) config('fleet.foreign_geofence.show_all', false)) {
             $query->whereRaw($durationExpression.' >= ?', [ForeignGeofenceSettings::minimumMinutes() * 60]);
@@ -514,6 +517,7 @@ class GeofenceViolationService
             ])
             ->where('source', GeofenceReportViolationCalculator::SOURCE)
             ->where('status', UnitForeignGeofenceInterval::STATUS_CLOSED)
+            ->tap(fn (Builder $query) => $this->excludedGroups->applyAllowedIntervals($query))
             ->whereNotIn('home_project_id', Project::query()
                 ->select('id')
                 ->whereIn('name', Project::dashboardOperationalExcludedNames()))
@@ -644,6 +648,10 @@ class GeofenceViolationService
             return false;
         }
 
+        if ($this->excludedGroups->intervalMatchesExcludedGroup($interval)) {
+            return false;
+        }
+
         if ($interval->homeProject instanceof Project
             && Project::isExcludedFromOperationalDashboard($interval->homeProject->name)) {
             return false;
@@ -689,6 +697,7 @@ class GeofenceViolationService
         return $unit->active
             && ! $unit->excluded_from_dashboard
             && ($unit->project_wialon_group_id !== null || $unit->matched_wialon_group_id !== null)
+            && ! $this->excludedGroups->unitMatchesExcludedGroup($unit)
             && in_array($unit->ownership_type, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)
             && in_array($this->monitoring->normalizedVehicleTypeName($unit->type?->name), $this->monitoring->normalizedAllowedVehicleTypeNames(), true);
     }

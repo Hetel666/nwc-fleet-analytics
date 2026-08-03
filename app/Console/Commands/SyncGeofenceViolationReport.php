@@ -10,6 +10,7 @@ use App\Services\GeofenceViolationReportImporter;
 use App\Services\GeofenceViolationReportParser;
 use App\Services\WialonReportSessionLock;
 use App\Services\WialonService;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -34,7 +35,8 @@ class SyncGeofenceViolationReport extends Command
         WialonService $wialon,
         WialonReportSessionLock $reportLock,
         GeofenceViolationReportParser $parser,
-        GeofenceViolationReportImporter $importer
+        GeofenceViolationReportImporter $importer,
+        GeofenceExcludedGroups $excludedGroups
     ): int {
         [$from, $to] = $this->period();
 
@@ -47,14 +49,18 @@ class SyncGeofenceViolationReport extends Command
             return self::INVALID;
         }
 
-        $groups = $this->groups();
+        $groups = $this->groups($excludedGroups);
 
         if ($groups->isEmpty()) {
+            if ($this->option('group') || $this->option('project')) {
+                $this->error(GeofenceExcludedGroups::MESSAGE);
+
+                return self::INVALID;
+            }
+
             $this->warn('No active project Wialon groups found.');
 
-            return $this->option('group') || $this->option('project')
-                ? self::FAILURE
-                : self::SUCCESS;
+            return self::SUCCESS;
         }
 
         $settings = $this->settings($wialon);
@@ -746,7 +752,7 @@ class SyncGeofenceViolationReport extends Command
         return $from->lte($to) ? [$from, $to] : [$to, $from];
     }
 
-    private function groups()
+    private function groups(GeofenceExcludedGroups $excludedGroups)
     {
         return ProjectWialonGroup::query()
             ->with('project:id,name,active')
@@ -754,6 +760,7 @@ class SyncGeofenceViolationReport extends Command
                 ->where('active', true)
                 ->excludeFromOperationalDashboard())
             ->when(Schema::hasColumn('project_wialon_groups', 'is_active'), fn (Builder $query) => $query->where('is_active', true))
+            ->tap(fn (Builder $query) => $excludedGroups->applyAllowedProjectWialonGroups($query))
             ->when($this->option('group'), fn (Builder $query, string $groupId) => $query->where('wialon_group_id', trim($groupId)))
             ->when($this->option('project'), function (Builder $query, string $project): void {
                 $project = trim($project);

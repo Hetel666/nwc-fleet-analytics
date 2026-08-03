@@ -86,6 +86,28 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         ]);
     }
 
+    public function test_excluded_layihesiz_group_is_not_processed_by_geofence_violations_command(): void
+    {
+        $project = Project::create(['name' => 'Layihəsiz', 'active' => true]);
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601705305',
+            'name' => 'Layihəsiz - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldNotReceive('loginByToken');
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('fleet:sync-geofence-violations-report', [
+            '--from' => '2026-07-28 00:00:00',
+            '--to' => '2026-07-28 23:59:59',
+            '--group' => '601705305',
+        ])->assertExitCode(2);
+    }
+
     public function test_full_detail_rows_are_imported_as_independent_periods(): void
     {
         $project = Project::create(['name' => 'Atomic project', 'active' => true]);

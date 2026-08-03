@@ -68,6 +68,28 @@ class WialonGeozonApiReportTest extends TestCase
         $this->assertSame(10800, $parsed['records'][0]['duration_seconds']);
     }
 
+    public function test_excluded_layihesiz_group_is_not_processed_by_geozon_api_command(): void
+    {
+        $project = Project::create(['name' => 'Layihəsiz', 'active' => true]);
+        ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601708440',
+            'name' => 'Layihəsiz - İcarə',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => true,
+        ]);
+
+        $this->mock(WialonGeozonReportService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('executeForGroup');
+        });
+
+        $this->artisan('fleet:sync-geozon-api', [
+            '--from' => '2026-07-17 00:00:00',
+            '--to' => '2026-07-17 23:59:59',
+            '--group' => '601708440',
+        ])->assertExitCode(2);
+    }
+
     public function test_home_geofence_visit_is_not_saved_as_violation(): void
     {
         [$project, $group, $equipment] = $this->fixture();
@@ -276,6 +298,70 @@ class WialonGeozonApiReportTest extends TestCase
 
         $this->assertDatabaseCount('unit_foreign_geofence_intervals', 3);
         $this->assertSame(2, app(GeofenceViolationService::class)->summary($this->dashboardFilters())['total']);
+    }
+
+    public function test_excluded_layihesiz_intervals_are_hidden_from_geofence_transfer_dashboard_and_excel(): void
+    {
+        [$homeProject, $group, $equipment] = $this->fixture('Excavator');
+        $foreignProject = Project::create(['name' => 'Foreign Project', 'active' => true]);
+        $this->geofences($homeProject, $foreignProject);
+
+        app(GeofenceReportViolationCalculator::class)->processGroupReport(
+            $group,
+            [$this->record('Foreign Zone', '19', 10800, $equipment->wialon_unit_id)],
+            $this->context(),
+            null,
+            true
+        );
+
+        $excludedProject = Project::create(['name' => 'Layihəsiz', 'active' => true]);
+        $excludedGroup = ProjectWialonGroup::create([
+            'project_id' => $excludedProject->id,
+            'wialon_group_id' => '601708440',
+            'name' => 'Layihəsiz - İcarə',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => true,
+        ]);
+        $excludedUnit = $this->equipmentFor($excludedProject, $excludedGroup, 'Dump Truck', '7708440', 'Layihəsiz unit');
+
+        Geofence::create([
+            'project_id' => $excludedProject->id,
+            'name' => 'Layihəsiz Home',
+            'normalized_name' => 'layihəsiz home',
+            'wialon_geofence_id' => '601701680:44',
+            'active' => true,
+        ]);
+
+        UnitForeignGeofenceInterval::create([
+            'unit_id' => $excludedUnit->id,
+            'wialon_unit_id' => $excludedUnit->wialon_unit_id,
+            'source_group_id' => '601708440',
+            'source_group_name' => 'Layihəsiz - İcarə',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'home_project_id' => $excludedProject->id,
+            'home_project_name' => $excludedProject->name,
+            'foreign_project_id' => $foreignProject->id,
+            'foreign_project_name' => $foreignProject->name,
+            'foreign_geofence_id' => Geofence::query()->where('name', 'Foreign Zone')->value('id'),
+            'foreign_geofence_name' => 'Foreign Zone',
+            'entered_at' => '2026-07-17 10:00:00',
+            'left_at' => '2026-07-17 14:00:00',
+            'duration_seconds' => 14_400,
+            'status' => UnitForeignGeofenceInterval::STATUS_CLOSED,
+            'last_position_at' => '2026-07-17 14:00:00',
+            'report_from' => '2026-07-17 00:00:00',
+            'report_to' => '2026-07-17 23:59:59',
+            'source' => GeofenceReportViolationCalculator::SOURCE,
+            'unique_key' => 'excluded-layihesiz-transfer',
+        ]);
+
+        $service = app(GeofenceViolationService::class);
+
+        $this->assertSame(1, $service->summary($this->dashboardFilters())['total']);
+        $this->assertCount(1, $service->exportRows($this->dashboardFilters()));
+        $this->assertDatabaseHas('unit_foreign_geofence_intervals', [
+            'unique_key' => 'excluded-layihesiz-transfer',
+        ]);
     }
 
     public function test_prefabrik_shared_work_geofences_are_not_saved_as_violations(): void

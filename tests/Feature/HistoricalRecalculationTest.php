@@ -289,6 +289,75 @@ class HistoricalRecalculationTest extends TestCase
             ]);
     }
 
+    public function test_geofence_preview_excludes_layihesiz_groups_from_all_projects(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $excludedProject = Project::query()->create(['name' => 'Layihəsiz', 'active' => true]);
+        $allowedProject = Project::query()->create(['name' => 'Allowed geofence project', 'active' => true]);
+
+        foreach ([
+            [$excludedProject->id, '601705305', 'Layihəsiz - NWC'],
+            [$excludedProject->id, '601708440', 'Layihəsiz - İcarə'],
+            [$allowedProject->id, '601700001', 'Allowed geofence project - NWC'],
+        ] as [$projectId, $groupId, $name]) {
+            ProjectWialonGroup::query()->create([
+                'project_id' => $projectId,
+                'wialon_group_id' => $groupId,
+                'name' => $name,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'is_active' => true,
+            ]);
+        }
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-27',
+                'date_to' => '2026-07-28',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 2,
+                'project_groups' => 1,
+                'fetch_tasks' => 2,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 2,
+            ]);
+    }
+
+    public function test_selected_layihesiz_project_is_rejected_for_geofence_modules(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Layihəsiz', 'active' => true]);
+
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601705305',
+            'name' => 'Layihəsiz - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-27',
+                'date_to' => '2026-07-27',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['project_ids'])
+            ->assertJsonPath('errors.project_ids.0', 'Layihəsiz qrupları geozona hesabatlarında istifadə edilmir.');
+    }
+
     public function test_selected_projects_scope_requires_project_ids(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);

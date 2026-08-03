@@ -7,6 +7,7 @@ use App\Models\UnitForeignGeofenceInterval;
 use App\Services\GeofenceReportViolationCalculator;
 use App\Services\WialonGeozonReportParser;
 use App\Services\WialonGeozonReportService;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,12 +32,19 @@ class SyncGeozonApi extends Command
     public function handle(
         WialonGeozonReportService $reports,
         WialonGeozonReportParser $parser,
-        GeofenceReportViolationCalculator $calculator
+        GeofenceReportViolationCalculator $calculator,
+        GeofenceExcludedGroups $excludedGroups
     ): int {
         [$from, $to] = $this->period();
-        $groups = $this->groups();
+        $groups = $this->groups($excludedGroups);
 
         if ($groups->isEmpty()) {
+            if ($this->option('group') || $this->option('project')) {
+                $this->error(GeofenceExcludedGroups::MESSAGE);
+
+                return self::INVALID;
+            }
+
             $this->warn('No active project Wialon groups found.');
 
             return self::SUCCESS;
@@ -176,12 +184,13 @@ class SyncGeozonApi extends Command
         return [$from, $to];
     }
 
-    private function groups()
+    private function groups(GeofenceExcludedGroups $excludedGroups)
     {
         return ProjectWialonGroup::query()
             ->with('project:id,name,active')
             ->whereHas('project', fn (Builder $query) => $query->where('active', true))
             ->when(Schema::hasColumn('project_wialon_groups', 'is_active'), fn (Builder $query) => $query->where('is_active', true))
+            ->tap(fn (Builder $query) => $excludedGroups->applyAllowedProjectWialonGroups($query))
             ->when($this->option('group'), fn (Builder $query, string $groupId) => $query->where('wialon_group_id', trim($groupId)))
             ->when($this->option('project'), function (Builder $query, string $project): void {
                 $project = trim($project);

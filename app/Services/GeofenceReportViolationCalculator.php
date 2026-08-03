@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\UnitForeignGeofenceInterval;
 use App\Support\ForeignGeofenceSettings;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
@@ -15,7 +16,10 @@ class GeofenceReportViolationCalculator
 {
     public const SOURCE = 'wialon_report_api';
 
-    public function __construct(private GeofenceNameNormalizer $normalizer) {}
+    public function __construct(
+        private GeofenceNameNormalizer $normalizer,
+        private GeofenceExcludedGroups $excludedGroups,
+    ) {}
 
     /**
      * @param  array<int, array<string, mixed>>  $records
@@ -29,6 +33,18 @@ class GeofenceReportViolationCalculator
         ?string $unitFilter = null,
         bool $persist = true
     ): array {
+        if ($this->excludedGroups->isProjectWialonGroupExcluded($group)) {
+            return [
+                ...$this->emptyStats(),
+                'violations_under_threshold' => 0,
+                'violations_at_least_threshold' => 0,
+                'saved_records' => 0,
+                'updated_records' => 0,
+                'details' => [],
+                'violations' => [],
+            ];
+        }
+
         $details = [];
         $violations = [];
         $stats = $this->emptyStats();

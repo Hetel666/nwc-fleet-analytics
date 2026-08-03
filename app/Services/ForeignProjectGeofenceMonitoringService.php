@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\UnitForeignGeofenceInterval;
 use App\Support\FleetVehicleType;
 use App\Support\ForeignGeofenceSettings;
+use App\Support\GeofenceExcludedGroups;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -24,6 +25,8 @@ class ForeignProjectGeofenceMonitoringService
 
     /** @var array<string, string> */
     private array $normalizedNames = [];
+
+    public function __construct(private GeofenceExcludedGroups $excludedGroups) {}
 
     /**
      * Updates the current foreign-project geofence interval for one unit position.
@@ -369,6 +372,7 @@ class ForeignProjectGeofenceMonitoringService
                     ->classifiedForDashboard()
                     ->whereNotNull('project_id')
                     ->whereIn('ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE]);
+                $this->excludedGroups->applyAllowedUnits($query);
 
                 if (filled($filters['equipment_type_id'] ?? null)) {
                     $query->where('equipment_type_id', (int) $filters['equipment_type_id']);
@@ -445,6 +449,7 @@ class ForeignProjectGeofenceMonitoringService
             && ! $unit->excluded_from_dashboard
             && $unit->project_id !== null
             && ($unit->project_wialon_group_id !== null || $unit->matched_wialon_group_id !== null)
+            && ! $this->excludedGroups->unitMatchesExcludedGroup($unit)
             && in_array($unit->ownership_type, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)
             && in_array($this->normalizedVehicleTypeName($unit->type?->name), $this->normalizedAllowedVehicleTypeNames(), true)
             && $this->homeProjectGeofences($unit)->isNotEmpty();
@@ -815,6 +820,10 @@ class ForeignProjectGeofenceMonitoringService
 
         if ($unit->project_wialon_group_id === null && $unit->matched_wialon_group_id === null) {
             return 'missing_home_project';
+        }
+
+        if ($this->excludedGroups->unitMatchesExcludedGroup($unit)) {
+            return 'geofence-excluded-group';
         }
 
         if (! in_array($unit->ownership_type, [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE], true)) {
