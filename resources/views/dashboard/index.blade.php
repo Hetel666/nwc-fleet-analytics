@@ -105,9 +105,7 @@
         $icare => (float) $projectComparisonRows->sum($icare),
     ];
     $projectComparisonTotals['total'] = $projectComparisonTotals[$nwc] + $projectComparisonTotals[$icare];
-    $projectComparisonTop = $projectComparisonRows->take(10)->values();
-    $projectComparisonHasMore = $projectComparisonRows->count() > 10;
-    $projectComparisonChartHeight = min(max($projectComparisonTop->count() * 34 + 80, 260), 520);
+    $projectComparisonChartHeight = max(360, $projectComparisonRows->count() * 38 + 80);
     $geofenceViolations = $data['geofenceViolations'] ?? ['labels' => [], 'counts' => [], 'project_ids' => [], 'geofence_ids' => [], 'sector_keys' => [], 'total' => 0, 'rows' => []];
     $geofenceViolationRows = collect($geofenceViolations['rows'] ?? [])->sortByDesc('count')->values();
     $geofenceViolationTotal = (int) ($geofenceViolations['total'] ?? 0);
@@ -270,10 +268,10 @@
         'nightDayEfficiencyNwcCounts' => $visibleNightDayStatusKeys->map(fn (string $key): int => (int) ($nightDayEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
         'nightDayEfficiencyIcareCounts' => $visibleNightDayStatusKeys->map(fn (string $key): int => (int) ($nightDayEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
         'utilizationTrend' => $utilizationTrendByOwnership,
-        'projectComparisonLabels' => $projectComparisonTop->pluck('name')->values()->all(),
-        'projectComparisonIds' => $projectComparisonTop->pluck('id')->values()->all(),
-        'projectComparisonNwc' => $projectComparisonTop->pluck($nwc)->values()->all(),
-        'projectComparisonIcare' => $projectComparisonTop->pluck($icare)->values()->all(),
+        'projectComparisonLabels' => $projectComparisonRows->pluck('name')->values()->all(),
+        'projectComparisonIds' => $projectComparisonRows->pluck('id')->values()->all(),
+        'projectComparisonNwc' => $projectComparisonRows->pluck($nwc)->values()->all(),
+        'projectComparisonIcare' => $projectComparisonRows->pluck($icare)->values()->all(),
         'geofenceViolationLabels' => $geofenceViolations['labels'] ?? [],
         'geofenceViolationCounts' => $geofenceViolations['counts'] ?? [],
         'geofenceViolationProjectIds' => $geofenceViolations['project_ids'] ?? [],
@@ -483,6 +481,23 @@
         overflow: auto;
         padding-right: 4px;
     }
+    .dashboard-project-comparison-content {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(420px, 1fr);
+        align-items: stretch;
+        gap: 24px;
+    }
+    .dashboard-project-comparison-chart-wrapper {
+        height: auto;
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: visible;
+        padding-right: 0;
+    }
+    .dashboard-project-comparison-chart-box {
+        height: auto;
+        min-width: 760px;
+    }
     .dashboard-donut-layout {
         display: grid;
         grid-template-columns: minmax(180px, 230px) minmax(160px, 1fr);
@@ -550,6 +565,13 @@
     .dashboard-scroll-table.dashboard-type-table.is-expanded {
         max-height: 252px;
     }
+    .dashboard-project-comparison-table-wrapper,
+    .dashboard-project-comparison-table-wrapper.is-expanded {
+        height: 100%;
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: visible;
+    }
     .dashboard-project-comparison-table {
         width: 100%;
         table-layout: fixed;
@@ -568,6 +590,12 @@
     .dashboard-project-comparison-table th:last-child,
     .dashboard-project-comparison-table td:last-child {
         font-weight: 800;
+    }
+    .dashboard-project-comparison-table .dashboard-drilldown-trigger {
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.25;
     }
     .dashboard-project-comparison-total td {
         background: color-mix(in srgb, var(--fleet-blue) 8%, var(--fleet-card));
@@ -2252,10 +2280,23 @@
             width: 50%;
         }
     }
+    @media (max-width: 991.98px) {
+        .dashboard-project-comparison-content {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
     @media (max-width: 767.98px) {
         .dashboard-efficiency-section-heading,
         .dashboard-efficiency-shift-section {
             scroll-margin-top: 152px;
+        }
+
+        .dashboard-project-comparison-chart-box {
+            min-width: 680px;
+        }
+
+        .dashboard-project-comparison-table {
+            min-width: 540px;
         }
 
         .dashboard-design-drawer {
@@ -3048,20 +3089,17 @@
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('project-comparison', __('app.work_hours_by_ownership'))" :export-url="$exportUrl('project-comparison')" />
                     @if ($projectComparisonRows->isNotEmpty())
-                        <div class="row g-3 align-items-start">
-                            <div class="col-lg-7">
-                                <div class="dashboard-chart-scroll">
-                                    <div style="height: {{ $projectComparisonChartHeight }}px; min-width: 680px;">
+                        <div class="dashboard-project-comparison-content">
+                            <div class="dashboard-project-comparison-chart-panel">
+                                <div class="dashboard-chart-scroll dashboard-project-comparison-chart-wrapper">
+                                    <div class="dashboard-project-comparison-chart-box" style="height: {{ $projectComparisonChartHeight }}px;">
                                         <canvas id="projectComparison"></canvas>
                                     </div>
                                 </div>
                             </div>
-                            <div class="col-lg-5">
+                            <div class="dashboard-project-comparison-table-panel">
                                 <div
-                                    class="dashboard-scroll-table is-expanded"
-                                    id="dashboardExpandableProjectComparison"
-                                    data-expandable="project-comparison"
-                                    data-expanded="1"
+                                    class="dashboard-scroll-table dashboard-project-comparison-table-wrapper"
                                 >
                                     <table class="table table-sm align-middle mb-0 dashboard-project-comparison-table">
                                         <colgroup>
@@ -3091,11 +3129,12 @@
                                                 <td class="text-end">{{ number_format($projectComparisonTotals['total'], 0) }}</td>
                                             </tr>
                                             @foreach ($projectComparisonRows as $row)
-                                                <tr class="{{ $loop->iteration > 10 ? 'expandable-extra' : '' }}">
+                                                <tr>
                                                     <td>
                                                         <button
                                                             type="button"
                                                             class="btn btn-link p-0 fw-semibold text-start dashboard-drilldown-trigger"
+                                                            title="{{ $row['name'] }}"
                                                             data-drilldown-title="{{ $row['name'] }} - Texnika növü üzrə"
                                                             data-drilldown-project-id="{{ $row['id'] }}"
                                                             data-drilldown-ownership-scope="project_groups"
@@ -3111,17 +3150,6 @@
                                         </tbody>
                                     </table>
                                 </div>
-                                @if ($projectComparisonHasMore)
-                                    <button
-                                        type="button"
-                                        class="btn btn-link dashboard-expand-toggle mt-2"
-                                        data-expand-toggle="project-comparison"
-                                        data-show-label="Hamısını göstər"
-                                        data-hide-label="Gizlət"
-                                        aria-expanded="true"
-                                        aria-controls="dashboardExpandableProjectComparison"
-                                    >Gizlət</button>
-                                @endif
                             </div>
                         </div>
                     @else
@@ -3581,6 +3609,11 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character =>
 }[character]));
 const hasChartData = values => Array.isArray(values) && values.some(value => Number(value) > 0);
 const truncateLabel = value => String(value ?? '').length > 28 ? `${String(value).slice(0, 27)}…` : String(value ?? '');
+const truncateChartLabel = (value, limit = 28) => {
+    const label = String(value ?? '');
+
+    return label.length > limit ? `${label.slice(0, Math.max(1, limit - 1))}…` : label;
+};
 let draggedWidget = null;
 let dragOverWidget = null;
 let dashboardLoadingTimer = null;
@@ -3718,14 +3751,14 @@ const createDoughnutChart = (id, chartLabels, values, colors, settings = {}) => 
     });
 };
 
-const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues, unit = '') => {
+const createHorizontalOwnershipChart = (id, chartLabels, nwcValues, icareValues, unit = '', settings = {}) => {
     const canvas = document.getElementById(id);
 
     if (!canvas || (!hasChartData(nwcValues) && !hasChartData(icareValues))) {
         return null;
     }
 
-    const shortLabels = chartLabels.map(truncateLabel);
+    const shortLabels = chartLabels.map(label => truncateChartLabel(label, settings.labelMaxLength ?? 44));
 
     return new Chart(canvas, {
         type: 'bar',

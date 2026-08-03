@@ -282,7 +282,7 @@ class DashboardAccessTest extends TestCase
         $this->assertSame($positions, collect($positions)->sort()->values()->all());
     }
 
-    public function test_project_comparison_is_expanded_on_initial_page_load(): void
+    public function test_project_comparison_is_fully_expanded_without_inner_scroll_on_initial_page_load(): void
     {
         $this->seed(DemoSeeder::class);
         $admin = User::where('email', 'admin@example.com')->firstOrFail();
@@ -317,13 +317,16 @@ class DashboardAccessTest extends TestCase
         Cache::flush();
         $html = $this->actingAs($admin)->get('/dashboard')->assertOk()->getContent();
 
-        $this->assertStringContainsString('data-expandable="project-comparison"', $html);
-        $this->assertStringContainsString('data-expanded="1"', $html);
-        $this->assertStringContainsString('class="dashboard-scroll-table is-expanded"', $html);
-        $this->assertStringContainsString('class="expandable-extra"', $html);
-        $this->assertStringNotContainsString('class="expandable-extra d-none"', $html);
-        $this->assertStringContainsString('aria-controls="dashboardExpandableProjectComparison"', $html);
-        $this->assertStringContainsString('>Gizlət</button>', $html);
+        $this->assertStringContainsString('dashboard-project-comparison-content', $html);
+        $this->assertStringContainsString('dashboard-project-comparison-chart-wrapper', $html);
+        $this->assertStringContainsString('dashboard-project-comparison-table-wrapper', $html);
+        $this->assertStringContainsString('Expanded project 11', $html);
+        $this->assertMatchesRegularExpression('/projectComparisonLabels.*Expanded project 11/s', $html);
+        $this->assertStringNotContainsString('data-expandable="project-comparison"', $html);
+        $this->assertStringNotContainsString('data-expand-toggle="project-comparison"', $html);
+        $this->assertStringNotContainsString('class="expandable-extra"', $html);
+        $this->assertStringNotContainsString('aria-controls="dashboardExpandableProjectComparison"', $html);
+        $this->assertStringNotContainsString('>Gizlət</button>', $html);
     }
 
     public function test_project_comparison_shows_ownership_and_grand_totals(): void
