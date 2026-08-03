@@ -158,6 +158,7 @@
         'last_month' => ['label' => __('app.period_last_month'), 'from' => $reportThrough->copy()->subMonthNoOverflow()->startOfMonth()->toDateString(), 'to' => $reportThrough->copy()->subMonthNoOverflow()->endOfMonth()->toDateString()],
         'custom' => ['label' => __('app.period_custom'), 'from' => $filters['from'], 'to' => $filters['to']],
     ];
+    $visiblePeriodPresetKeys = ['yesterday', 'last_7_days', 'this_month', 'last_month'];
     $selectedPeriod = $dashboardSelectedPeriod ?? request()->query('period', request()->query('quick_range', 'custom'));
 
     if (! array_key_exists($selectedPeriod, $periodPresets)) {
@@ -2412,7 +2413,10 @@
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-2 mt-3" aria-label="{{ __('app.period') }}">
-                @foreach ($periodPresets as $key => $preset)
+                @foreach ($visiblePeriodPresetKeys as $key)
+                    @php
+                        $preset = $periodPresets[$key];
+                    @endphp
                     <button
                         type="button"
                         class="btn btn-sm {{ $selectedPeriod === $key ? 'btn-primary' : 'btn-outline-secondary' }} dashboard-period-button"

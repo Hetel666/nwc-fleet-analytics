@@ -144,6 +144,52 @@ class DashboardAccessTest extends TestCase
         $this->assertStringNotContainsString('date_from='.now(config('app.timezone'))->subDay()->toDateString().'&amp;date_to=', $html);
     }
 
+    public function test_dashboard_quick_period_buttons_hide_latest_completed_and_custom(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $html = $this->actingAs($user)
+            ->get(route('dashboard', [
+                'period' => 'custom',
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-02',
+            ]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringNotContainsString('data-period="today"', $html);
+        $this->assertStringNotContainsString('data-period="custom"', $html);
+        $this->assertStringNotContainsString(__('app.period_latest_completed'), $html);
+        $this->assertStringNotContainsString(__('app.period_custom'), $html);
+
+        foreach (['yesterday', 'last_7_days', 'this_month', 'last_month'] as $period) {
+            $this->assertStringContainsString('data-period="'.$period.'"', $html);
+        }
+
+        $this->assertStringContainsString('name="date_from" value="2026-08-01"', $html);
+        $this->assertStringContainsString('name="date_to" value="2026-08-02"', $html);
+        $this->assertStringContainsString('name="period" id="dashboardPeriodInput" value="custom"', $html);
+    }
+
+    public function test_dashboard_legacy_last_completed_quick_range_keeps_dates_without_active_button(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $html = $this->actingAs($user)
+            ->get(route('dashboard', [
+                'quick_range' => 'last_completed_day',
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-02',
+            ]))
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('name="date_from" value="2026-08-01"', $html);
+        $this->assertStringContainsString('name="date_to" value="2026-08-02"', $html);
+        $this->assertStringContainsString('name="period" id="dashboardPeriodInput" value="custom"', $html);
+        $this->assertStringNotContainsString('btn-primary dashboard-period-button', $html);
+        $this->assertStringNotContainsString('data-period="today"', $html);
+        $this->assertStringNotContainsString('data-period="custom"', $html);
+    }
+
     public function test_dashboard_uses_remembered_period_when_url_has_no_dates(): void
     {
         $user = User::factory()->create(['active' => true]);
