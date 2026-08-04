@@ -89,6 +89,8 @@ return [
         'export_sync_max_days' => (int) env('DASHBOARD_EXPORT_SYNC_MAX_DAYS', 31),
         'export_disk' => env('DASHBOARD_EXPORT_DISK', 'dashboard_exports'),
         'export_retention_hours' => (int) env('DASHBOARD_EXPORT_RETENTION_HOURS', 24),
+        'export_max_files' => max(0, (int) env('DASHBOARD_EXPORT_MAX_FILES', 200)),
+        'export_max_bytes' => max(0, (int) env('DASHBOARD_EXPORT_MAX_BYTES', 536870912)),
         'reversed_date_range_mode' => env('DASHBOARD_REVERSED_DATE_RANGE_MODE', 'swap'),
     ],
 

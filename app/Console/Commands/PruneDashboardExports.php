@@ -26,6 +26,7 @@ class PruneDashboardExports extends Command
 
         $recordsPruned = 0;
         $orphansPruned = 0;
+        $quotaRecordsPruned = 0;
         $defaultDisk = (string) config('fleet.dashboard.export_disk', 'dashboard_exports');
         $now = now(config('app.timezone'));
 
@@ -84,7 +85,9 @@ class PruneDashboardExports extends Command
             }
         }
 
-        $this->info("Pruned {$recordsPruned} dashboard export records and {$orphansPruned} orphan files.");
+        $quotaRecordsPruned = $this->pruneReadyExportsOverQuota($defaultDisk);
+
+        $this->info("Pruned {$recordsPruned} dashboard export records, {$quotaRecordsPruned} quota records, and {$orphansPruned} orphan files.");
 
         return self::SUCCESS;
     }
@@ -99,5 +102,49 @@ class PruneDashboardExports extends Command
             ->whereIn('status', [HistoricalRecalculation::STATUS_PENDING, HistoricalRecalculation::STATUS_RUNNING])
             ->where('updated_at', '>=', now(config('app.timezone'))->subDay())
             ->exists();
+    }
+
+    private function pruneReadyExportsOverQuota(string $defaultDisk): int
+    {
+        $maxFiles = max(0, (int) config('fleet.dashboard.export_max_files', 0));
+        $maxBytes = max(0, (int) config('fleet.dashboard.export_max_bytes', 0));
+
+        if ($maxFiles <= 0 && $maxBytes <= 0) {
+            return 0;
+        }
+
+        $records = DashboardExport::query()
+            ->where('status', DashboardExport::STATUS_READY)
+            ->whereNotNull('path')
+            ->orderByDesc('completed_at')
+            ->orderByDesc('id')
+            ->get();
+        $keptFiles = 0;
+        $keptBytes = 0;
+        $pruned = 0;
+
+        foreach ($records as $record) {
+            $size = max(0, (int) ($record->file_size ?? 0));
+            $wouldExceedFiles = $maxFiles > 0 && $keptFiles >= $maxFiles;
+            $wouldExceedBytes = $maxBytes > 0 && $keptBytes + $size > $maxBytes;
+
+            if (! $wouldExceedFiles && ! $wouldExceedBytes) {
+                $keptFiles++;
+                $keptBytes += $size;
+
+                continue;
+            }
+
+            try {
+                Storage::disk($record->disk ?: $defaultDisk)->delete($record->path);
+            } catch (Throwable) {
+                // Missing/unreadable export files should not block record pruning.
+            }
+
+            $record->delete();
+            $pruned++;
+        }
+
+        return $pruned;
     }
 }

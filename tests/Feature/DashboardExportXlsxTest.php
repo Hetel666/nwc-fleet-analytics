@@ -14,6 +14,7 @@ use App\Services\DashboardService;
 use App\Services\XlsxExportService;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
@@ -275,6 +276,31 @@ class DashboardExportXlsxTest extends TestCase
         Storage::disk('dashboard_exports')->assertMissing($record->path);
     }
 
+    public function test_prune_command_enforces_dashboard_export_count_and_size_limits(): void
+    {
+        Storage::fake('dashboard_exports');
+        config([
+            'fleet.dashboard.export_max_files' => 100,
+            'fleet.dashboard.export_max_bytes' => 25,
+        ]);
+
+        $old = $this->readyExportRecord(User::factory()->create(['active' => true]));
+        $old->forceFill(['completed_at' => now()->subDays(3)])->save();
+        $middle = $this->readyExportRecord(User::factory()->create(['active' => true]));
+        $middle->forceFill(['completed_at' => now()->subDays(2)])->save();
+        $new = $this->readyExportRecord(User::factory()->create(['active' => true]));
+        $new->forceFill(['completed_at' => now()->subDay()])->save();
+
+        $this->artisan('fleet:prune-dashboard-exports')->assertSuccessful();
+
+        $this->assertDatabaseMissing('dashboard_exports', ['id' => $old->id]);
+        $this->assertDatabaseHas('dashboard_exports', ['id' => $middle->id]);
+        $this->assertDatabaseHas('dashboard_exports', ['id' => $new->id]);
+        Storage::disk('dashboard_exports')->assertMissing($old->path);
+        Storage::disk('dashboard_exports')->assertExists($middle->path);
+        Storage::disk('dashboard_exports')->assertExists($new->path);
+    }
+
     public function test_background_export_can_exceed_modal_period_limit(): void
     {
         config([
@@ -311,7 +337,9 @@ class DashboardExportXlsxTest extends TestCase
         $path = $user->id.'/test-export.xlsx';
 
         if ($storeFile) {
-            Storage::disk('dashboard_exports')->put($path, 'xlsx-content');
+            $fullPath = Storage::disk('dashboard_exports')->path($path);
+            File::ensureDirectoryExists(dirname($fullPath));
+            File::put($fullPath, 'xlsx-content');
         }
 
         return DashboardExport::query()->create([

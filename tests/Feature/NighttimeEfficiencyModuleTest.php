@@ -240,6 +240,7 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $dailyEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:sync-daily'));
         $nightEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'nighttime-efficiency:sync-last-completed-shift'));
         $tickEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'dashboard-reports:pipeline-tick'));
+        $capacityEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'fleet:capacity-check'));
         $pruneEvent = $events->first(fn ($item): bool => str_contains($item->command ?? '', 'fleet:prune-dashboard-exports --skip-when-sync-active'));
 
         $this->assertNotNull($dailyEvent);
@@ -251,6 +252,9 @@ class NighttimeEfficiencyModuleTest extends TestCase
         $this->assertNotNull($tickEvent);
         $this->assertSame('0 * * * *', $tickEvent->expression);
         $this->assertSame('Asia/Baku', $tickEvent->timezone);
+        $this->assertNotNull($capacityEvent);
+        $this->assertSame('0 * * * *', $capacityEvent->expression);
+        $this->assertSame('Asia/Baku', $capacityEvent->timezone);
         $this->assertNotNull($pruneEvent);
         $this->assertSame('30 4 * * *', $pruneEvent->expression);
         $this->assertSame('Asia/Baku', $pruneEvent->timezone);

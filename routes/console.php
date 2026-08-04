@@ -17,6 +17,11 @@ Schedule::command('dashboard-reports:pipeline-tick')
     ->timezone(config('app.timezone', 'Asia/Baku'))
     ->withoutOverlapping(30);
 
+Schedule::command('fleet:capacity-check')
+    ->hourly()
+    ->timezone(config('app.timezone', 'Asia/Baku'))
+    ->withoutOverlapping(30);
+
 Schedule::command('fleet:prune-dashboard-exports --skip-when-sync-active')
     ->dailyAt('04:30')
     ->timezone(config('app.timezone', 'Asia/Baku'))
