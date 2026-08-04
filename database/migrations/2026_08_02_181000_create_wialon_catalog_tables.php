@@ -137,7 +137,7 @@ return new class extends Migration
                 $table->foreignId('wialon_geofence_group_id')->constrained('wialon_geofence_groups')->cascadeOnDelete();
                 $table->foreignId('wialon_geofence_id')->nullable()->constrained('wialon_geofences')->nullOnDelete();
                 $table->string('resource_id', 64)->index();
-                $table->string('wialon_geofence_group_item_id', 64)->index();
+                $table->string('wialon_geofence_group_item_id', 64)->index('wialon_geofence_group_item_idx');
                 $table->string('wialon_geofence_item_id', 64)->index();
                 $table->timestamp('last_synced_at')->nullable()->index();
                 $table->timestamps();

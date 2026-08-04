@@ -14,11 +14,11 @@ return new class extends Migration
 
         Schema::create('historical_recalculation_tasks', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('historical_recalculation_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('historical_recalculation_id');
             $table->string('status', 32)->default('pending')->index();
             $table->string('operation', 32);
             $table->date('stat_date')->nullable();
-            $table->foreignId('project_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('project_id')->nullable();
             $table->string('ownership_type', 20)->nullable();
             $table->unsignedInteger('attempts')->default(0);
             $table->unsignedInteger('equipment_count')->default(0);
@@ -34,6 +34,14 @@ return new class extends Migration
             );
             $table->index(['project_id', 'ownership_type', 'stat_date'], 'hrt_project_owner_date_idx');
             $table->index(['status', 'stat_date'], 'hrt_status_date_idx');
+            $table->foreign('historical_recalculation_id', 'hrt_run_fk')
+                ->references('id')
+                ->on('historical_recalculations')
+                ->cascadeOnDelete();
+            $table->foreign('project_id', 'hrt_project_fk')
+                ->references('id')
+                ->on('projects')
+                ->nullOnDelete();
         });
     }
 

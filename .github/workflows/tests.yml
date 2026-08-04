@@ -24,7 +24,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
+          extensions: dom, curl, fileinfo, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite
           coverage: none
 
       - name: Cache Composer packages
@@ -45,5 +45,76 @@ jobs:
       - name: Discover packages
         run: php artisan package:discover --ansi
 
+      - name: Audit locked production dependencies
+        run: composer audit --locked --no-dev --no-interaction
+
       - name: Execute tests
         run: vendor/bin/phpunit
+
+  mysql-critical:
+    runs-on: ubuntu-latest
+
+    name: MySQL critical paths
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: fleet_analytics_test
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: fleet_analytics_test
+      DB_USERNAME: root
+      DB_PASSWORD: root
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, fileinfo, libxml, mbstring, zip, pcntl, pdo, pdo_mysql
+          coverage: none
+
+      - name: Cache Composer packages
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('composer.lock') }}
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress --no-scripts
+
+      - name: Copy environment file
+        run: cp .env.example .env
+
+      - name: Generate app key
+        run: php artisan key:generate
+
+      - name: Discover packages
+        run: php artisan package:discover --ansi
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Execute queue and report critical tests
+        run: >-
+          vendor/bin/phpunit
+          tests/Feature/HistoricalRecalculationTest.php
+          tests/Feature/NewEfficiencyModuleTest.php
+          tests/Feature/DaytimeEfficiencyModuleTest.php
+          tests/Feature/NighttimeEfficiencyModuleTest.php
+          tests/Feature/NightDayEfficiencyModuleTest.php

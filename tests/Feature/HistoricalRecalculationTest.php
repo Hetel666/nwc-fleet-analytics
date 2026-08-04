@@ -16,6 +16,7 @@ use App\Services\DashboardReportPipelineService;
 use App\Services\EfficiencyRecalculationHandler;
 use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -27,6 +28,36 @@ use Tests\TestCase;
 class HistoricalRecalculationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_database_rejects_duplicate_task_scope_with_nullable_dimensions(): void
+    {
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => 'c779f782-70a9-4fc5-b564-c87d9507c227',
+            'signature' => 'duplicate-nullable-task-scope-test',
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'timezone' => 'Asia/Baku',
+            'status' => HistoricalRecalculation::STATUS_PENDING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+            'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'force' => false,
+            'project_ids' => [],
+        ]);
+        $attributes = [
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_PENDING,
+            'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
+            'stat_date' => null,
+            'project_id' => null,
+            'ownership_type' => null,
+        ];
+
+        HistoricalRecalculationTask::query()->create($attributes);
+
+        $this->expectException(QueryException::class);
+        HistoricalRecalculationTask::query()->create($attributes);
+    }
 
     public function test_admin_can_open_historical_recalculation_page(): void
     {
