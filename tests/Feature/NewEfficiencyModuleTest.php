@@ -90,6 +90,80 @@ class NewEfficiencyModuleTest extends TestCase
         $this->assertSame([], array_values(array_intersect($firstIds, $secondIds)));
     }
 
+    public function test_forced_sync_updates_shared_dashboard_rows_when_equipment_project_changed(): void
+    {
+        [$handler, $run, $task] = $this->handlerScenario($this->report('6001', '7,50', '4,25 km'));
+        $currentProject = Project::query()->where('name', 'Sync project')->firstOrFail();
+        $oldProject = Project::query()->create(['name' => 'Old project', 'active' => true]);
+        $equipment = Equipment::query()->where('wialon_unit_id', '6001')->firstOrFail();
+
+        $dailyStat = EquipmentDailyStat::query()->create([
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $equipment->id,
+            'project_id' => $oldProject->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 1.25,
+            'distance_km' => 2.5,
+            'utilization_percent' => 12.5,
+            'calculation_source' => 'wialon_engine_hours_report',
+            'calculation_status' => 'success',
+        ]);
+        $aggregate = DailyUnitAggregate::query()->create([
+            'date' => '2026-07-31',
+            'unit_id' => '6001',
+            'equipment_id' => $equipment->id,
+            'project_id' => $oldProject->id,
+            'equipment_type_id' => $equipment->equipment_type_id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'engine_hours' => 1.25,
+            'mileage' => 2.5,
+            'geofence_outside_hours' => 0,
+        ]);
+        $topWorkingRow = EngineHoursReportUnitDay::query()->create([
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $equipment->id,
+            'project_id' => $oldProject->id,
+            'equipment_type_id' => $equipment->equipment_type_id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'wialon_unit_id' => '6001',
+            'unit_name' => $equipment->name,
+            'vehicle_type' => 'Dump Truck',
+            'engine_hours' => 1.25,
+            'engine_hours_source' => EngineHoursReportUnitDay::SOURCE,
+            'parse_status' => 'ok',
+        ]);
+
+        $handler->execute($run, $task);
+
+        $this->assertSame(1, EquipmentDailyStat::query()->count());
+        $this->assertSame(1, DailyUnitAggregate::query()->count());
+        $this->assertSame(1, EngineHoursReportUnitDay::query()->count());
+        $this->assertSame($dailyStat->id, EquipmentDailyStat::query()->value('id'));
+        $this->assertSame($aggregate->id, DailyUnitAggregate::query()->value('id'));
+        $this->assertSame($topWorkingRow->id, EngineHoursReportUnitDay::query()->value('id'));
+        $this->assertDatabaseHas('equipment_daily_stats', [
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $equipment->id,
+            'project_id' => $currentProject->id,
+            'worked_hours' => 7.5,
+            'distance_km' => 4.25,
+        ]);
+        $this->assertDatabaseHas('daily_unit_aggregates', [
+            'date' => '2026-07-31',
+            'unit_id' => '6001',
+            'project_id' => $currentProject->id,
+            'engine_hours' => 7.5,
+            'mileage' => 4.25,
+        ]);
+        $this->assertDatabaseHas('engine_hours_report_unit_days', [
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $equipment->id,
+            'project_id' => $currentProject->id,
+            'engine_hours' => 7.5,
+            'report_template_name' => 'Qrup report Engine hours (api)',
+        ]);
+    }
+
     public function test_forced_sync_report_failure_preserves_existing_facts(): void
     {
         [$handler, $run, $task] = $this->handlerScenario(new RuntimeException('Wialon report failed'));

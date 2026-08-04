@@ -325,16 +325,49 @@ class EfficiencyRecalculationHandler
             ->where('stat_date', $date->toDateString())
             ->where('project_id', $projectId)
             ->where('calculation_source', 'wialon_engine_hours_report')
+            ->when(
+                $sharedRecords !== [],
+                fn (Builder $query): Builder => $query->whereNotIn(
+                    'equipment_id',
+                    array_map(
+                        fn (array $payload): int => (int) $payload['equipment']->id,
+                        $sharedRecords,
+                    ),
+                ),
+            )
             ->delete();
 
         DailyUnitAggregate::query()
             ->where('date', $date->toDateString())
             ->where('project_id', $projectId)
+            ->when(
+                $sharedRecords !== [],
+                fn (Builder $query): Builder => $query->whereNotIn(
+                    'unit_id',
+                    array_values(array_filter(
+                        array_map(
+                            fn (array $payload): string => trim((string) $payload['equipment']->wialon_unit_id),
+                            $sharedRecords,
+                        ),
+                        fn (string $unitId): bool => $unitId !== '',
+                    )),
+                ),
+            )
             ->delete();
 
         EngineHoursReportUnitDay::query()
             ->where('stat_date', $date->toDateString())
             ->where('project_id', $projectId)
+            ->when(
+                $sharedRecords !== [],
+                fn (Builder $query): Builder => $query->whereNotIn(
+                    'equipment_id',
+                    array_map(
+                        fn (array $payload): int => (int) $payload['equipment']->id,
+                        $sharedRecords,
+                    ),
+                ),
+            )
             ->delete();
 
         foreach ($sharedRecords as $payload) {
@@ -347,62 +380,74 @@ class EfficiencyRecalculationHandler
             $utilization = $equipment->planned_daily_hours > 0
                 ? min(100, ($workedHours / (float) $equipment->planned_daily_hours) * 100)
                 : 0;
-            $dailyStat = EquipmentDailyStat::query()->create([
-                'stat_date' => $date->toDateString(),
-                'equipment_id' => $equipment->id,
-                'project_id' => $equipment->project_id,
-                'ownership_type' => $equipment->ownership_type,
-                'worked_hours' => $workedHours,
-                'distance_km' => $distanceKm,
-                'utilization_percent' => round($utilization, 2),
-                'calculation_source' => 'wialon_engine_hours_report',
-                'calculation_status' => 'success',
-                'report_resource_id' => (string) ($settings['resource_id'] ?? ''),
-                'report_template_id' => (string) ($settings['template_id'] ?? ''),
-                'source_group_id' => (string) $group->wialon_group_id,
-                'calculated_at' => now($timezone),
-            ]);
+            $dailyStat = EquipmentDailyStat::query()->updateOrCreate(
+                [
+                    'stat_date' => $date->toDateString(),
+                    'equipment_id' => $equipment->id,
+                ],
+                [
+                    'project_id' => $equipment->project_id,
+                    'ownership_type' => $equipment->ownership_type,
+                    'worked_hours' => $workedHours,
+                    'distance_km' => $distanceKm,
+                    'utilization_percent' => round($utilization, 2),
+                    'calculation_source' => 'wialon_engine_hours_report',
+                    'calculation_status' => 'success',
+                    'report_resource_id' => (string) ($settings['resource_id'] ?? ''),
+                    'report_template_id' => (string) ($settings['template_id'] ?? ''),
+                    'source_group_id' => (string) $group->wialon_group_id,
+                    'calculated_at' => now($timezone),
+                ],
+            );
 
             if (trim((string) $equipment->wialon_unit_id) !== '') {
-                DailyUnitAggregate::query()->create([
-                    'date' => $date->toDateString(),
-                    'unit_id' => (string) $equipment->wialon_unit_id,
-                    'equipment_id' => $equipment->id,
-                    'project_id' => $equipment->project_id,
-                    'equipment_type_id' => $equipment->equipment_type_id,
-                    'ownership_type' => $equipment->ownership_type,
-                    'engine_hours' => $workedHours,
-                    'mileage' => $distanceKm,
-                    'geofence_outside_hours' => round(((float) $dailyStat->outside_geofence_minutes) / 60, 2),
-                ]);
+                DailyUnitAggregate::query()->updateOrCreate(
+                    [
+                        'date' => $date->toDateString(),
+                        'unit_id' => (string) $equipment->wialon_unit_id,
+                    ],
+                    [
+                        'equipment_id' => $equipment->id,
+                        'project_id' => $equipment->project_id,
+                        'equipment_type_id' => $equipment->equipment_type_id,
+                        'ownership_type' => $equipment->ownership_type,
+                        'engine_hours' => $workedHours,
+                        'mileage' => $distanceKm,
+                        'geofence_outside_hours' => round(((float) $dailyStat->outside_geofence_minutes) / 60, 2),
+                    ],
+                );
             }
 
             if ($this->isTopWorkingType($equipment)) {
-                EngineHoursReportUnitDay::query()->create([
-                    'stat_date' => $date->toDateString(),
-                    'equipment_id' => $equipment->id,
-                    'project_id' => $equipment->project_id,
-                    'equipment_type_id' => $equipment->equipment_type_id,
-                    'ownership_type' => $equipment->ownership_type,
-                    'wialon_unit_id' => (string) $equipment->wialon_unit_id,
-                    'unit_name' => (string) ($record['unit_name'] ?: $equipment->name),
-                    'vehicle_type' => FleetVehicleType::display($equipment->type?->name),
-                    'engine_hours' => $workedHours,
-                    'engine_hours_source' => EngineHoursReportUnitDay::SOURCE,
-                    'parse_status' => 'ok',
-                    'report_resource_id' => (string) ($settings['resource_id'] ?? ''),
-                    'report_template_id' => (string) ($settings['template_id'] ?? ''),
-                    'report_template_name' => (string) ($settings['template_name'] ?? ''),
-                    'source_table' => (string) ($record['source_table'] ?? 'Qrup report Engine hours'),
-                    'engine_hours_column_index' => $record['engine_hours_column_index'] ?? null,
-                    'engine_hours_column_label' => (string) ($record['engine_hours_column_label'] ?? 'Engine hours'),
-                    'source_group_ids_json' => [(string) $group->wialon_group_id],
-                    'raw_value_json' => [
-                        't' => $record['engine_hours_raw'] ?? null,
-                        'v' => $workedHours,
+                EngineHoursReportUnitDay::query()->updateOrCreate(
+                    [
+                        'stat_date' => $date->toDateString(),
+                        'equipment_id' => $equipment->id,
                     ],
-                    'synced_at' => now($timezone),
-                ]);
+                    [
+                        'project_id' => $equipment->project_id,
+                        'equipment_type_id' => $equipment->equipment_type_id,
+                        'ownership_type' => $equipment->ownership_type,
+                        'wialon_unit_id' => (string) $equipment->wialon_unit_id,
+                        'unit_name' => (string) ($record['unit_name'] ?: $equipment->name),
+                        'vehicle_type' => FleetVehicleType::display($equipment->type?->name),
+                        'engine_hours' => $workedHours,
+                        'engine_hours_source' => EngineHoursReportUnitDay::SOURCE,
+                        'parse_status' => 'ok',
+                        'report_resource_id' => (string) ($settings['resource_id'] ?? ''),
+                        'report_template_id' => (string) ($settings['template_id'] ?? ''),
+                        'report_template_name' => (string) ($settings['template_name'] ?? ''),
+                        'source_table' => (string) ($record['source_table'] ?? 'Qrup report Engine hours'),
+                        'engine_hours_column_index' => $record['engine_hours_column_index'] ?? null,
+                        'engine_hours_column_label' => (string) ($record['engine_hours_column_label'] ?? 'Engine hours'),
+                        'source_group_ids_json' => [(string) $group->wialon_group_id],
+                        'raw_value_json' => [
+                            't' => $record['engine_hours_raw'] ?? null,
+                            'v' => $workedHours,
+                        ],
+                        'synced_at' => now($timezone),
+                    ],
+                );
 
                 $syncItems[(string) $group->wialon_group_id]['rows_saved'] =
                     (int) ($syncItems[(string) $group->wialon_group_id]['rows_saved'] ?? 0) + 1;
