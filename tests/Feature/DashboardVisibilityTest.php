@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\DashboardConfigurationAuditLog;
 use App\Models\User;
 use App\Services\DashboardDisplayConfigurationService;
+use App\Support\MonthlyEfficiencyStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class DashboardVisibilityTest extends TestCase
@@ -139,5 +141,24 @@ class DashboardVisibilityTest extends TestCase
 
         $this->assertTrue(app(DashboardDisplayConfigurationService::class)->isDashboardVisible('top_20_low'));
         $this->assertTrue(DashboardConfigurationAuditLog::query()->where('action', 'configuration_reset')->exists());
+    }
+
+    public function test_dashboard_configuration_cache_ignores_stale_registry_without_monthly_statuses(): void
+    {
+        Cache::forever((string) config('dashboard_visibility.cache_key'), [
+            'dashboards' => [],
+            'statuses' => [
+                'general_efficiency' => [],
+                'monthly_efficiency' => [],
+            ],
+        ]);
+
+        $statuses = app(DashboardDisplayConfigurationService::class)->visibleStatusCodes('monthly_efficiency');
+
+        $this->assertSame([
+            MonthlyEfficiencyStatus::CRITICAL_LOW,
+            MonthlyEfficiencyStatus::LOW,
+            MonthlyEfficiencyStatus::NORMAL,
+        ], $statuses);
     }
 }

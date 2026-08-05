@@ -152,7 +152,18 @@ class DashboardDisplayConfigurationService
 
     public function visibleStatusCodes(string $dashboardType): array
     {
-        return collect($this->cachedConfiguration()['statuses'][$dashboardType] ?? [])
+        $rows = $this->cachedConfiguration()['statuses'][$dashboardType] ?? [];
+
+        if ($rows === [] && array_key_exists($dashboardType, config('dashboard_visibility.status_types', []))) {
+            $rows = collect($this->statusRegistry($dashboardType))
+                ->map(fn (array $status): array => [
+                    ...$status,
+                    'is_visible' => true,
+                ])
+                ->all();
+        }
+
+        return collect($rows)
             ->filter(fn (array $status): bool => (bool) $status['is_visible'])
             ->sortBy('display_order')
             ->pluck('status_code')
@@ -305,9 +316,7 @@ class DashboardDisplayConfigurationService
 
     private function cachedConfiguration(): array
     {
-        $cacheKey = (string) config('dashboard_visibility.cache_key', 'dashboard:global-display-configuration');
-
-        return Cache::rememberForever($cacheKey, fn (): array => $this->buildConfiguration());
+        return Cache::rememberForever($this->cacheKey(), fn (): array => $this->buildConfiguration());
     }
 
     private function buildConfiguration(): array
@@ -521,7 +530,25 @@ class DashboardDisplayConfigurationService
 
     private function flushCache(): void
     {
-        Cache::forget((string) config('dashboard_visibility.cache_key', 'dashboard:global-display-configuration'));
+        Cache::forget($this->baseCacheKey());
+        Cache::forget($this->cacheKey());
+    }
+
+    private function baseCacheKey(): string
+    {
+        return (string) config('dashboard_visibility.cache_key', 'dashboard:global-display-configuration');
+    }
+
+    private function cacheKey(): string
+    {
+        $signature = md5(json_encode([
+            'dashboards' => config('dashboard_visibility.dashboards', []),
+            'status_types' => config('dashboard_visibility.status_types', []),
+            'statuses' => config('dashboard_visibility.statuses', []),
+            'statuses_by_type' => config('dashboard_visibility.statuses_by_type', []),
+        ]));
+
+        return $this->baseCacheKey().':'.$signature;
     }
 
     private function ensureSettingsTablesReady(): void
