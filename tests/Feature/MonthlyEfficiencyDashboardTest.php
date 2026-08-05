@@ -168,6 +168,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('2026-07-02 - 2026-07-02', $secondProjectUnits[0]['period']);
         $this->assertSame(1, $secondProjectUnits[0]['synced_days_count']);
         $this->assertSame('160.00', $secondProjectUnits[0]['current_hours']);
+        $this->assertSame('Wialon lokasiya', $secondProjectUnits[0]['project_source_label']);
     }
 
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void

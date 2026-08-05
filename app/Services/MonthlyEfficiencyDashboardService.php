@@ -223,9 +223,12 @@ class MonthlyEfficiencyDashboardService
                 $row->registration_number ?: $row->unit_name,
                 $row->vehicle_type,
                 $row->project,
+                $row->period_from.' - '.$row->period_to,
+                (int) $row->synced_days_count,
                 number_format((float) $row->current_hours, 2, '.', ''),
                 number_format((float) $row->normative_hours, 2, '.', ''),
                 number_format((float) $row->efficiency_percent, 2, '.', '').'%',
+                $this->projectSourceLabel((string) $row->project_source),
                 $this->ownershipLabel($row->ownership),
                 MonthlyEfficiencyStatus::labels()[$row->monthly_status] ?? $row->monthly_status,
             ])
@@ -241,7 +244,7 @@ class MonthlyEfficiencyDashboardService
         $sections = [
             ['title' => 'Xülasə', 'columns' => ['Ownership', 'Status', 'Unique unit count', 'Total Cari MS', 'Total Normativ MS', 'Effektivlik %'], 'rows' => $summaryRows],
             ['title' => 'Layihələr', 'columns' => ['Layihə', 'Ownership', 'Kritik aşağı', 'Aşağı', 'Normal', 'Total units'], 'rows' => $projectRows],
-            ['title' => 'Texnika üzrə', 'columns' => ['№', 'D.Q.N.', 'Texnika tipi', 'Layihə', 'Cari MS', 'Normativ MS', 'Effektivlik %', 'Mənsubiyyət', 'Status'], 'rows' => $detailRows],
+            ['title' => 'Texnika üzrə', 'columns' => ['№', 'D.Q.N.', 'Texnika tipi', 'Layihə', 'Layihədə dövr', 'Layihədə gün', 'Layihə üzrə MS', 'Normativ MS', 'Effektivlik %', 'Layihə mənbəyi', 'Mənsubiyyət', 'Status'], 'rows' => $detailRows],
         ];
 
         return [
@@ -424,6 +427,7 @@ class MonthlyEfficiencyDashboardService
             'vehicle_type' => $row->vehicle_type,
             'project' => $row->project,
             'project_source' => $row->project_source,
+            'project_source_label' => $this->projectSourceLabel((string) $row->project_source),
             'period' => $row->period_from.' - '.$row->period_to,
             'period_from' => $row->period_from,
             'period_to' => $row->period_to,
@@ -555,6 +559,27 @@ class MonthlyEfficiencyDashboardService
     private function ownershipLabel(?string $ownership): string
     {
         return $ownership === Equipment::OWNERSHIP_ICARE ? 'İcarə' : 'NWC';
+    }
+
+    private function projectSourceLabel(string $source): string
+    {
+        if ($source === '') {
+            return '-';
+        }
+
+        $labels = [
+            'wialon_location' => 'Wialon lokasiya',
+            'local_geofence' => 'Lokal geozona',
+            'wialon_geofence' => 'Wialon geozona',
+            'group_fallback' => 'Wialon qrup fallback',
+        ];
+
+        return collect(explode(',', $source))
+            ->map(fn (string $part): string => trim($part))
+            ->filter()
+            ->map(fn (string $part): string => $labels[$part] ?? $part)
+            ->unique()
+            ->implode(', ');
     }
 
     private function normalName(string $name): string
