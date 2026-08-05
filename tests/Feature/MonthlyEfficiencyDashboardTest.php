@@ -7,6 +7,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\MonthlyEfficiencyDashboardService;
 use App\Support\MonthlyEfficiencyStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -46,6 +47,15 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(2, $counts[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(4, $counts[MonthlyEfficiencyStatus::LOW]);
         $this->assertSame(2, $counts[MonthlyEfficiencyStatus::NORMAL]);
+
+        $cardSummary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-05-15',
+            'date_to' => '2026-05-15',
+        ], Equipment::OWNERSHIP_NWC);
+        $this->assertSame(8, $cardSummary['total']);
+        $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
+        $this->assertSame(4, $cardSummary[MonthlyEfficiencyStatus::LOW]);
+        $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
 
         $rentalProjects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
             'date_from' => '2026-05-01',

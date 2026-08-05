@@ -237,7 +237,8 @@ class MonthlyEfficiencyDashboardService
             default => null,
         };
         $status = $this->canonicalStatus($filters['status'] ?? null);
-        $hasVisibleStatusRestriction = array_key_exists('visible_statuses', $filters);
+        $hasVisibleStatusRestriction = array_key_exists('visible_statuses', $filters)
+            && $filters['visible_statuses'] !== null;
         $visibleStatuses = collect($filters['visible_statuses'] ?? [])
             ->map(fn ($visibleStatus): ?string => $this->canonicalStatus((string) $visibleStatus))
             ->filter()
