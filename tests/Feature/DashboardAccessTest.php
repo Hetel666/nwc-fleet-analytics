@@ -74,7 +74,10 @@ class DashboardAccessTest extends TestCase
 
         $viewer = User::where('email', 'viewer@example.com')->firstOrFail();
 
-        $this->actingAs($viewer)->get('/dashboard')->assertOk();
+        $html = $this->actingAs($viewer)->get('/dashboard')->assertOk()->getContent();
+        $this->assertStringContainsString('data-dashboard-object-sync-form', $html);
+        $this->assertStringContainsString('data-dashboard-object-sync-button', $html);
+        $this->assertStringNotContainsString('id="editDashboardLayout"', $html);
         $this->actingAs($viewer)->get('/projects')->assertForbidden();
     }
 

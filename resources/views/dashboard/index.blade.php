@@ -2545,19 +2545,17 @@
 
         <div class="dashboard-layout-actions d-flex flex-wrap align-items-center justify-content-end gap-2 mb-2">
             <div class="dashboard-layout-status small me-auto" id="dashboardLayoutStatus" aria-live="polite"></div>
-            @if ($canManageDashboardLayout)
-                <form method="POST" action="{{ route('settings.sync-units') }}" data-dashboard-object-sync-form>
-                    @csrf
-                    <button
-                        type="submit"
-                        class="btn btn-outline-primary btn-sm btn-icon"
-                        data-dashboard-object-sync-button
-                        title="Wialon layihə qruplarından obyekt siyahısını yenilə"
-                    >
-                        <i class="bi bi-arrow-repeat"></i><span>Obyekt siyahısını yenilə</span>
-                    </button>
-                </form>
-            @endif
+            <form method="POST" action="{{ route('settings.sync-units') }}" data-dashboard-object-sync-form>
+                @csrf
+                <button
+                    type="submit"
+                    class="btn btn-outline-primary btn-sm btn-icon"
+                    data-dashboard-object-sync-button
+                    title="Wialon layihə qruplarından obyekt siyahısını yenilə"
+                >
+                    <i class="bi bi-arrow-repeat"></i><span>Obyekt siyahısını yenilə</span>
+                </button>
+            </form>
             <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
                 <i class="bi bi-download"></i><span>Excel</span>
             </a>

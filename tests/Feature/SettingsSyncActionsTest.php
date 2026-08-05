@@ -34,6 +34,32 @@ class SettingsSyncActionsTest extends TestCase
         ]);
     }
 
+    public function test_viewer_can_run_manual_unit_sync_from_dashboard(): void
+    {
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('fleet:sync-units')
+            ->andReturn(0);
+        Artisan::shouldReceive('output')
+            ->once()
+            ->andReturn("Synced 2 Wialon units.\n");
+
+        $viewer = User::factory()->create([
+            'role' => User::ROLE_VIEWER,
+            'active' => true,
+        ]);
+
+        $this->actingAs($viewer)
+            ->from(route('dashboard'))
+            ->post(route('settings.sync-units'))
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHas('status', 'Synced 2 Wialon units.');
+
+        $this->actingAs($viewer)
+            ->get(route('settings.edit'))
+            ->assertForbidden();
+    }
+
     public function test_manual_unit_sync_redirects_with_error_message_when_command_fails(): void
     {
         Artisan::shouldReceive('call')
