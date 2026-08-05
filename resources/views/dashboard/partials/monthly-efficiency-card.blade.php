@@ -8,7 +8,26 @@
     $month = (string) ($summary['month'] ?? \Illuminate\Support\Carbon::parse($filters['from'])->format('Y-m'));
     $period = $summary['period'] ?? ['from' => $filters['from'], 'to' => $filters['to']];
     $completeness = $summary['completeness'] ?? ['is_complete' => true, 'message' => null];
-    $percent = (float) ($summary['efficiency_percent'] ?? 0);
+    $statusPercentages = [];
+    $remainingPercent = 100.0;
+    $lastStatusIndex = max(0, $statuses->count() - 1);
+
+    foreach ($statuses as $index => $status) {
+        if ($total <= 0) {
+            $statusPercentages[$status] = 0.0;
+
+            continue;
+        }
+
+        if ($index === $lastStatusIndex) {
+            $statusPercentages[$status] = max(0.0, round($remainingPercent, 1));
+
+            continue;
+        }
+
+        $statusPercentages[$status] = round(((int) ($summary[$status] ?? 0)) * 100 / $total, 1);
+        $remainingPercent -= $statusPercentages[$status];
+    }
 @endphp
 
 <section class="panel p-3 dashboard-card dashboard-work-status-card dashboard-monthly-efficiency-card d-flex flex-column">
@@ -33,13 +52,13 @@
             <div class="dashboard-monthly-chart">
                 <canvas id="{{ $chartId }}"></canvas>
                 <div class="dashboard-monthly-center">
-                    <strong>{{ number_format($percent, 2, '.', '') }}%</strong>
-                    <span>EFFEKTİVLİK</span>
+                    <strong>100%</strong>
+                    <span>STATUS PAYI</span>
                 </div>
             </div>
             <div class="dashboard-work-status-table">
                 <table class="table table-sm align-middle mb-0">
-                    <thead><tr><th>{{ __('app.status') }}</th><th class="text-end">Say</th></tr></thead>
+                    <thead><tr><th>{{ __('app.status') }}</th><th class="text-end">%</th><th class="text-end">Say</th></tr></thead>
                     <tbody>
                     @foreach ($statuses as $status)
                         <tr
@@ -60,12 +79,13 @@
                             data-drilldown-export-enabled="0"
                         >
                             <td><span class="dashboard-work-status-label"><span class="dashboard-color-dot" style="background: {{ $categoryColors[$status] }}"></span><span class="dashboard-work-status-label-text">{{ $categoryLabels[$status] }}</span></span></td>
+                            <td class="text-end">{{ number_format((float) ($statusPercentages[$status] ?? 0), 1, '.', ' ') }}%</td>
                             <td class="text-end">{{ number_format((int) ($summary[$status] ?? 0), 0, '.', ' ') }}</td>
                         </tr>
                     @endforeach
-                    <tr class="dashboard-work-status-total"><td>Cəmi</td><td class="text-end">{{ number_format($total, 0, '.', ' ') }}</td></tr>
+                    <tr class="dashboard-work-status-total"><td>Cəmi</td><td class="text-end">100%</td><td class="text-end">{{ number_format($total, 0, '.', ' ') }}</td></tr>
                     @if ($fullTotal !== $total)
-                    <tr class="dashboard-work-status-note"><td colspan="2">Göstərilir: {{ number_format($total, 0, '.', ' ') }} / {{ number_format($fullTotal, 0, '.', ' ') }}</td></tr>
+                    <tr class="dashboard-work-status-note"><td colspan="3">Göstərilir: {{ number_format($total, 0, '.', ' ') }} / {{ number_format($fullTotal, 0, '.', ' ') }}</td></tr>
                     @endif
                     </tbody>
                 </table>
