@@ -63,13 +63,14 @@ class MonthlyEfficiencyDashboardService
             ->mapWithKeys(fn (string $label, string $status): array => [$status => (int) ($rows[$status]->total_units ?? 0)])
             ->all();
         $totalUnits = array_sum($summary);
+        $normalUnits = (int) ($summary[MonthlyEfficiencyStatus::NORMAL] ?? 0);
         $totalCurrentHours = (float) $rows->sum(fn (object $row): float => (float) $row->total_current_hours);
         $totalNormativeHours = $totalUnits * self::NORMATIVE_HOURS;
         $summary['total'] = $totalUnits;
         $summary['total_current_hours'] = round($totalCurrentHours, 2);
         $summary['total_normative_hours'] = round($totalNormativeHours, 2);
-        $summary['efficiency_percent'] = $totalNormativeHours > 0
-            ? round($totalCurrentHours / $totalNormativeHours * 100, 2)
+        $summary['efficiency_percent'] = $totalUnits > 0
+            ? round($normalUnits / $totalUnits * 100, 2)
             : 0.0;
         $summary['month'] = $filters['month'];
         $summary['period'] = ['from' => $filters['from'], 'to' => $filters['to']];

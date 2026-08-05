@@ -8,6 +8,7 @@
     $month = (string) ($summary['month'] ?? \Illuminate\Support\Carbon::parse($filters['from'])->format('Y-m'));
     $period = $summary['period'] ?? ['from' => $filters['from'], 'to' => $filters['to']];
     $completeness = $summary['completeness'] ?? ['is_complete' => true, 'message' => null];
+    $parkEfficiencyPercent = (float) ($summary['efficiency_percent'] ?? 0);
     $statusPercentages = [];
     $remainingPercent = 100.0;
     $lastStatusIndex = max(0, $statuses->count() - 1);
@@ -52,8 +53,8 @@
             <div class="dashboard-monthly-chart">
                 <canvas id="{{ $chartId }}"></canvas>
                 <div class="dashboard-monthly-center">
-                    <strong>100%</strong>
-                    <span>STATUS PAYI</span>
+                    <strong>{{ number_format($parkEfficiencyPercent, 2, '.', ' ') }}%</strong>
+                    <span>EFFEKTİVLİK</span>
                 </div>
             </div>
             <div class="dashboard-work-status-table">

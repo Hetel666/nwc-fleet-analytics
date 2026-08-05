@@ -60,6 +60,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(4, $cardSummary[MonthlyEfficiencyStatus::LOW]);
         $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(25.0, $cardSummary['efficiency_percent']);
 
         $nwcProjects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
             'date_from' => '2026-05-01',
