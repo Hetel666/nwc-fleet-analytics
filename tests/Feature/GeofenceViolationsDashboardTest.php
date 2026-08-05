@@ -246,7 +246,7 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertJsonMissing(['equipment_name' => 'Below threshold']);
     }
 
-    public function test_repair_project_is_shown_in_operational_violation_dashboard(): void
+    public function test_repair_project_is_hidden_from_operational_violation_dashboard(): void
     {
         $user = User::factory()->create(['active' => true]);
         [$project, $type] = $this->fleet();
@@ -260,8 +260,8 @@ class GeofenceViolationsDashboardTest extends TestCase
         ]))
             ->assertOk()
             ->assertSee('Operational violation')
-            ->assertSee('Repair violation')
-            ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 2);
+            ->assertDontSee('Repair violation')
+            ->assertViewHas('kpis', fn (array $kpis): bool => $kpis['total_violations'] === 1);
     }
 
     public function test_layihesiz_rows_are_hidden_from_geofence_violations_dashboard_and_kept_for_audit(): void

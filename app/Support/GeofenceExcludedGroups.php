@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 class GeofenceExcludedGroups
 {
-    public const MESSAGE = 'Layihəsiz qrupları geozona hesabatlarında istifadə edilmir.';
+    public const MESSAGE = 'Layihəsiz və Təmir qrupları geozona hesabatlarında istifadə edilmir.';
 
     /** @var array<int, int>|null */
     private ?array $projectWialonGroupIds = null;
@@ -49,6 +49,19 @@ class GeofenceExcludedGroups
     }
 
     /**
+     * @return array<int, string>
+     */
+    public function projectNames(): array
+    {
+        return collect(config('fleet.geofence_excluded_project_names', config('fleet.geofence.excluded_project_names', [])))
+            ->map(fn ($name): string => trim((string) $name))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int, int>
      */
     public function projectWialonGroupIds(): array
@@ -69,21 +82,29 @@ class GeofenceExcludedGroups
     {
         $excludedGroupIds = $this->projectWialonGroupIds();
 
-        if ($excludedGroupIds === []) {
-            return [];
-        }
-
-        return $this->projectIdsWithOnlyExcludedGroups ??= Project::query()
-            ->whereHas('wialonGroups', fn (EloquentBuilder $query): EloquentBuilder => $query->whereIn('id', $excludedGroupIds))
-            ->whereDoesntHave('wialonGroups', function (EloquentBuilder $query) use ($excludedGroupIds): void {
-                $query->whereNotIn('id', $excludedGroupIds);
-
-                if (Schema::hasColumn('project_wialon_groups', 'is_active')) {
-                    $query->where('is_active', true);
-                }
-            })
+        $projectIdsByName = Project::query()
+            ->get(['id', 'name'])
+            ->filter(fn (Project $project): bool => $this->isProjectNameExcluded($project->name))
             ->pluck('id')
-            ->map(fn ($id): int => (int) $id)
+            ->map(fn ($id): int => (int) $id);
+
+        $projectIdsByGroups = $excludedGroupIds === []
+            ? collect()
+            : Project::query()
+                ->whereHas('wialonGroups', fn (EloquentBuilder $query): EloquentBuilder => $query->whereIn('id', $excludedGroupIds))
+                ->whereDoesntHave('wialonGroups', function (EloquentBuilder $query) use ($excludedGroupIds): void {
+                    $query->whereNotIn('id', $excludedGroupIds);
+
+                    if (Schema::hasColumn('project_wialon_groups', 'is_active')) {
+                        $query->where('is_active', true);
+                    }
+                })
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id);
+
+        return $this->projectIdsWithOnlyExcludedGroups ??= $projectIdsByName
+            ->merge($projectIdsByGroups)
+            ->unique()
             ->values()
             ->all();
     }
@@ -113,6 +134,14 @@ class GeofenceExcludedGroups
             && in_array($normalized, collect($this->groupNames())->map(fn (string $value): string => $this->normalizeName($value))->all(), true);
     }
 
+    public function isProjectNameExcluded(mixed $name): bool
+    {
+        $normalized = $this->normalizeName($name);
+
+        return $normalized !== ''
+            && in_array($normalized, collect($this->projectNames())->map(fn (string $value): string => $this->normalizeName($value))->all(), true);
+    }
+
     public function unitMatchesExcludedGroup(?Equipment $unit): bool
     {
         if (! $unit instanceof Equipment) {
@@ -140,9 +169,14 @@ class GeofenceExcludedGroups
     public function applyAllowedProjectWialonGroups(EloquentBuilder $query): EloquentBuilder
     {
         $excludedGroupIds = $this->projectWialonGroupIds();
+        $excludedProjectIds = $this->projectIdsWithOnlyExcludedGroups();
 
         if ($excludedGroupIds !== []) {
             $query->whereNotIn($query->getModel()->qualifyColumn('id'), $excludedGroupIds);
+        }
+
+        if ($excludedProjectIds !== []) {
+            $query->whereNotIn($query->getModel()->qualifyColumn('project_id'), $excludedProjectIds);
         }
 
         return $query;

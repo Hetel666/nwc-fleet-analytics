@@ -94,12 +94,17 @@ return [
         'reversed_date_range_mode' => env('DASHBOARD_REVERSED_DATE_RANGE_MODE', 'swap'),
     ],
 
-    'geofence_excluded_group_ids' => collect(explode(',', (string) env('GEOFENCE_EXCLUDED_GROUP_IDS', '601705305,601708440')))
+    'geofence_excluded_group_ids' => collect(explode(',', (string) env('GEOFENCE_EXCLUDED_GROUP_IDS', '601705305,601708440,601746910,601746911')))
         ->map(fn (string $id): string => trim($id))
         ->filter()
         ->values()
         ->all(),
-    'geofence_excluded_group_names' => collect(explode(',', (string) env('GEOFENCE_EXCLUDED_GROUP_NAMES', 'Layihəsiz - NWC,Layihəsiz - İcarə')))
+    'geofence_excluded_group_names' => collect(explode(',', (string) env('GEOFENCE_EXCLUDED_GROUP_NAMES', 'Layihəsiz - NWC,Layihəsiz - İcarə,Təmir - NWC,Təmir - İcarə')))
+        ->map(fn (string $name): string => trim($name))
+        ->filter()
+        ->values()
+        ->all(),
+    'geofence_excluded_project_names' => collect(explode(',', (string) env('GEOFENCE_EXCLUDED_PROJECT_NAMES', 'Layihəsiz,Təmir')))
         ->map(fn (string $name): string => trim($name))
         ->filter()
         ->values()

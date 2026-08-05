@@ -471,7 +471,7 @@ class ForeignGeofenceMonitoringTest extends TestCase
         $this->assertLessThanOrEqual(4, count($queries), 'Geofence queries should stay bounded and not run once per interval.');
     }
 
-    public function test_repair_project_is_visible_in_geofence_dashboard_modal_and_export(): void
+    public function test_repair_project_is_hidden_from_geofence_dashboard_modal_and_export(): void
     {
         $repair = Project::query()->create(['name' => 'Təmir', 'active' => true]);
         $foreign = Project::query()->create(['name' => 'Foreign Project', 'active' => true]);
@@ -482,9 +482,9 @@ class ForeignGeofenceMonitoringTest extends TestCase
 
         $service = app(GeofenceViolationService::class);
 
-        $this->assertSame(1, $service->summary($this->filters())['total']);
-        $this->assertSame(1, $service->paginate($this->filters())->total());
-        $this->assertCount(1, $service->exportRows($this->filters()));
+        $this->assertSame(0, $service->summary($this->filters())['total']);
+        $this->assertSame(0, $service->paginate($this->filters())->total());
+        $this->assertCount(0, $service->exportRows($this->filters()));
     }
 
     /**

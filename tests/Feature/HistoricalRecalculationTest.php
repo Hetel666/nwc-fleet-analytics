@@ -16,6 +16,7 @@ use App\Services\DashboardReportPipelineService;
 use App\Services\EfficiencyRecalculationHandler;
 use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
+use App\Support\GeofenceExcludedGroups;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -386,7 +387,7 @@ class HistoricalRecalculationTest extends TestCase
             ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['project_ids'])
-            ->assertJsonPath('errors.project_ids.0', 'Layihəsiz qrupları geozona hesabatlarında istifadə edilmir.');
+            ->assertJsonPath('errors.project_ids.0', GeofenceExcludedGroups::MESSAGE);
     }
 
     public function test_selected_projects_scope_requires_project_ids(): void
