@@ -27,6 +27,15 @@ class MonthlyEfficiencyDashboardService
         FleetVehicleType::DUMP_TRUCK,
     ];
 
+    private const EXCLUDED_PROJECT_NAMES = [
+        'Layihəsiz',
+        '-Layihəsiz-',
+        'Layihesiz',
+        '-Layihesiz-',
+        'Təmir',
+        'Temir',
+    ];
+
     public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
 
     public function isReady(): bool
@@ -290,6 +299,7 @@ class MonthlyEfficiencyDashboardService
             ->leftJoin('equipments', 'equipments.wialon_unit_id', '=', 'efficiency_daily_facts.wialon_unit_id')
             ->whereDate('efficiency_daily_facts.business_date', '>=', $filters['from'])
             ->whereDate('efficiency_daily_facts.business_date', '<=', $filters['to'])
+            ->whereNotIn('projects.name', self::EXCLUDED_PROJECT_NAMES)
             ->when($filters['project_id'], fn (Builder $query, int $id): Builder => $query->where('efficiency_daily_facts.project_id', $id))
             ->when($filters['project_ids'], fn (Builder $query, array $ids): Builder => $query->whereIn('efficiency_daily_facts.project_id', $ids))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('efficiency_daily_facts.ownership', $owner))
@@ -398,8 +408,10 @@ class MonthlyEfficiencyDashboardService
             ->map(fn ($date): string => $date->toDateString())
             ->values();
         $completed = DB::table('efficiency_daily_facts')
+            ->join('projects', 'projects.id', '=', 'efficiency_daily_facts.project_id')
             ->whereDate('business_date', '>=', $filters['from'])
             ->whereDate('business_date', '<=', $filters['to'])
+            ->whereNotIn('projects.name', self::EXCLUDED_PROJECT_NAMES)
             ->whereIn('vehicle_type', $filters['vehicle_types'])
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership', $owner))
             ->distinct()

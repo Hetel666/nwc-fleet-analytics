@@ -22,6 +22,8 @@ class MonthlyEfficiencyDashboardTest extends TestCase
     {
         $user = User::factory()->create(['active' => true]);
         $project = Project::query()->create(['name' => 'Füzuli', 'active' => true]);
+        $unassignedProject = Project::query()->create(['name' => 'Layihəsiz', 'active' => true]);
+        $repairProject = Project::query()->create(['name' => 'Təmir', 'active' => true]);
         $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
         $loader = EquipmentType::query()->create(['name' => 'Loader']);
 
@@ -34,6 +36,8 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->seedMonthlyUnit($project, $dumpTruck, 'u-20000', 200.00, Equipment::OWNERSHIP_NWC);
         $this->seedMonthlyUnit($project, $dumpTruck, 'u-20001', 200.01, Equipment::OWNERSHIP_NWC);
         $this->seedMonthlyUnit($project, $loader, 'loader-1', 240.00, Equipment::OWNERSHIP_NWC);
+        $this->seedMonthlyUnit($unassignedProject, $dumpTruck, 'excluded-unassigned', 500.00, Equipment::OWNERSHIP_NWC);
+        $this->seedMonthlyUnit($repairProject, $dumpTruck, 'excluded-repair', 500.00, Equipment::OWNERSHIP_NWC);
         $this->seedDailyFact($project, 'split-unit', 'Split Unit', 'Dump Truck', Equipment::OWNERSHIP_ICARE, '2026-05-01', 60.00);
         $this->seedDailyFact($project, 'split-unit', 'Split Unit', 'Dump Truck', Equipment::OWNERSHIP_ICARE, '2026-05-02', 160.00);
 
@@ -56,6 +60,15 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(4, $cardSummary[MonthlyEfficiencyStatus::LOW]);
         $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
+
+        $nwcProjects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
+            'date_from' => '2026-05-01',
+            'date_to' => '2026-05-31',
+            'ownership' => 'nwc',
+        ]))->assertOk()->json('data');
+
+        $this->assertNotContains('Layihəsiz', collect($nwcProjects)->pluck('project')->all());
+        $this->assertNotContains('Təmir', collect($nwcProjects)->pluck('project')->all());
 
         $rentalProjects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
             'date_from' => '2026-05-01',
