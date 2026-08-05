@@ -36,6 +36,7 @@ class EfficiencyRecalculationHandler
     public function execute(HistoricalRecalculation $historicalRun, HistoricalRecalculationTask $historicalTask): int
     {
         $date = CarbonImmutable::parse($historicalTask->stat_date, $historicalRun->timezone);
+        $vehicleTypes = $this->vehicleTypesForRun($historicalRun);
         $lock = Cache::lock(
             'efficiency:'.$historicalTask->project_id.':'.$date->toDateString(),
             (int) config('fleet.wialon.efficiency_sync_lock_seconds', 1800),
@@ -65,7 +66,7 @@ class EfficiencyRecalculationHandler
         $this->refreshRun($run);
 
         try {
-            $result = $this->synchronizeProjectDate($run, $task, $date, (bool) $historicalRun->force);
+            $result = $this->synchronizeProjectDate($run, $task, $date, (bool) $historicalRun->force, $vehicleTypes);
 
             $task->forceFill([
                 'wialon_group_id' => implode(',', $result['group_ids']),
@@ -106,6 +107,7 @@ class EfficiencyRecalculationHandler
         EfficiencySyncTask $task,
         CarbonImmutable $date,
         bool $force,
+        array $vehicleTypes,
     ): array {
         $groups = ProjectWialonGroup::query()
             ->where('project_id', $task->project_id)
@@ -149,7 +151,7 @@ class EfficiencyRecalculationHandler
                 ->get()
                 ->filter(fn (Equipment $item): bool => in_array(
                     FleetVehicleType::normalize($item->type?->name),
-                    FleetVehicleType::EFFICIENCY_TYPES,
+                    $vehicleTypes,
                     true,
                 ))
                 ->keyBy(fn (Equipment $item): string => (string) $item->wialon_unit_id);
@@ -219,11 +221,16 @@ class EfficiencyRecalculationHandler
             }
         }
 
-        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force, $sharedRecords, &$sharedSyncItems): void {
+        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force, $sharedRecords, &$sharedSyncItems, $vehicleTypes): void {
             $unitIds = array_keys($facts);
+            $vehicleTypeLabels = $this->vehicleTypeLabels($vehicleTypes);
             $stale = EfficiencyDailyFact::query()
                 ->where('project_id', $task->project_id)
                 ->whereDate('business_date', $date->toDateString());
+
+            if (! $this->usesDefaultVehicleTypes($vehicleTypes)) {
+                $stale->whereIn('vehicle_type', $vehicleTypeLabels);
+            }
 
             if ($force) {
                 $stale->delete();
@@ -257,7 +264,7 @@ class EfficiencyRecalculationHandler
                 );
             }
 
-            $this->replaceSharedEngineHoursFacts($task, $date, $sharedRecords, $sharedSyncItems);
+            $this->replaceSharedEngineHoursFacts($task, $date, $sharedRecords, $sharedSyncItems, $vehicleTypes);
         });
 
         return [
@@ -317,14 +324,24 @@ class EfficiencyRecalculationHandler
         CarbonImmutable $date,
         array $sharedRecords,
         array &$syncItems,
+        array $vehicleTypes,
     ): void {
         $projectId = (int) $task->project_id;
         $timezone = (string) config('historical_recalculation.timezone', config('app.timezone', 'Asia/Baku'));
+        $usesDefaultVehicleTypes = $this->usesDefaultVehicleTypes($vehicleTypes);
+        $vehicleTypeLabels = $this->vehicleTypeLabels($vehicleTypes);
+        $equipmentTypeCodes = collect($vehicleTypes)
+            ->map(fn (string $type): string => str_replace('_', ' ', $type))
+            ->all();
 
         EquipmentDailyStat::query()
             ->where('stat_date', $date->toDateString())
             ->where('project_id', $projectId)
             ->where('calculation_source', 'wialon_engine_hours_report')
+            ->when(! $usesDefaultVehicleTypes, fn (Builder $query): Builder => $query->whereHas(
+                'equipment.type',
+                fn (Builder $query): Builder => $query->whereIn(DB::raw('LOWER(name)'), $equipmentTypeCodes),
+            ))
             ->when(
                 $sharedRecords !== [],
                 fn (Builder $query): Builder => $query->whereNotIn(
@@ -340,6 +357,10 @@ class EfficiencyRecalculationHandler
         DailyUnitAggregate::query()
             ->where('date', $date->toDateString())
             ->where('project_id', $projectId)
+            ->when(! $usesDefaultVehicleTypes, fn (Builder $query): Builder => $query->whereHas(
+                'equipment.type',
+                fn (Builder $query): Builder => $query->whereIn(DB::raw('LOWER(name)'), $equipmentTypeCodes),
+            ))
             ->when(
                 $sharedRecords !== [],
                 fn (Builder $query): Builder => $query->whereNotIn(
@@ -358,6 +379,7 @@ class EfficiencyRecalculationHandler
         EngineHoursReportUnitDay::query()
             ->where('stat_date', $date->toDateString())
             ->where('project_id', $projectId)
+            ->when(! $usesDefaultVehicleTypes, fn (Builder $query): Builder => $query->whereIn('vehicle_type', $vehicleTypeLabels))
             ->when(
                 $sharedRecords !== [],
                 fn (Builder $query): Builder => $query->whereNotIn(
@@ -507,6 +529,49 @@ class EfficiencyRecalculationHandler
             ->all();
 
         return in_array(FleetVehicleType::slug(FleetVehicleType::display($equipment->type?->name)), $allowed, true);
+    }
+
+    /** @return array<int, string> */
+    private function vehicleTypesForRun(HistoricalRecalculation $run): array
+    {
+        $requested = collect($run->options_json['vehicle_types'] ?? [])
+            ->map(fn (mixed $type): string => FleetVehicleType::normalize((string) $type))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($requested->isEmpty()) {
+            return FleetVehicleType::EFFICIENCY_TYPES;
+        }
+
+        $allowed = $requested
+            ->intersect(FleetVehicleType::EFFICIENCY_TYPES)
+            ->values()
+            ->all();
+
+        if ($allowed === []) {
+            throw new RuntimeException('No supported efficiency vehicle types were selected.');
+        }
+
+        return $allowed;
+    }
+
+    /** @param array<int, string> $vehicleTypes */
+    private function usesDefaultVehicleTypes(array $vehicleTypes): bool
+    {
+        return collect($vehicleTypes)->sort()->values()->all() === collect(FleetVehicleType::EFFICIENCY_TYPES)->sort()->values()->all();
+    }
+
+    /**
+     * @param array<int, string> $vehicleTypes
+     * @return array<int, string>
+     */
+    private function vehicleTypeLabels(array $vehicleTypes): array
+    {
+        return collect($vehicleTypes)
+            ->map(fn (string $type): string => FleetVehicleType::label($type))
+            ->values()
+            ->all();
     }
 
     private function sharedEngineHoursCheckpointKey(CarbonImmutable $date, ProjectWialonGroup $group): string

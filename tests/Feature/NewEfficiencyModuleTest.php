@@ -23,6 +23,7 @@ use App\Services\WialonService;
 use App\Services\WialonSessionManager;
 use App\Services\XlsxExportService;
 use App\Support\EfficiencyStatus;
+use App\Support\FleetVehicleType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use RuntimeException;
@@ -88,6 +89,74 @@ class NewEfficiencyModuleTest extends TestCase
         $this->assertSame(1, EngineHoursReportUnitDay::query()->count());
         $secondIds = EfficiencyDailyFact::query()->orderBy('id')->pluck('id')->all();
         $this->assertSame([], array_values(array_intersect($firstIds, $secondIds)));
+    }
+
+    public function test_forced_sync_limited_to_vehicle_types_preserves_other_types(): void
+    {
+        [$handler, $run, $task] = $this->handlerScenario($this->report('6001', '7,50', '4,25 km'));
+        $project = Project::query()->where('name', 'Sync project')->firstOrFail();
+        $loaderType = EquipmentType::query()->create(['name' => 'Loader']);
+        $loader = Equipment::query()->create([
+            'name' => 'Unit 7001',
+            'wialon_unit_id' => '7001',
+            'equipment_type_id' => $loaderType->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+        $this->fact($project, '7001', '2026-07-31', Equipment::OWNERSHIP_NWC, 'Loader', EfficiencyStatus::ONE_TO_SEVEN, 4);
+        EquipmentDailyStat::query()->create([
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $loader->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 4,
+            'distance_km' => 2,
+            'utilization_percent' => 40,
+            'calculation_source' => 'wialon_engine_hours_report',
+            'calculation_status' => 'success',
+        ]);
+        DailyUnitAggregate::query()->create([
+            'date' => '2026-07-31',
+            'unit_id' => '7001',
+            'equipment_id' => $loader->id,
+            'project_id' => $project->id,
+            'equipment_type_id' => $loader->equipment_type_id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'engine_hours' => 4,
+            'mileage' => 2,
+            'geofence_outside_hours' => 0,
+        ]);
+        EngineHoursReportUnitDay::query()->create([
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $loader->id,
+            'project_id' => $project->id,
+            'equipment_type_id' => $loader->equipment_type_id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'wialon_unit_id' => '7001',
+            'unit_name' => $loader->name,
+            'vehicle_type' => 'Loader',
+            'engine_hours' => 4,
+            'engine_hours_source' => EngineHoursReportUnitDay::SOURCE,
+            'parse_status' => 'ok',
+        ]);
+        $run->forceFill([
+            'options_json' => ['vehicle_types' => [FleetVehicleType::DUMP_TRUCK]],
+        ])->save();
+
+        $this->assertSame(2, $handler->execute($run->refresh(), $task));
+
+        $this->assertSame(3, EfficiencyDailyFact::query()->count());
+        $this->assertSame(1, EfficiencyDailyFact::query()->where('vehicle_type', 'Loader')->count());
+        $this->assertSame(2, EfficiencyDailyFact::query()->where('vehicle_type', 'Dump Truck')->count());
+        $this->assertSame(2, EquipmentDailyStat::query()->count());
+        $this->assertSame(2, DailyUnitAggregate::query()->count());
+        $this->assertSame(2, EngineHoursReportUnitDay::query()->count());
+        $this->assertDatabaseHas('efficiency_daily_facts', [
+            'wialon_unit_id' => '7001',
+            'vehicle_type' => 'Loader',
+            'engine_hours_decimal' => 4,
+        ]);
     }
 
     public function test_forced_sync_updates_shared_dashboard_rows_when_equipment_project_changed(): void

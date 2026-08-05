@@ -11,6 +11,7 @@ use App\Models\NightDayEfficiencySyncRun;
 use App\Models\NighttimeEfficiencySyncRun;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\FleetVehicleType;
 use App\Support\GeofenceExcludedGroups;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
@@ -93,6 +94,7 @@ class HistoricalRecalculationService
                 'timezone' => $payload['timezone'],
                 'force' => $payload['force'],
                 'project_ids' => $payload['project_ids'],
+                'options_json' => $payload['options'],
                 'requested_by' => $user?->id,
                 'last_heartbeat_at' => now(config('app.timezone')),
             ]);
@@ -637,6 +639,14 @@ class HistoricalRecalculationService
         $payload['date_to'] = Carbon::parse($payload['date_to'], $payload['timezone'])->toDateString();
         $payload['force'] = (bool) ($payload['force'] ?? false);
         $payload['project_ids'] = $this->selectedProjectIds($payload)->values()->all();
+        $payload['options'] = [
+            'vehicle_types' => collect($payload['options']['vehicle_types'] ?? $payload['vehicle_types'] ?? [])
+                ->map(fn (mixed $type): string => FleetVehicleType::normalize((string) $type))
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
+        ];
 
         return $payload;
     }
@@ -652,6 +662,7 @@ class HistoricalRecalculationService
             'scope' => $payload['scope'],
             'project_ids' => $payload['project_ids'],
             'force' => $payload['force'],
+            'options' => $payload['options'],
         ]));
     }
 

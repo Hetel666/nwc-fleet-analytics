@@ -12,7 +12,8 @@ class QueueEfficiencySync extends Command
     protected $signature = 'fleet:queue-efficiency-sync
         {--from= : First business date}
         {--to= : Last business date}
-        {--force : Refresh existing facts}';
+        {--force : Refresh existing facts}
+        {--vehicle-types=* : Limit refresh to one or more vehicle type names or slugs}';
 
     protected $description = 'Queue the canonical Engine hours efficiency synchronization.';
 
@@ -29,6 +30,7 @@ class QueueEfficiencySync extends Command
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'project_ids' => [],
             'force' => (bool) $this->option('force'),
+            'vehicle_types' => $this->option('vehicle-types') ?: [],
         ];
         $preview = $service->preview($plan);
         $result = $pipelines->queue([$plan], 'manual', $pipelines->priorityForSource('manual'));

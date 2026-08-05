@@ -1120,6 +1120,14 @@ class DashboardReportPipelineService
                         ->values()
                         ->all(),
                     'force' => (bool) ($plan['force'] ?? false),
+                    'options' => [
+                        'vehicle_types' => collect($plan['vehicle_types'] ?? [])
+                            ->map(fn (mixed $type): string => trim((string) $type))
+                            ->filter()
+                            ->unique()
+                            ->values()
+                            ->all(),
+                    ],
                 ];
             })
             ->filter(fn (array $plan): bool => $plan['section'] !== '' && $plan['date_from'] !== '' && $plan['date_to'] !== '')
@@ -1139,6 +1147,7 @@ class DashboardReportPipelineService
             'scope' => $plan['scope'],
             'project_ids' => $plan['project_ids'],
             'force' => (bool) $plan['force'],
+            'options' => $plan['options'],
         ];
     }
 }
