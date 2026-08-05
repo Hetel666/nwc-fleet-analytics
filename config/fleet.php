@@ -25,7 +25,7 @@ return [
         'engine_hours_sync_lock_seconds' => (int) env('WIALON_ENGINE_HOURS_SYNC_LOCK_SECONDS', 900),
         'efficiency_report_resource_id' => (int) env('WIALON_EFFICIENCY_REPORT_RESOURCE_ID', 601701680),
         'efficiency_report_template_id' => (int) env('WIALON_EFFICIENCY_REPORT_TEMPLATE_ID', 19),
-        'efficiency_report_template_name' => env('WIALON_EFFICIENCY_REPORT_TEMPLATE_NAME', 'Qrup report Engine hours (api)'),
+        'efficiency_report_template_name' => env('WIALON_EFFICIENCY_REPORT_TEMPLATE_NAME', 'Qrup date report Engine hours (api)'),
         'efficiency_report_timeout' => (int) env('WIALON_EFFICIENCY_REPORT_TIMEOUT', 90),
         'efficiency_report_chunk_size' => (int) env('WIALON_EFFICIENCY_REPORT_CHUNK_SIZE', 500),
         'efficiency_sync_lock_seconds' => (int) env('WIALON_EFFICIENCY_SYNC_LOCK_SECONDS', 1800),

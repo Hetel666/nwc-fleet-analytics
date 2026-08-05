@@ -49,29 +49,23 @@ class WialonEfficiencyReportParser
                     continue;
                 }
 
-                $rowsReceived++;
-                $cells = $row['c'] ?? $row['cells'] ?? [];
-                $unitId = $this->unitId($row, $cells);
-                $engineRaw = $this->text($cells[$indexes['engine_hours']] ?? null);
-                $hours = $this->decimal($cells[$indexes['engine_hours']] ?? null);
-                $mileageRaw = $indexes['mileage'] === null ? null : $this->text($cells[$indexes['mileage']] ?? null);
+                $children = $this->rowChildren($row);
 
-                $records[] = [
-                    'wialon_unit_id' => $unitId,
-                    'unit_name' => $this->text($cells[$indexes['grouping']] ?? null),
-                    'engine_hours_decimal' => round(max(0, $hours ?? 0), 2),
-                    'engine_seconds' => (int) round(max(0, $hours ?? 0) * 3600),
-                    'engine_hours_raw' => $engineRaw,
-                    'started_at' => $indexes['begin'] === null ? null : $this->dateTime($cells[$indexes['begin']] ?? null),
-                    'ended_at' => $indexes['end'] === null ? null : $this->dateTime($cells[$indexes['end']] ?? null),
-                    'mileage_km' => $this->decimal($cells[$indexes['mileage']] ?? null),
-                    'mileage_raw' => $mileageRaw,
-                    'source_table' => $tableName,
-                    'source_table_index' => $tableIndex,
-                    'engine_hours_column_index' => $indexes['engine_hours'],
-                    'engine_hours_column_label' => $headers[$indexes['engine_hours']] ?? 'Engine hours',
-                    'raw_row_json' => $row,
-                ];
+                if ($children !== []) {
+                    $parentCells = $this->cells($row);
+                    $parentUnitId = $this->unitId($row, $parentCells);
+                    $parentUnitName = $this->text($parentCells[$indexes['grouping']] ?? null);
+
+                    foreach ($children as $child) {
+                        $rowsReceived++;
+                        $records[] = $this->record($child, $indexes, $headers, $tableName, $tableIndex, $parentUnitId, $parentUnitName);
+                    }
+
+                    continue;
+                }
+
+                $rowsReceived++;
+                $records[] = $this->record($row, $indexes, $headers, $tableName, $tableIndex);
             }
         }
 
@@ -80,6 +74,49 @@ class WialonEfficiencyReportParser
         }
 
         return ['records' => $records, 'rows_received' => $rowsReceived];
+    }
+
+    /**
+     * @param  array<string, int|null>  $indexes
+     * @param  array<int, string>  $headers
+     * @return array<string, mixed>
+     */
+    private function record(
+        array $row,
+        array $indexes,
+        array $headers,
+        string $tableName,
+        int $tableIndex,
+        ?string $parentUnitId = null,
+        ?string $parentUnitName = null,
+    ): array {
+        $cells = $this->cells($row);
+        $unitId = $this->unitId($row, $cells) ?? $parentUnitId;
+        $grouping = $this->text($cells[$indexes['grouping']] ?? null);
+        $recordDate = $this->date($cells[$indexes['grouping']] ?? null);
+        $engineRaw = $this->text($cells[$indexes['engine_hours']] ?? null);
+        $hours = $this->decimal($cells[$indexes['engine_hours']] ?? null);
+        $mileageRaw = $indexes['mileage'] === null ? null : $this->text($cells[$indexes['mileage']] ?? null);
+
+        return [
+            'wialon_unit_id' => $unitId,
+            'unit_name' => $parentUnitName ?: $grouping,
+            'record_date' => $recordDate,
+            'engine_hours_decimal' => round(max(0, $hours ?? 0), 2),
+            'engine_seconds' => (int) round(max(0, $hours ?? 0) * 3600),
+            'engine_hours_raw' => $engineRaw,
+            'started_at' => $indexes['begin'] === null ? null : $this->dateTime($cells[$indexes['begin']] ?? null, $recordDate),
+            'ended_at' => $indexes['end'] === null ? null : $this->dateTime($cells[$indexes['end']] ?? null, $recordDate),
+            'initial_location' => $indexes['initial_location'] === null ? null : $this->text($cells[$indexes['initial_location']] ?? null),
+            'final_location' => $indexes['final_location'] === null ? null : $this->text($cells[$indexes['final_location']] ?? null),
+            'mileage_km' => $this->decimal($cells[$indexes['mileage']] ?? null),
+            'mileage_raw' => $mileageRaw,
+            'source_table' => $tableName,
+            'source_table_index' => $tableIndex,
+            'engine_hours_column_index' => $indexes['engine_hours'],
+            'engine_hours_column_label' => $headers[$indexes['engine_hours']] ?? 'Engine hours',
+            'raw_row_json' => $row,
+        ];
     }
 
     public function decimal(mixed $value): ?float
@@ -130,6 +167,8 @@ class WialonEfficiencyReportParser
             'begin' => $this->index($headers, ['begin', 'start', 'начало'], $types, ['time_begin']),
             'end' => $this->index($headers, ['end', 'конец'], $types, ['time_end']),
             'mileage' => $this->index($headers, ['mileage', 'пробег'], $types, ['mileage']),
+            'initial_location' => $this->index($headers, ['initial location', 'нач. положение', 'nach. polozhenie'], $types, []),
+            'final_location' => $this->index($headers, ['final location', 'кон. положение', 'kon. polozhenie'], $types, []),
         ];
     }
 
@@ -167,7 +206,42 @@ class WialonEfficiencyReportParser
         return null;
     }
 
-    private function dateTime(mixed $value): ?CarbonImmutable
+    /** @return array<int, mixed> */
+    private function cells(array $row): array
+    {
+        $cells = $row['c'] ?? $row['cells'] ?? [];
+
+        return is_array($cells) ? $cells : [];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function rowChildren(array $row): array
+    {
+        foreach (['r', 'rows', 'children'] as $key) {
+            if (isset($row[$key]) && is_array($row[$key])) {
+                return array_values(array_filter($row[$key], 'is_array'));
+            }
+        }
+
+        return [];
+    }
+
+    private function date(mixed $value): ?string
+    {
+        $text = $this->text($value);
+
+        if ($text === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($text, $this->timezone())->toDateString();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function dateTime(mixed $value, ?string $date = null): ?CarbonImmutable
     {
         if (is_array($value) && is_numeric($value['v'] ?? null)) {
             return CarbonImmutable::createFromTimestamp((int) $value['v'], 'UTC')->timezone($this->timezone());
@@ -176,7 +250,15 @@ class WialonEfficiencyReportParser
         $text = $this->text($value);
 
         try {
-            return $text === '' ? null : CarbonImmutable::parse($text, $this->timezone());
+            if ($text === '') {
+                return null;
+            }
+
+            if ($date !== null && preg_match('/^\d{1,2}:\d{2}(?::\d{2})?$/', $text) === 1) {
+                return CarbonImmutable::parse($date.' '.$text, $this->timezone());
+            }
+
+            return CarbonImmutable::parse($text, $this->timezone());
         } catch (Throwable) {
             return null;
         }

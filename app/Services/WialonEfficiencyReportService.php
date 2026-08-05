@@ -84,7 +84,7 @@ class WialonEfficiencyReportService
                     }
 
                     $rowCount = (int) ($table['rows'] ?? 0);
-                    $rows = $this->loadRows($sid, (int) $index, $rowCount, $settings['chunk_size']);
+                    $rows = $this->loadRows($sid, (int) $index, $rowCount, $settings['chunk_size'], $table);
 
                     if (count($rows) !== $rowCount) {
                         throw new RuntimeException("Wialon efficiency report table {$index} returned ".count($rows)." of {$rowCount} rows.");
@@ -121,7 +121,7 @@ class WialonEfficiencyReportService
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function loadRows(string $sid, int $tableIndex, int $rowCount, int $chunkSize): array
+    private function loadRows(string $sid, int $tableIndex, int $rowCount, int $chunkSize, array $table): array
     {
         $rows = [];
 
@@ -148,6 +148,126 @@ class WialonEfficiencyReportService
             }
         }
 
+        if ($this->hasLocationColumns($table)) {
+            $nestedRows = $this->loadRowsWithNestedDates($sid, $tableIndex, $rowCount, $chunkSize);
+
+            if ($this->hasNestedRows($nestedRows)) {
+                return $nestedRows;
+            }
+        }
+
         return $rows;
+    }
+
+    private function hasLocationColumns(array $table): bool
+    {
+        $headers = collect($table['header'] ?? [])
+            ->map(fn (mixed $header): string => mb_strtolower(trim((string) $header)))
+            ->all();
+
+        return collect($headers)->contains(fn (string $header): bool => str_contains($header, 'location')
+            || str_contains($header, 'положение')
+            || str_contains($header, 'polozhenie'));
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function loadRowsWithNestedDates(string $sid, int $tableIndex, int $rowCount, int $chunkSize): array
+    {
+        if ($rowCount <= 0) {
+            return [];
+        }
+
+        $rows = [];
+
+        for ($from = 0; $from < $rowCount; $from += $chunkSize) {
+            $to = min($rowCount - 1, $from + $chunkSize - 1);
+
+            try {
+                $chunk = $this->wialon->selectReportResultRows($tableIndex, [
+                    'type' => 'range',
+                    'data' => ['from' => $from, 'to' => $to, 'level' => 0, 'unitInfo' => 1],
+                ], $sid);
+            } catch (Throwable) {
+                return [];
+            }
+
+            foreach ($chunk as $row) {
+                if (is_array($row)) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        foreach ($rows as $index => $row) {
+            if ($this->rowChildren($row) !== []) {
+                continue;
+            }
+
+            $children = $this->nestedRows($sid, $tableIndex, $index);
+
+            if ($children !== []) {
+                $rows[$index]['r'] = $children;
+            }
+        }
+
+        return $rows;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function nestedRows(string $sid, int $tableIndex, int $rowIndex): array
+    {
+        try {
+            $subrows = $this->wialon->getReportResultSubrows($tableIndex, $rowIndex, $sid);
+
+            if ($subrows !== []) {
+                return array_values(array_filter($subrows, 'is_array'));
+            }
+        } catch (Throwable) {
+            // Some Wialon installations expose nested rows only through select_result_rows.
+        }
+
+        $attempts = [
+            ['type' => 'row', 'data' => ['rows' => [(string) $rowIndex], 'level' => 1, 'unitInfo' => 1]],
+            ['type' => 'row', 'data' => ['row' => (string) $rowIndex, 'level' => 1, 'unitInfo' => 1]],
+            ['type' => 'row', 'data' => ['rows' => [$rowIndex], 'unitInfo' => 1]],
+        ];
+
+        foreach ($attempts as $config) {
+            try {
+                $rows = $this->wialon->selectReportResultRows($tableIndex, $config, $sid);
+
+                if ($rows !== []) {
+                    return array_values(array_filter($rows, 'is_array'));
+                }
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    /** @param array<int, array<string, mixed>> $rows */
+    private function hasNestedRows(array $rows): bool
+    {
+        foreach ($rows as $row) {
+            if ($this->rowChildren($row) !== []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function rowChildren(array $row): array
+    {
+        foreach (['r', 'rows', 'children'] as $key) {
+            if (isset($row[$key]) && is_array($row[$key])) {
+                return array_values(array_filter($row[$key], 'is_array'));
+            }
+        }
+
+        return [];
     }
 }

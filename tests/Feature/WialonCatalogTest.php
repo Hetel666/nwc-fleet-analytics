@@ -116,7 +116,7 @@ class WialonCatalogTest extends TestCase
                     'rep' => [
                         55 => [
                             'id' => 55,
-                            'n' => 'Qrup report Engine hours (api)',
+                            'n' => 'Qrup date report Engine hours (api)',
                             'ct' => 'avl_unit_group',
                             'tbl' => [['id' => 1, 'n' => 'Engine hours']],
                         ],

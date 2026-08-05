@@ -2696,7 +2696,7 @@
             >
                 <h2 class="h4 fw-bold mb-1" id="efficiency-monthly-title">Aylıq effektivlik</h2>
                 <div class="dashboard-efficiency-section-meta">
-                    <span><i class="bi bi-database"></i>Mənbə: Qrup report Engine hours (api)</span>
+                    <span><i class="bi bi-database"></i>Mənbə: Qrup date report Engine hours (api)</span>
                     <span><i class="bi bi-calculator"></i>Hesablama vahidi: Unikal texnika</span>
                     <span><i class="bi bi-clock-history"></i>Normativ: 200 MS / ay</span>
                 </div>
@@ -2753,7 +2753,7 @@
             >
                 <h2 class="h4 fw-bold mb-1" id="efficiency-general-title">Ümumi effektivlik</h2>
                 <div class="dashboard-efficiency-section-meta">
-                    <span><i class="bi bi-database"></i>Mənbə: Qrup report Engine hours (api)</span>
+                    <span><i class="bi bi-database"></i>Mənbə: Qrup date report Engine hours (api)</span>
                     <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
                 </div>
             </section>

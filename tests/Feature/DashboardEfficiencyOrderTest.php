@@ -48,7 +48,7 @@ class DashboardEfficiencyOrderTest extends TestCase
         $this->assertStringContainsString('Seçilmiş dövr üçün məlumat yoxdur', $html);
         $this->assertStringContainsString('Seçilmiş dövr üçün gecə növbəsi məlumatı yoxdur', $html);
         $this->assertStringContainsString('Seçilmiş dövr üçün gün daxilində gecə effektivliyi məlumatı yoxdur', $html);
-        $this->assertStringContainsString('Qrup report Engine hours (api)', $html);
+        $this->assertStringContainsString('Qrup date report Engine hours (api)', $html);
         $this->assertStringContainsString('day report Engine hours (api)', $html);
         $this->assertStringContainsString('night report Engine hours (api)', $html);
         $this->assertStringContainsString('night day report Engine hours (api)', $html);

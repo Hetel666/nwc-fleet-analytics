@@ -47,6 +47,40 @@ class NewEfficiencyModuleTest extends TestCase
         $this->assertSame(1, $parsed['rows_received']);
     }
 
+    public function test_parser_reads_group_date_engine_hours_children_with_locations(): void
+    {
+        $parsed = app(WialonEfficiencyReportParser::class)->parse([
+            'tables' => [[
+                'index' => 0,
+                'table' => [
+                    'header' => ['Grouping', 'Engine hours', 'Начало', 'Конец', 'Пробег', 'Нач. положение', 'Кон. положение'],
+                    'header_type' => ['', 'duration', 'time_begin', 'time_end', 'mileage', '', ''],
+                    'rows' => 1,
+                ],
+                'rows' => [[
+                    'uid' => 600595758,
+                    'c' => ['110-FD-084', '381.37', '08:22:03', '23:59:55', '4.20 км', 'Xocavənd təlim mərkəzi', 'Füzuli Xocavənd avtomobil yolu'],
+                    'r' => [
+                        ['c' => ['2026-07-01', '8.86', '08:22:03', '17:54:13', '0.00 км', 'Xocavənd təlim mərkəzi', 'Xocavənd təlim mərkəzi']],
+                        ['c' => ['2026-07-11', '16.75', '07:51:46', '2026-07-12 05:08:33', '1.86 км', 'Xocavənd təlim mərkəzi', 'Füzuli Xocavənd avtomobil yolu']],
+                    ],
+                ]],
+            ]],
+        ]);
+
+        $this->assertSame(2, $parsed['rows_received']);
+        $this->assertCount(2, $parsed['records']);
+        $this->assertSame('600595758', $parsed['records'][0]['wialon_unit_id']);
+        $this->assertSame('110-FD-084', $parsed['records'][0]['unit_name']);
+        $this->assertSame('2026-07-01', $parsed['records'][0]['record_date']);
+        $this->assertSame(8.86, $parsed['records'][0]['engine_hours_decimal']);
+        $this->assertSame('2026-07-01 08:22:03', $parsed['records'][0]['started_at']?->format('Y-m-d H:i:s'));
+        $this->assertSame('Xocavənd təlim mərkəzi', $parsed['records'][0]['final_location']);
+        $this->assertSame('2026-07-11', $parsed['records'][1]['record_date']);
+        $this->assertSame(16.75, $parsed['records'][1]['engine_hours_decimal']);
+        $this->assertSame('Füzuli Xocavənd avtomobil yolu', $parsed['records'][1]['final_location']);
+    }
+
     public function test_status_boundaries_use_raw_seconds(): void
     {
         $this->assertSame(EfficiencyStatus::NO_DATA, EfficiencyStatus::classify(0));
@@ -333,6 +367,53 @@ class NewEfficiencyModuleTest extends TestCase
             now('Asia/Baku')->endOfDay(),
             'test-session',
         );
+    }
+
+    public function test_report_service_loads_group_date_subrows_for_location_tables(): void
+    {
+        config()->set('fleet.wialon.efficiency_report_resource_id', 601701680);
+        config()->set('fleet.wialon.efficiency_report_template_id', 19);
+        config()->set('fleet.wialon.efficiency_report_template_name', 'Qrup date report Engine hours (api)');
+
+        $parentRow = [
+            'uid' => 600595758,
+            'c' => ['110-FD-084', '381.37', '08:22:03', '23:59:55', '4.20 km', 'Project A', 'Project B'],
+        ];
+        $childRows = [
+            ['c' => ['2026-07-01', '8.86', '08:22:03', '17:54:13', '0.00 km', 'Project A', 'Project A']],
+            ['c' => ['2026-07-11', '16.75', '07:51:46', '2026-07-12 05:08:33', '1.86 km', 'Project A', 'Project B']],
+        ];
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('findReportTemplateByName')->once()->andReturn([
+            'resource_id' => 601701680,
+            'id' => 19,
+            'type' => 'avl_unit_group',
+        ]);
+        $wialon->shouldReceive('cleanupReportResult')->twice();
+        $wialon->shouldReceive('executeReport')->once()->andReturn([
+            'reportResult' => ['tables' => [[
+                'name' => 'Qrup date report Engine hours (api)',
+                'header' => ['Grouping', 'Engine hours', 'Begin', 'End', 'Mileage', 'Initial location', 'Final location'],
+                'header_type' => ['', 'duration', 'time_begin', 'time_end', 'mileage', '', ''],
+                'rows' => 1,
+            ]]],
+        ]);
+        $wialon->shouldReceive('selectReportResultRows')->twice()->andReturn([$parentRow], [$parentRow]);
+        $wialon->shouldReceive('getReportResultSubrows')->once()->with(0, 0, 'test-session')->andReturn($childRows);
+
+        $lock = Mockery::mock(WialonReportSessionLock::class);
+        $lock->shouldReceive('run')->once()->andReturnUsing(fn ($callback) => $callback());
+        $group = new ProjectWialonGroup(['wialon_group_id' => '9001']);
+
+        $report = (new WialonEfficiencyReportService($wialon, $lock))->execute(
+            $group,
+            now('Asia/Baku')->startOfDay(),
+            now('Asia/Baku')->endOfDay(),
+            'test-session',
+        );
+
+        $this->assertSame($childRows, $report['tables'][0]['rows'][0]['r']);
     }
 
     public function test_dashboard_counts_equipment_days_separates_ownership_and_excludes_other_types(): void

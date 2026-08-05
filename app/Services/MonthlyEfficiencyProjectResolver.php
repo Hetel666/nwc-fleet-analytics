@@ -55,7 +55,9 @@ class MonthlyEfficiencyProjectResolver
             $prefix = trim(Str::before($text, ':'));
             $normalizedPrefix = $this->normalize($prefix);
 
-            if ($normalizedPrefix === '' || $this->looksLikeDateTime($prefix)) {
+            if ($normalizedPrefix === ''
+                || preg_match('/\pL/u', $prefix) !== 1
+                || $this->looksLikeDateTime($prefix)) {
                 continue;
             }
 
@@ -91,7 +93,7 @@ class MonthlyEfficiencyProjectResolver
             ->map(fn (mixed $cell): string => is_array($cell)
                 ? trim((string) ($cell['t'] ?? ''))
                 : trim((string) $cell))
-            ->filter(fn (string $text): bool => $text !== '' && str_contains($text, ':'))
+            ->filter(fn (string $text): bool => $text !== '')
             ->values();
     }
 

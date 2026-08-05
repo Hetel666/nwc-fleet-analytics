@@ -168,6 +168,10 @@ class EfficiencyRecalculationHandler
             $matchedIds = [];
 
             foreach ($parsed['records'] as $record) {
+                if (($record['record_date'] ?? null) !== null && $record['record_date'] !== $date->toDateString()) {
+                    continue;
+                }
+
                 $unitId = $record['wialon_unit_id'];
                 $item = $unitId === null ? null : $equipment->get((string) $unitId);
 
@@ -511,7 +515,7 @@ class EfficiencyRecalculationHandler
                     'equipment_count' => (int) ($syncItem['rows_saved'] ?? 0),
                     'payload' => [
                         'status' => 'success',
-                        'source' => 'Qrup report Engine hours (api)',
+                        'source' => (string) config('fleet.wialon.efficiency_report_template_name'),
                         'rows_received' => (int) ($syncItem['rows_received'] ?? 0),
                         'rows_saved' => (int) ($syncItem['rows_saved'] ?? 0),
                         'synced_at' => now($timezone)->toIso8601String(),

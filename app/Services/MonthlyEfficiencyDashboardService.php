@@ -239,7 +239,7 @@ class MonthlyEfficiencyDashboardService
             ['Ownership', $filters['ownership_type'] ? $this->ownershipLabel($filters['ownership_type']) : 'Hamısı'],
             ['Hesablama vahidi', 'Unikal texnika'],
             ['Normativ MS', number_format(self::NORMATIVE_HOURS, 0, '.', '')],
-            ['Mənbə', 'Qrup report Engine hours (api)'],
+            ['Mənbə', 'Qrup date report Engine hours (api)'],
         ];
         $sections = [
             ['title' => 'Xülasə', 'columns' => ['Ownership', 'Status', 'Unique unit count', 'Total Cari MS', 'Total Normativ MS', 'Effektivlik %'], 'rows' => $summaryRows],

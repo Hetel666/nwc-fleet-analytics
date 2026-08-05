@@ -261,7 +261,7 @@ class DashboardAccessTest extends TestCase
         );
     }
 
-    public function test_only_admin_sees_object_list_sync_button(): void
+    public function test_dashboard_users_see_object_list_sync_button(): void
     {
         $this->seed(DemoSeeder::class);
 
@@ -276,7 +276,7 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($viewer)
             ->get('/dashboard')
             ->assertOk()
-            ->assertDontSee('Obyekt siyahısını yenilə');
+            ->assertSee('Obyekt siyahısını yenilə');
     }
 
     public function test_dashboard_renders_azerbaijani_text_without_mojibake(): void

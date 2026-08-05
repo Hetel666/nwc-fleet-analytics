@@ -18,7 +18,7 @@ return [
     ],
 
     'used_report_templates' => [
-        'Qrup report Engine hours (api)' => [
+        'Qrup date report Engine hours (api)' => [
             'Effektivlik',
             'Top 20',
             'Orta motosaat',
