@@ -8,6 +8,7 @@ use App\Models\DashboardVisibilitySetting;
 use App\Models\Equipment;
 use App\Models\User;
 use App\Support\EfficiencyStatus;
+use App\Support\MonthlyEfficiencyStatus;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -235,7 +236,7 @@ class DashboardDisplayConfigurationService
     {
         $this->ensureSettingsTablesReady();
         $this->dashboardTypeDefinition($dashboardType);
-        $statusCode = $this->statusDefinition($statusCode)['status_code'];
+        $statusCode = $this->statusDefinition($dashboardType, $statusCode)['status_code'];
         $old = $this->statusRow($dashboardType, $statusCode);
 
         DashboardStatusVisibilitySetting::query()->updateOrCreate(
@@ -339,7 +340,7 @@ class DashboardDisplayConfigurationService
 
         $statuses = collect($this->statusTypeRegistry())
             ->mapWithKeys(function (array $type) use ($statusSettings): array {
-                $rows = collect($this->statusRegistry())
+                $rows = collect($this->statusRegistry($type['dashboard_type']))
                     ->map(function (array $status) use ($type, $statusSettings): array {
                         $setting = $statusSettings->get($type['dashboard_type'].':'.$status['status_code']);
 
@@ -392,9 +393,12 @@ class DashboardDisplayConfigurationService
             ->all();
     }
 
-    private function statusRegistry(): array
+    private function statusRegistry(?string $dashboardType = null): array
     {
-        return collect(config('dashboard_visibility.statuses', []))
+        $statuses = config('dashboard_visibility.statuses_by_type.'.$dashboardType)
+            ?? config('dashboard_visibility.statuses', []);
+
+        return collect($statuses)
             ->map(fn (array $definition, string $status): array => [
                 'status_code' => $status,
                 'title_az' => (string) ($definition['title_az'] ?? $status),
@@ -425,10 +429,10 @@ class DashboardDisplayConfigurationService
         return $definition;
     }
 
-    private function statusDefinition(string $statusCode): array
+    private function statusDefinition(string $dashboardType, string $statusCode): array
     {
         $statusCode = $this->canonicalStatus($statusCode) ?? $statusCode;
-        $definition = collect($this->statusRegistry())->firstWhere('status_code', $statusCode);
+        $definition = collect($this->statusRegistry($dashboardType))->firstWhere('status_code', $statusCode);
 
         if ($definition === null) {
             throw ValidationException::withMessages(['status_code' => "Unknown status code: {$statusCode}"]);
@@ -469,6 +473,9 @@ class DashboardDisplayConfigurationService
             '7_10', 'from_7_to_10', 'between_7_and_10_hours' => EfficiencyStatus::SEVEN_TO_TEN,
             'over_10', 'over_10_hours', 'over_10_day_hours' => EfficiencyStatus::OVER_TEN,
             'no_data' => EfficiencyStatus::NO_DATA,
+            MonthlyEfficiencyStatus::CRITICAL_LOW, 'kritik_asagi', 'critical' => MonthlyEfficiencyStatus::CRITICAL_LOW,
+            MonthlyEfficiencyStatus::LOW, 'asagi' => MonthlyEfficiencyStatus::LOW,
+            MonthlyEfficiencyStatus::NORMAL => MonthlyEfficiencyStatus::NORMAL,
             default => null,
         };
     }

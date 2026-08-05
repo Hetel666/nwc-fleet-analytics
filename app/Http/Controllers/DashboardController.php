@@ -9,6 +9,7 @@ use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
+use App\Services\MonthlyEfficiencyDashboardService;
 use App\Services\NightDayEfficiencyDashboardService;
 use App\Services\NighttimeEfficiencyDashboardService;
 use App\Support\DashboardFilterState;
@@ -16,6 +17,7 @@ use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class DashboardController extends Controller
 {
@@ -25,12 +27,13 @@ class DashboardController extends Controller
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         NightDayEfficiencyDashboardService $nightDayEfficiency,
+        MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
         DashboardFilterState $filterState
     ): View {
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState);
     }
 
     public function tab(
@@ -40,6 +43,7 @@ class DashboardController extends Controller
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         NightDayEfficiencyDashboardService $nightDayEfficiency,
+        MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
@@ -48,7 +52,7 @@ class DashboardController extends Controller
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
     }
 
     private function renderDashboard(
@@ -57,6 +61,7 @@ class DashboardController extends Controller
         DaytimeEfficiencyDashboardService $daytimeEfficiency,
         NighttimeEfficiencyDashboardService $nighttimeEfficiency,
         NightDayEfficiencyDashboardService $nightDayEfficiency,
+        MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
@@ -106,6 +111,21 @@ class DashboardController extends Controller
                 'NWC' => $nightDayEfficiency->summaryForOwnership($nightDayFilters, 'NWC'),
                 'ICARE' => $nightDayEfficiency->summaryForOwnership($nightDayFilters, 'ICARE'),
             ];
+            $monthlyFilters = [
+                ...$filters,
+                'search' => '',
+            ];
+            try {
+                $data['monthlyEfficiencyByOwnership'] = [
+                    'NWC' => $monthlyEfficiency->summaryForOwnership($monthlyFilters, 'NWC'),
+                    'ICARE' => $monthlyEfficiency->summaryForOwnership($monthlyFilters, 'ICARE'),
+                ];
+            } catch (InvalidArgumentException $exception) {
+                $data['monthlyEfficiencyByOwnership'] = [
+                    'NWC' => $this->emptyMonthlyEfficiencySummary($exception->getMessage()),
+                    'ICARE' => $this->emptyMonthlyEfficiencySummary($exception->getMessage()),
+                ];
+            }
         }
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
         $dashboardPreferences = $request->user()->resolvedDashboardPreferences();
@@ -137,5 +157,27 @@ class DashboardController extends Controller
                 ? $geofenceViolations->getDashboardWidget($filters)
                 : null,
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function emptyMonthlyEfficiencySummary(string $message): array
+    {
+        return [
+            'critical_low' => 0,
+            'low' => 0,
+            'normal' => 0,
+            'total' => 0,
+            'total_current_hours' => 0.0,
+            'total_normative_hours' => 0.0,
+            'efficiency_percent' => 0.0,
+            'completeness' => [
+                'is_complete' => false,
+                'message' => $message,
+                'expected_days' => 0,
+                'completed_days' => 0,
+                'failed_days' => 0,
+                'missing_days' => [],
+            ],
+        ];
     }
 }

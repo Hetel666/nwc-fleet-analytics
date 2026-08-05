@@ -786,6 +786,10 @@ class DashboardService
             return app(NightDayEfficiencyDashboardService::class)->export($filters);
         }
 
+        if (in_array($block, ['monthly_efficiency', 'monthly-efficiency'], true)) {
+            return app(MonthlyEfficiencyDashboardService::class)->export($filters);
+        }
+
         if ($block === 'efficiency') {
             return $this->efficiency->export($filters);
         }

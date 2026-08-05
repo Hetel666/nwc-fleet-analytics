@@ -20,6 +20,9 @@ class DashboardEfficiencyOrderTest extends TestCase
         $html = $this->efficiencyDashboardHtml();
 
         $this->assertAppearsInOrder($html, [
+            'id="efficiency-monthly"',
+            'Aylıq effektivlik - NWC üzrə',
+            'Aylıq effektivlik - İcarə üzrə',
             'id="efficiency-general"',
             'data-widget-key="project-work-categories-nwc"',
             'Effektivlik: NWC üzrə 24 saat',
@@ -68,6 +71,7 @@ class DashboardEfficiencyOrderTest extends TestCase
                 ->getContent();
 
             $this->assertAppearsInOrder($html, [
+                'id="efficiency-monthly"',
                 'id="efficiency-general"',
                 'id="efficiency-daytime"',
                 'id="efficiency-nighttime"',
@@ -83,6 +87,7 @@ class DashboardEfficiencyOrderTest extends TestCase
         $html = $this->efficiencyDashboardHtml();
 
         foreach ([
+            'efficiency-monthly' => 'Aylıq',
             'efficiency-general' => 'Ümumi 24 saat',
             'efficiency-daytime' => 'Gündüz növbəsi',
             'efficiency-nighttime' => 'Gecə növbəsi',

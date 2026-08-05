@@ -625,7 +625,8 @@
                     </a>
                     @if ($showDashboardEfficiencySubnav)
                         <div class="sidebar-subnav" aria-label="Effektivlik bölmələri">
-                            <a class="sidebar-subnav-link active" href="{{ $dashboardEfficiencySectionUrl('efficiency-general') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Ümumi 24 saat</a>
+                            <a class="sidebar-subnav-link active" href="{{ $dashboardEfficiencySectionUrl('efficiency-monthly') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Aylıq</a>
+                            <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-general') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Ümumi 24 saat</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-daytime') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gündüz növbəsi</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-nighttime') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gecə növbəsi</a>
                             <a class="sidebar-subnav-link" href="{{ $dashboardEfficiencySectionUrl('efficiency-night-day') }}" data-dashboard-nav-link data-sidebar-efficiency-link>Gecə gün daxilində</a>

@@ -23,6 +23,7 @@ use App\Http\Controllers\GeofenceViolationsDashboardController;
 use App\Http\Controllers\GeofenceViolationsDrilldownController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\LanguageController;
+use App\Http\Controllers\MonthlyEfficiencyDashboardController;
 use App\Http\Controllers\NightDayEfficiencyDashboardController;
 use App\Http\Controllers\NighttimeEfficiencyDashboardController;
 use App\Http\Controllers\ProjectController;
@@ -69,6 +70,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/api/dashboard/efficiency/projects', [EfficiencyDashboardController::class, 'projects'])->name('api.dashboard.efficiency.projects');
         Route::get('/api/dashboard/efficiency/units', [EfficiencyDashboardController::class, 'units'])->name('api.dashboard.efficiency.units');
         Route::get('/api/dashboard/efficiency/export', [EfficiencyDashboardController::class, 'export'])->name('api.dashboard.efficiency.export');
+        Route::get('/api/dashboard/monthly-efficiency/summary', [MonthlyEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.monthly-efficiency.summary');
+        Route::get('/api/dashboard/monthly-efficiency/projects', [MonthlyEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.monthly-efficiency.projects');
+        Route::get('/api/dashboard/monthly-efficiency/units', [MonthlyEfficiencyDashboardController::class, 'units'])->name('api.dashboard.monthly-efficiency.units');
+        Route::get('/api/dashboard/monthly-efficiency/export', [MonthlyEfficiencyDashboardController::class, 'export'])->name('api.dashboard.monthly-efficiency.export');
         Route::get('/api/dashboard/daytime-efficiency/summary', [DaytimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.daytime-efficiency.summary');
         Route::get('/api/dashboard/daytime-efficiency/projects', [DaytimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.daytime-efficiency.projects');
         Route::get('/api/dashboard/daytime-efficiency/units', [DaytimeEfficiencyDashboardController::class, 'units'])->name('api.dashboard.daytime-efficiency.units');

@@ -1,6 +1,7 @@
 <?php
 
 use App\Support\EfficiencyStatus;
+use App\Support\MonthlyEfficiencyStatus;
 
 return [
     'cache_key' => 'dashboard:global-display-configuration',
@@ -39,6 +40,18 @@ return [
             'default_order' => 40,
             'layout_widget' => 'project-comparison',
             'export_blocks' => ['project-comparison'],
+        ],
+        'monthly_efficiency_nwc' => [
+            'title_az' => 'Ayliq effektivlik: NWC',
+            'section' => 'efficiency',
+            'default_order' => 100,
+            'layout_widget' => null,
+        ],
+        'monthly_efficiency_rental' => [
+            'title_az' => 'Ayliq effektivlik: Icare',
+            'section' => 'efficiency',
+            'default_order' => 101,
+            'layout_widget' => null,
         ],
         'efficiency_general_nwc' => [
             'title_az' => 'Effektivlik umumi: NWC',
@@ -138,6 +151,9 @@ return [
         'general_efficiency' => [
             'title_az' => 'Umumi effektivlik',
         ],
+        'monthly_efficiency' => [
+            'title_az' => 'Ayliq effektivlik',
+        ],
         'daytime_efficiency' => [
             'title_az' => 'Gunduz effektivliyi',
         ],
@@ -169,6 +185,23 @@ return [
         EfficiencyStatus::NO_DATA => [
             'title_az' => 'Melumat yoxdur',
             'default_order' => 50,
+        ],
+    ],
+
+    'statuses_by_type' => [
+        'monthly_efficiency' => [
+            MonthlyEfficiencyStatus::CRITICAL_LOW => [
+                'title_az' => 'Kritik asagi',
+                'default_order' => 10,
+            ],
+            MonthlyEfficiencyStatus::LOW => [
+                'title_az' => 'Asagi',
+                'default_order' => 20,
+            ],
+            MonthlyEfficiencyStatus::NORMAL => [
+                'title_az' => 'Normal',
+                'default_order' => 30,
+            ],
         ],
     ],
 ];
