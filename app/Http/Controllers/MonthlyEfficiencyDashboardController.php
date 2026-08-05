@@ -74,6 +74,8 @@ class MonthlyEfficiencyDashboardController extends Controller
                 'registration_number' => 'D.Q.N.',
                 'vehicle_type' => 'Texnika tipi',
                 'project' => 'Layihə',
+                'period' => 'Dövr',
+                'synced_days_count' => 'Gün sayı',
                 'current_hours' => 'Cari MS',
                 'normative_hours' => 'Normativ MS',
                 'efficiency_percent' => 'Effektivlik %',

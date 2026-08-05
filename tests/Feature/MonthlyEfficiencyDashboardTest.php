@@ -109,6 +109,67 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             ->assertJson(['message' => 'Aylıq effektivlik üçün bir təqvim ayı seçilməlidir.']);
     }
 
+    public function test_monthly_efficiency_splits_one_unit_by_actual_daily_project(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $groupProject = Project::query()->create(['name' => 'Current group project', 'active' => true]);
+        $firstProject = Project::query()->create(['name' => 'First work project', 'active' => true]);
+        $secondProject = Project::query()->create(['name' => 'Second work project', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+
+        Equipment::query()->create([
+            'name' => '110-FD-084',
+            'registration_number' => '110-FD-084',
+            'wialon_unit_id' => 'split-084',
+            'equipment_type_id' => $dumpTruck->id,
+            'project_id' => $groupProject->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        $this->seedDailyFact($groupProject, 'split-084', '110-FD-084', 'Dump Truck', Equipment::OWNERSHIP_NWC, '2026-07-01', 60.00, [
+            'c' => ['110-FD-084', '60.00', 'First work project: yard', 'First work project: yard'],
+        ]);
+        $this->seedDailyFact($groupProject, 'split-084', '110-FD-084', 'Dump Truck', Equipment::OWNERSHIP_NWC, '2026-07-02', 160.00, [
+            'c' => ['110-FD-084', '160.00', 'Second work project: road', 'Second work project: road'],
+        ]);
+
+        $cardSummary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $cardSummary['total']);
+        $this->assertSame(1, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(100.0, $cardSummary['efficiency_percent']);
+
+        $projects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'ownership' => 'nwc',
+        ]))->assertOk()->json('data');
+
+        $this->assertEqualsCanonicalizing(
+            ['First work project', 'Second work project'],
+            collect($projects)->pluck('project')->all(),
+        );
+        $this->assertSame([1, 1], collect($projects)->pluck('count')->sort()->values()->all());
+
+        $secondProjectUnits = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.units', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'ownership' => 'nwc',
+            'project_id' => $secondProject->id,
+        ]))->assertOk()->json('data');
+
+        $this->assertCount(1, $secondProjectUnits);
+        $this->assertSame('110-FD-084', $secondProjectUnits[0]['registration_number']);
+        $this->assertSame('Second work project', $secondProjectUnits[0]['project']);
+        $this->assertSame('2026-07-02 - 2026-07-02', $secondProjectUnits[0]['period']);
+        $this->assertSame(1, $secondProjectUnits[0]['synced_days_count']);
+        $this->assertSame('160.00', $secondProjectUnits[0]['current_hours']);
+    }
+
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void
     {
         Queue::fake();
@@ -142,7 +203,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->seedDailyFact($project, $unitId, strtoupper($unitId), $type->name, $ownership, '2026-05-01', $hours);
     }
 
-    private function seedDailyFact(Project $project, string $unitId, string $unitName, string $vehicleType, string $ownership, string $date, float $hours): void
+    private function seedDailyFact(Project $project, string $unitId, string $unitName, string $vehicleType, string $ownership, string $date, float $hours, ?array $rawRow = null): void
     {
         DB::table('efficiency_daily_facts')->insert([
             'business_date' => $date,
@@ -160,6 +221,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'efficiency_status' => 'over_10',
             'source_report_template_id' => 601701680,
             'source_report_name' => 'Qrup report Engine hours (api)',
+            'raw_row_json' => $rawRow === null ? null : json_encode($rawRow, JSON_UNESCAPED_UNICODE),
             'created_at' => now(),
             'updated_at' => now(),
         ]);

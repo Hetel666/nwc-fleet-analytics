@@ -11,6 +11,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -36,7 +37,10 @@ class MonthlyEfficiencyDashboardService
         'Temir',
     ];
 
-    public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
+    public function __construct(
+        private DashboardDateRangePolicy $dateRangePolicy,
+        private MonthlyEfficiencyProjectResolver $projectResolver,
+    ) {}
 
     public function isReady(): bool
     {
@@ -51,20 +55,15 @@ class MonthlyEfficiencyDashboardService
         }
 
         $filters = $this->normalizeFilters([...$filters, 'ownership_type' => $ownership]);
-        $rows = DB::query()
-            ->fromSub($this->unitRowsQuery($filters), 'monthly_units')
-            ->select('monthly_status')
-            ->selectRaw('COUNT(*) total_units')
-            ->selectRaw('ROUND(SUM(current_hours), 2) total_current_hours')
-            ->groupBy('monthly_status')
-            ->get()
-            ->keyBy('monthly_status');
+        $rows = $this->monthlyUnitRows($filters, false)->groupBy('monthly_status');
         $summary = collect(MonthlyEfficiencyStatus::labels())
-            ->mapWithKeys(fn (string $label, string $status): array => [$status => (int) ($rows[$status]->total_units ?? 0)])
+            ->mapWithKeys(fn (string $label, string $status): array => [
+                $status => (int) $rows->get($status, collect())->count(),
+            ])
             ->all();
         $totalUnits = array_sum($summary);
         $normalUnits = (int) ($summary[MonthlyEfficiencyStatus::NORMAL] ?? 0);
-        $totalCurrentHours = (float) $rows->sum(fn (object $row): float => (float) $row->total_current_hours);
+        $totalCurrentHours = (float) $rows->flatten(1)->sum(fn (object $row): float => (float) $row->current_hours);
         $totalNormativeHours = $totalUnits * self::NORMATIVE_HOURS;
         $summary['total'] = $totalUnits;
         $summary['total_current_hours'] = round($totalCurrentHours, 2);
@@ -89,12 +88,10 @@ class MonthlyEfficiencyDashboardService
                 ->all();
         }
 
-        $counts = DB::query()
-            ->fromSub($this->unitRowsQuery($filters), 'monthly_units')
-            ->select('monthly_status')
-            ->selectRaw('COUNT(*) total')
+        $filters = $this->normalizeFilters($filters);
+        $counts = $this->monthlyUnitRows($filters, $this->usesProjectScope($filters))
             ->groupBy('monthly_status')
-            ->pluck('total', 'monthly_status');
+            ->map(fn (Collection $rows): int => $rows->count());
 
         return collect(MonthlyEfficiencyStatus::labels())
             ->map(fn (string $label, string $status): array => [
@@ -109,18 +106,31 @@ class MonthlyEfficiencyDashboardService
     public function paginateProjects(array $filters): LengthAwarePaginator
     {
         $filters = $this->normalizeFilters($filters);
-        $query = DB::query()
-            ->fromSub($this->unitRowsQuery($filters), 'monthly_units')
-            ->select('project_id', 'project', 'ownership', 'monthly_status')
-            ->selectRaw('COUNT(*) as unique_units_count')
-            ->selectRaw('ROUND(SUM(current_hours), 2) as total_current_hours')
-            ->selectRaw('ROUND(COUNT(*) * ?, 2) as total_normative_hours', [self::NORMATIVE_HOURS])
-            ->selectRaw('ROUND(SUM(current_hours) * 100.0 / NULLIF(COUNT(*) * ?, 0), 2) as efficiency_percent', [self::NORMATIVE_HOURS])
-            ->groupBy('project_id', 'project', 'ownership', 'monthly_status');
+        $rows = $this->monthlyUnitRows($filters, true)
+            ->groupBy(fn (object $row): string => $row->project_id.'|'.$row->project.'|'.$row->ownership.'|'.$row->monthly_status)
+            ->map(function (Collection $rows): object {
+                $first = $rows->first();
+                $count = $rows->count();
+                $current = round((float) $rows->sum(fn (object $row): float => (float) $row->current_hours), 2);
+                $normative = $count * self::NORMATIVE_HOURS;
 
-        return $query->orderByDesc('unique_units_count')->orderBy('project')
-            ->paginate($filters['per_page'], ['*'], 'page', $filters['page'])
-            ->through(fn (object $row): array => [
+                return (object) [
+                    'project_id' => (int) $first->project_id,
+                    'project' => $first->project,
+                    'ownership' => $first->ownership,
+                    'monthly_status' => $first->monthly_status,
+                    'unique_units_count' => $count,
+                    'total_current_hours' => $current,
+                    'total_normative_hours' => $normative,
+                    'efficiency_percent' => $normative > 0 ? round($current * 100 / $normative, 2) : 0.0,
+                ];
+            })
+            ->sortBy([
+                ['unique_units_count', 'desc'],
+                ['project', 'asc'],
+            ])
+            ->values()
+            ->map(fn (object $row): array => [
                 'project_id' => (int) $row->project_id,
                 'project' => $row->project,
                 'ownership' => $this->ownershipLabel($row->ownership),
@@ -131,6 +141,8 @@ class MonthlyEfficiencyDashboardService
                 'total_normative_hours' => number_format((float) $row->total_normative_hours, 2, '.', ''),
                 'efficiency_percent' => number_format((float) $row->efficiency_percent, 2, '.', '').'%',
             ]);
+
+        return $this->paginateCollection($rows, $filters);
     }
 
     public function paginateUnits(array $filters): LengthAwarePaginator
@@ -150,18 +162,27 @@ class MonthlyEfficiencyDashboardService
         $sort = $sorts[$filters['sort']] ?? 'current_hours';
         $direction = $filters['direction'] ?: ($filters['status'] === MonthlyEfficiencyStatus::NORMAL ? 'desc' : 'asc');
 
-        return $this->unitRowsQuery($filters)
-            ->orderBy($sort, $direction)
-            ->orderBy('unit_name')
-            ->paginate($filters['per_page'], ['*'], 'page', $filters['page'])
-            ->through(fn (object $row): array => $this->unitRow($row));
+        $rows = $this->monthlyUnitRows($filters, true)
+            ->sortBy([
+                [$sort, $direction],
+                ['unit_name', 'asc'],
+            ])
+            ->values()
+            ->map(fn (object $row): array => $this->unitRow($row));
+
+        return $this->paginateCollection($rows, $filters);
     }
 
     /** @return array<string, mixed> */
     public function export(array $filters): array
     {
         $filters = $this->normalizeFilters($filters, 'export');
-        $unitRows = $this->unitRowsQuery($filters)->orderBy('project')->orderBy('unit_name')->get();
+        $unitRows = $this->monthlyUnitRows($filters, true)
+            ->sortBy([
+                ['project', 'asc'],
+                ['unit_name', 'asc'],
+            ])
+            ->values();
         $summaryRows = $unitRows
             ->groupBy('monthly_status')
             ->map(function ($rows, string $status) use ($filters): array {
@@ -292,49 +313,105 @@ class MonthlyEfficiencyDashboardService
         ];
     }
 
-    private function unitRowsQuery(array $filters): Builder
+    private function monthlyUnitRows(array $filters, bool $byProject): Collection
     {
         $filters = $this->normalizeFilters($filters);
-        $sub = DB::table('efficiency_daily_facts')
+
+        $rows = $this->dailyFactRows($filters)
+            ->groupBy(fn (object $row): string => implode('|', array_filter([
+                $byProject ? (string) $row->project_id : null,
+                (string) $row->ownership,
+                (string) $row->wialon_unit_id,
+            ], fn (?string $part): bool => $part !== null)))
+            ->map(function (Collection $rows) use ($byProject): object {
+                $first = $rows->sortBy('business_date')->first();
+                $currentHours = round((float) $rows->sum(fn (object $row): float => (float) $row->engine_hours_decimal), 2);
+                $efficiencyPercent = round($currentHours * 100 / self::NORMATIVE_HOURS, 2);
+                $projects = $rows->pluck('project')->filter()->unique()->values()->all();
+                $projectSources = $rows->pluck('project_source')->filter()->unique()->values()->all();
+
+                return (object) [
+                    'project_id' => (int) $first->project_id,
+                    'project' => $byProject ? $first->project : implode(', ', $projects),
+                    'project_source' => implode(', ', $projectSources),
+                    'ownership' => $first->ownership,
+                    'wialon_unit_id' => $first->wialon_unit_id,
+                    'unit_name' => $first->unit_name,
+                    'registration_number' => $first->registration_number,
+                    'vehicle_type' => $first->vehicle_type,
+                    'period_from' => $rows->min('business_date'),
+                    'period_to' => $rows->max('business_date'),
+                    'synced_days_count' => $rows->pluck('business_date')->unique()->count(),
+                    'current_hours' => $currentHours,
+                    'normative_hours' => self::NORMATIVE_HOURS,
+                    'efficiency_percent' => $efficiencyPercent,
+                    'monthly_status' => MonthlyEfficiencyStatus::classify($currentHours),
+                ];
+            })
+            ->values();
+
+        if ($filters['search'] !== '') {
+            $needle = mb_strtolower($filters['search']);
+            $rows = $rows->filter(fn (object $row): bool => str_contains(mb_strtolower((string) $row->unit_name), $needle)
+                || str_contains(mb_strtolower((string) $row->registration_number), $needle));
+        }
+
+        if ($filters['status'] !== null) {
+            $rows = $rows->filter(fn (object $row): bool => $row->monthly_status === $filters['status']);
+        } elseif (is_array($filters['visible_statuses'])) {
+            $rows = $filters['visible_statuses'] === []
+                ? collect()
+                : $rows->filter(fn (object $row): bool => in_array($row->monthly_status, $filters['visible_statuses'], true));
+        }
+
+        return $rows->values();
+    }
+
+    private function dailyFactRows(array $filters): Collection
+    {
+        $filters = $this->normalizeFilters($filters);
+        $excludedProjects = collect(self::EXCLUDED_PROJECT_NAMES)
+            ->map(fn (string $name): string => $this->normalName($name))
+            ->all();
+
+        return DB::table('efficiency_daily_facts')
             ->join('projects', 'projects.id', '=', 'efficiency_daily_facts.project_id')
             ->leftJoin('equipments', 'equipments.wialon_unit_id', '=', 'efficiency_daily_facts.wialon_unit_id')
             ->whereDate('efficiency_daily_facts.business_date', '>=', $filters['from'])
             ->whereDate('efficiency_daily_facts.business_date', '<=', $filters['to'])
-            ->whereNotIn('projects.name', self::EXCLUDED_PROJECT_NAMES)
-            ->when($filters['project_id'], fn (Builder $query, int $id): Builder => $query->where('efficiency_daily_facts.project_id', $id))
-            ->when($filters['project_ids'], fn (Builder $query, array $ids): Builder => $query->whereIn('efficiency_daily_facts.project_id', $ids))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('efficiency_daily_facts.ownership', $owner))
             ->whereIn('efficiency_daily_facts.vehicle_type', $filters['vehicle_types'])
-            ->select('efficiency_daily_facts.project_id', 'efficiency_daily_facts.ownership', 'efficiency_daily_facts.wialon_unit_id')
-            ->selectRaw('MAX(projects.name) as project')
-            ->selectRaw('MAX(efficiency_daily_facts.unit_name) as unit_name')
-            ->selectRaw("MAX(NULLIF(equipments.registration_number, '')) as registration_number")
-            ->selectRaw('MAX(efficiency_daily_facts.vehicle_type) as vehicle_type')
-            ->selectRaw('MIN(efficiency_daily_facts.business_date) as period_from')
-            ->selectRaw('MAX(efficiency_daily_facts.business_date) as period_to')
-            ->selectRaw('COUNT(DISTINCT efficiency_daily_facts.business_date) as synced_days_count')
-            ->selectRaw('ROUND(SUM(efficiency_daily_facts.engine_hours_decimal), 2) as current_hours')
-            ->selectRaw('? as normative_hours', [self::NORMATIVE_HOURS])
-            ->selectRaw('ROUND(SUM(efficiency_daily_facts.engine_hours_decimal) * 100.0 / ?, 2) as efficiency_percent', [self::NORMATIVE_HOURS])
-            ->groupBy('efficiency_daily_facts.project_id', 'efficiency_daily_facts.ownership', 'efficiency_daily_facts.wialon_unit_id');
-        $statusSql = $this->statusSql('current_hours');
+            ->select([
+                'efficiency_daily_facts.project_id',
+                'efficiency_daily_facts.ownership',
+                'efficiency_daily_facts.wialon_group_id',
+                'efficiency_daily_facts.wialon_unit_id',
+                'efficiency_daily_facts.unit_name',
+                'efficiency_daily_facts.vehicle_type',
+                'efficiency_daily_facts.business_date',
+                'efficiency_daily_facts.engine_hours_decimal',
+                'efficiency_daily_facts.raw_row_json',
+                'projects.name as project',
+                DB::raw("NULLIF(equipments.registration_number, '') as registration_number"),
+            ])
+            ->get()
+            ->map(function (object $row): object {
+                $resolved = $this->projectResolver->resolve([
+                    'project_id' => $row->project_id,
+                    'project' => $row->project,
+                    'raw_row_json' => $row->raw_row_json,
+                ]);
 
-        return DB::query()
-            ->fromSub($sub, 'unit_rows')
-            ->select('unit_rows.*')
-            ->selectRaw($statusSql.' as monthly_status')
-            ->when($filters['search'] !== '', function (Builder $query) use ($filters): Builder {
-                $search = '%'.$filters['search'].'%';
+                $row->project_id = $resolved['project_id'];
+                $row->project = $resolved['project'];
+                $row->project_source = $resolved['source'];
 
-                return $query->where(function (Builder $query) use ($search): void {
-                    $query->where('unit_name', 'like', $search)
-                        ->orWhere('registration_number', 'like', $search);
-                });
+                return $row;
             })
-            ->when($filters['status'], fn (Builder $query, string $status): Builder => $query->whereRaw($statusSql.' = ?', [$status]))
-            ->when($filters['status'] === null && is_array($filters['visible_statuses']), fn (Builder $query): Builder => $filters['visible_statuses'] === []
-                ? $query->whereRaw('1 = 0')
-                : $query->whereRaw($statusSql.' in ('.implode(',', array_fill(0, count($filters['visible_statuses']), '?')).')', $filters['visible_statuses']));
+            ->reject(fn (object $row): bool => in_array($this->normalName((string) $row->project), $excludedProjects, true))
+            ->when($filters['project_id'], fn (Collection $rows): Collection => $rows->where('project_id', $filters['project_id']))
+            ->when($filters['project_ids'], fn (Collection $rows): Collection => $rows->whereIn('project_id', $filters['project_ids']))
+            ->values();
     }
 
     /** @return array<string, mixed> */
@@ -346,6 +423,11 @@ class MonthlyEfficiencyDashboardService
             'registration_number' => $row->registration_number ?: $row->unit_name,
             'vehicle_type' => $row->vehicle_type,
             'project' => $row->project,
+            'project_source' => $row->project_source,
+            'period' => $row->period_from.' - '.$row->period_to,
+            'period_from' => $row->period_from,
+            'period_to' => $row->period_to,
+            'synced_days_count' => (int) $row->synced_days_count,
             'current_hours_decimal' => (float) $row->current_hours,
             'current_hours' => number_format((float) $row->current_hours, 2, '.', ''),
             'normative_hours_decimal' => self::NORMATIVE_HOURS,
@@ -356,8 +438,26 @@ class MonthlyEfficiencyDashboardService
             'status' => $row->monthly_status,
             'status_label' => MonthlyEfficiencyStatus::labels()[$row->monthly_status] ?? $row->monthly_status,
             'wialon_unit_id' => $row->wialon_unit_id,
-            'synced_days_count' => (int) $row->synced_days_count,
         ];
+    }
+
+    private function paginateCollection(Collection $rows, array $filters): LengthAwarePaginator
+    {
+        $page = $filters['page'];
+        $perPage = $filters['per_page'];
+
+        return new LengthAwarePaginator(
+            $rows->forPage($page, $perPage)->values()->all(),
+            $rows->count(),
+            $perPage,
+            $page,
+            ['path' => request()?->url()]
+        );
+    }
+
+    private function usesProjectScope(array $filters): bool
+    {
+        return $filters['project_id'] !== null || $filters['project_ids'] !== [];
     }
 
     /** @return array{month: string, from: string, to: string} */
@@ -408,15 +508,9 @@ class MonthlyEfficiencyDashboardService
         $expected = collect(CarbonPeriod::create($filters['from'], $filters['to']))
             ->map(fn ($date): string => $date->toDateString())
             ->values();
-        $completed = DB::table('efficiency_daily_facts')
-            ->join('projects', 'projects.id', '=', 'efficiency_daily_facts.project_id')
-            ->whereDate('business_date', '>=', $filters['from'])
-            ->whereDate('business_date', '<=', $filters['to'])
-            ->whereNotIn('projects.name', self::EXCLUDED_PROJECT_NAMES)
-            ->whereIn('vehicle_type', $filters['vehicle_types'])
-            ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership', $owner))
-            ->distinct()
+        $completed = $this->dailyFactRows($filters)
             ->pluck('business_date')
+            ->unique()
             ->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())
             ->values();
         $missing = $expected->diff($completed)->values();
@@ -461,6 +555,13 @@ class MonthlyEfficiencyDashboardService
     private function ownershipLabel(?string $ownership): string
     {
         return $ownership === Equipment::OWNERSHIP_ICARE ? 'İcarə' : 'NWC';
+    }
+
+    private function normalName(string $name): string
+    {
+        $name = mb_strtolower(trim($name));
+
+        return preg_replace('/\s+/u', ' ', $name) ?: '';
     }
 
     /** @return array<string, mixed> */
