@@ -3040,7 +3040,7 @@
                         <div class="min-w-0">
                             <h2 class="foreign-geofence-title dashboard-card-title-text">{{ $geofenceAnalysisTitle }}</h2>
                             <input type="text" class="form-control form-control-sm dashboard-title-input mt-1 d-none" value="{{ $geofenceAnalysisTitle }}" maxlength="120" aria-label="Dashboard başlığı">
-                            <div class="foreign-geofence-subtitle">Öz layihəsinin geozonasından kənarda olan texnikalar</div>
+                            <div class="foreign-geofence-subtitle">Öz layihəsinin geozonasından kənarda (digər layihədə) fasiləsiz 3 saatdan çox olan texnikalar</div>
                             <div class="foreign-geofence-context" title="{{ $geofenceHomeProjectLabel }}">
                                 <i class="bi bi-house-check"></i>
                                 <span>Ev layihəsi: {{ $geofenceHomeProjectLabel }}</span>
@@ -3113,7 +3113,7 @@
                         <div class="min-w-0">
                             <h2 class="foreign-geofence-title dashboard-card-title-text" id="geofenceReportTitle">{{ $geofenceReportTitle }}</h2>
                             <input type="text" class="form-control form-control-sm dashboard-title-input mt-1 d-none" value="{{ $geofenceReportTitle }}" maxlength="120" aria-label="Dashboard başlığı">
-                            <div class="foreign-geofence-subtitle">Bütün layihə geozonalarından kənarda fasiləsiz 3 saatdan çox qalan texnika</div>
+                            <div class="foreign-geofence-subtitle">Bütün layihə geozonalarından kənarda olan texnikalar</div>
                             <div class="foreign-geofence-context">
                                 <i class="bi bi-shield-check"></i>
                                 <span>Mənbə: Geofence Pozuntuları api</span>
