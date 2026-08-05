@@ -1890,18 +1890,21 @@
         gap: .3rem;
     }
 
-    #efficiency-general { order: 100 !important; }
-    [data-widget-key="project-work-categories-nwc"] { order: 110 !important; }
-    [data-widget-key="project-work-categories-icare"] { order: 111 !important; }
-    #efficiency-daytime { order: 200 !important; }
-    #efficiency-nighttime { order: 300 !important; }
-    #efficiency-night-day { order: 320 !important; }
-    #efficiency-averages { order: 400 !important; }
-    [data-widget-key="average-engine-hours"] { order: 410 !important; }
-    [data-widget-key="average-mileage"] { order: 411 !important; }
-    #efficiency-top20 { order: 500 !important; }
-    [data-widget-key="least-working"] { order: 510 !important; }
-    [data-widget-key="most-working"] { order: 511 !important; }
+    #efficiency-monthly { order: 100 !important; }
+    [data-widget-key="monthly-efficiency-nwc"] { order: 110 !important; }
+    [data-widget-key="monthly-efficiency-icare"] { order: 111 !important; }
+    #efficiency-general { order: 200 !important; }
+    [data-widget-key="project-work-categories-nwc"] { order: 210 !important; }
+    [data-widget-key="project-work-categories-icare"] { order: 211 !important; }
+    #efficiency-daytime { order: 300 !important; }
+    #efficiency-nighttime { order: 400 !important; }
+    #efficiency-night-day { order: 500 !important; }
+    #efficiency-averages { order: 600 !important; }
+    [data-widget-key="average-engine-hours"] { order: 610 !important; }
+    [data-widget-key="average-mileage"] { order: 611 !important; }
+    #efficiency-top20 { order: 700 !important; }
+    [data-widget-key="least-working"] { order: 710 !important; }
+    [data-widget-key="most-working"] { order: 711 !important; }
 
     .dashboard-ranking-card {
         display: flex;
@@ -2691,7 +2694,7 @@
                 class="col-12 dashboard-efficiency-section-heading"
                 data-efficiency-group="monthly"
                 aria-labelledby="efficiency-monthly-title"
-                style="order: 90"
+                style="order: 100"
             >
                 <h2 class="h4 fw-bold mb-1" id="efficiency-monthly-title">Aylıq effektivlik</h2>
                 <div class="dashboard-efficiency-section-meta">
@@ -2703,7 +2706,7 @@
             @endif
 
             @if ($dashboardDisplayVisibleFor('monthly_efficiency_nwc'))
-            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget" data-dashboard-widget="monthly-efficiency-nwc" data-widget-key="monthly-efficiency-nwc" data-efficiency-group="monthly" style="order: 100" draggable="false">
+            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget" data-dashboard-widget="monthly-efficiency-nwc" data-widget-key="monthly-efficiency-nwc" data-efficiency-group="monthly" style="order: 110" draggable="false">
                 @include('dashboard.partials.monthly-efficiency-card', [
                     'chartId' => 'monthlyEfficiencyNwc',
                     'ownershipCode' => $nwc,
@@ -2723,7 +2726,7 @@
             @endif
 
             @if ($dashboardDisplayVisibleFor('monthly_efficiency_rental'))
-            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget" data-dashboard-widget="monthly-efficiency-icare" data-widget-key="monthly-efficiency-icare" data-efficiency-group="monthly" style="order: 101" draggable="false">
+            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget" data-dashboard-widget="monthly-efficiency-icare" data-widget-key="monthly-efficiency-icare" data-efficiency-group="monthly" style="order: 111" draggable="false">
                 @include('dashboard.partials.monthly-efficiency-card', [
                     'chartId' => 'monthlyEfficiencyIcare',
                     'ownershipCode' => $icare,
@@ -2748,7 +2751,7 @@
                 class="col-12 dashboard-efficiency-section-heading"
                 data-efficiency-group="general"
                 aria-labelledby="efficiency-general-title"
-                style="order: 109"
+                style="order: 200"
             >
                 <h2 class="h4 fw-bold mb-1" id="efficiency-general-title">Ümumi effektivlik</h2>
                 <div class="dashboard-efficiency-section-meta">

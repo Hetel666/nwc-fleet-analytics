@@ -52,6 +52,14 @@ class DashboardEfficiencyOrderTest extends TestCase
         $this->assertStringContainsString('day report Engine hours (api)', $html);
         $this->assertStringContainsString('night report Engine hours (api)', $html);
         $this->assertStringContainsString('night day report Engine hours (api)', $html);
+
+        $view = file_get_contents(resource_path('views/dashboard/index.blade.php'));
+        $this->assertStringContainsString('#efficiency-monthly { order: 100 !important; }', $view);
+        $this->assertStringContainsString('[data-widget-key="monthly-efficiency-nwc"] { order: 110 !important; }', $view);
+        $this->assertStringContainsString('[data-widget-key="monthly-efficiency-icare"] { order: 111 !important; }', $view);
+        $this->assertStringContainsString('#efficiency-general { order: 200 !important; }', $view);
+        $this->assertStringContainsString('[data-widget-key="project-work-categories-nwc"] { order: 210 !important; }', $view);
+        $this->assertStringContainsString('[data-widget-key="project-work-categories-icare"] { order: 211 !important; }', $view);
     }
 
     public function test_efficiency_order_is_identical_for_every_dashboard_layout(): void
