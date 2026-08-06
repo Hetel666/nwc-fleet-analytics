@@ -23,13 +23,11 @@ class MonthlyEfficiencyDashboardService
 
     private const NORMATIVE_HOURS = 200.0;
 
-    private const ALLOWED_TYPES = [
-        FleetVehicleType::BULLDOZER,
-        FleetVehicleType::EXCAVATOR,
-        FleetVehicleType::DUMP_TRUCK,
-    ];
+    private const ALLOWED_TYPES = FleetVehicleType::EFFICIENCY_TYPES;
 
     private const EXCLUDED_PROJECT_NAMES = [
+        'Layihəsiz',
+        'Təmir',
         'Layihəsiz',
         '-Layihəsiz-',
         'Layihesiz',
@@ -45,7 +43,9 @@ class MonthlyEfficiencyDashboardService
 
     public function isReady(): bool
     {
-        return Schema::hasTable('efficiency_daily_facts');
+        return $this->usesDailyStatsSource()
+            ? Schema::hasTable('equipment_daily_stats')
+            : Schema::hasTable('efficiency_daily_facts');
     }
 
     /** @return array<string, mixed> */
@@ -387,6 +387,10 @@ class MonthlyEfficiencyDashboardService
 
     private function resolvedDailyFactRows(array $filters): Collection
     {
+        if ($this->usesDailyStatsSource()) {
+            return $this->resolvedDailyStatsRows($filters);
+        }
+
         $excludedProjects = collect(self::EXCLUDED_PROJECT_NAMES)
             ->map(fn (string $name): string => $this->normalName($name))
             ->all();
@@ -429,6 +433,45 @@ class MonthlyEfficiencyDashboardService
             ->values();
     }
 
+    private function resolvedDailyStatsRows(array $filters): Collection
+    {
+        $excludedProjects = collect(self::EXCLUDED_PROJECT_NAMES)
+            ->map(fn (string $name): string => $this->normalName($name))
+            ->all();
+
+        return DB::table('equipment_daily_stats')
+            ->join('equipments', 'equipments.id', '=', 'equipment_daily_stats.equipment_id')
+            ->leftJoin('projects', 'projects.id', '=', 'equipment_daily_stats.project_id')
+            ->leftJoin('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
+            ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
+            ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('equipment_daily_stats.ownership_type', $owner))
+            ->whereIn('equipment_types.name', $filters['vehicle_types'])
+            ->select([
+                'equipment_daily_stats.project_id',
+                'equipment_daily_stats.ownership_type as ownership',
+                'equipments.wialon_unit_id',
+                'equipments.name as unit_name',
+                'equipment_types.name as vehicle_type',
+                'equipment_daily_stats.stat_date as business_date',
+                'equipment_daily_stats.worked_hours as engine_hours_decimal',
+                'projects.name as project',
+                DB::raw("NULLIF(equipments.registration_number, '') as registration_number"),
+            ])
+            ->get()
+            ->map(function (object $row): object {
+                $row->project_id = (int) ($row->project_id ?? 0);
+                $row->project = (string) ($row->project ?: 'Layihəsiz');
+                $row->project_source = 'daily_stats';
+                $row->wialon_group_id = null;
+                $row->wialon_unit_id = (string) ($row->wialon_unit_id ?: $row->unit_name);
+                $row->raw_row_json = null;
+
+                return $row;
+            })
+            ->reject(fn (object $row): bool => in_array($this->normalName((string) $row->project), $excludedProjects, true))
+            ->values();
+    }
+
     /** @param array<string, mixed> $filters */
     private function dailyFactRowsCacheKey(array $filters): string
     {
@@ -437,6 +480,7 @@ class MonthlyEfficiencyDashboardService
             'to' => $filters['to'],
             'ownership_type' => $filters['ownership_type'],
             'vehicle_types' => $filters['vehicle_types'],
+            'source_mode' => $this->sourceMode(),
             'source_report_name' => $this->sourceReportName(),
         ], JSON_THROW_ON_ERROR));
     }
@@ -596,6 +640,7 @@ class MonthlyEfficiencyDashboardService
             'local_geofence' => 'Lokal geozona',
             'wialon_geofence' => 'Wialon geozona',
             'group_fallback' => 'Wialon qrup fallback',
+            'daily_stats' => '24 saat Dashboard cədvəli',
         ];
 
         return collect(explode(',', $source))
@@ -608,12 +653,25 @@ class MonthlyEfficiencyDashboardService
 
     private function sourceReportName(): string
     {
-        $source = strtolower(trim((string) config('fleet.wialon.monthly_efficiency_source', 'group_report')));
-
-        return match ($source) {
+        return match ($this->sourceMode()) {
+            'daily_stats' => '24 saat Dashboard daily stats',
             'date_report' => (string) config('fleet.wialon.monthly_efficiency_date_report_template_name'),
             default => (string) config('fleet.wialon.monthly_efficiency_group_report_template_name'),
         };
+    }
+
+    private function sourceMode(): string
+    {
+        $source = strtolower(trim((string) config('fleet.wialon.monthly_efficiency_source', 'daily_stats')));
+
+        return in_array($source, ['daily_stats', 'group_report', 'date_report'], true)
+            ? $source
+            : 'daily_stats';
+    }
+
+    private function usesDailyStatsSource(): bool
+    {
+        return $this->sourceMode() === 'daily_stats';
     }
 
     private function normalName(string $name): string

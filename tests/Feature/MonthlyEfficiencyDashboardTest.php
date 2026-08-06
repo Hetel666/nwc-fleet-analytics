@@ -18,6 +18,13 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('fleet.wialon.monthly_efficiency_source', 'group_report');
+    }
+
     public function test_monthly_efficiency_uses_allowed_types_distinct_units_and_boundary_statuses(): void
     {
         $user = User::factory()->create(['active' => true]);
@@ -50,17 +57,17 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $counts = collect($summary)->pluck('count', 'status');
         $this->assertSame(2, $counts[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(4, $counts[MonthlyEfficiencyStatus::LOW]);
-        $this->assertSame(2, $counts[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(3, $counts[MonthlyEfficiencyStatus::NORMAL]);
 
         $cardSummary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
             'date_from' => '2026-05-15',
             'date_to' => '2026-05-15',
         ], Equipment::OWNERSHIP_NWC);
-        $this->assertSame(8, $cardSummary['total']);
+        $this->assertSame(9, $cardSummary['total']);
         $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(4, $cardSummary[MonthlyEfficiencyStatus::LOW]);
-        $this->assertSame(2, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
-        $this->assertSame(25.0, $cardSummary['efficiency_percent']);
+        $this->assertSame(3, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(33.33, $cardSummary['efficiency_percent']);
 
         $nwcProjects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
             'date_from' => '2026-05-01',
@@ -228,6 +235,91 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(1, $dateReportSummary['total']);
         $this->assertSame(1, $dateReportSummary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(0.0, $dateReportSummary['efficiency_percent']);
+    }
+
+    public function test_monthly_efficiency_can_use_dashboard_daily_stats_source(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_source', 'daily_stats');
+
+        $user = User::factory()->create(['active' => true]);
+        $currentGroupProject = Project::query()->create(['name' => 'Current group project', 'active' => true]);
+        $firstProject = Project::query()->create(['name' => 'Xocavənd təlim mərkəzi', 'active' => true]);
+        $secondProject = Project::query()->create(['name' => 'Füzuli Xocavənd avtomobil yolu', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+
+        $equipment = Equipment::query()->create([
+            'name' => '110-FD-084',
+            'registration_number' => '110-FD-084',
+            'wialon_unit_id' => '110-FD-084',
+            'equipment_type_id' => $dumpTruck->id,
+            'project_id' => $currentGroupProject->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        DB::table('equipment_daily_stats')->insert([
+            [
+                'stat_date' => '2026-07-01',
+                'equipment_id' => $equipment->id,
+                'project_id' => $firstProject->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'worked_hours' => 80.00,
+                'distance_km' => 0,
+                'utilization_percent' => 0,
+                'calculation_source' => 'wialon_engine_hours_report',
+                'calculation_status' => 'success',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'stat_date' => '2026-07-02',
+                'equipment_id' => $equipment->id,
+                'project_id' => $secondProject->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'worked_hours' => 140.00,
+                'distance_km' => 0,
+                'utilization_percent' => 0,
+                'calculation_source' => 'wialon_engine_hours_report',
+                'calculation_status' => 'success',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $cardSummary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $cardSummary['total']);
+        $this->assertSame(1, $cardSummary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(100.0, $cardSummary['efficiency_percent']);
+
+        $projects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.projects', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'ownership' => 'nwc',
+        ]))->assertOk()->json('data');
+
+        $this->assertEqualsCanonicalizing(
+            ['Xocavənd təlim mərkəzi', 'Füzuli Xocavənd avtomobil yolu'],
+            collect($projects)->pluck('project')->all(),
+        );
+
+        $units = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.units', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'ownership' => 'nwc',
+            'project_id' => $secondProject->id,
+        ]))->assertOk()->json('data');
+
+        $this->assertCount(1, $units);
+        $this->assertSame('110-FD-084', $units[0]['registration_number']);
+        $this->assertSame('Füzuli Xocavənd avtomobil yolu', $units[0]['project']);
+        $this->assertSame('2026-07-02 - 2026-07-02', $units[0]['period']);
+        $this->assertSame(1, $units[0]['synced_days_count']);
+        $this->assertSame('140.00', $units[0]['current_hours']);
+        $this->assertSame('24 saat Dashboard cədvəli', $units[0]['project_source_label']);
     }
 
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void
