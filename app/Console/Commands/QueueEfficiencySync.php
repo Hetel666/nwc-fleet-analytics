@@ -13,7 +13,8 @@ class QueueEfficiencySync extends Command
         {--from= : First business date}
         {--to= : Last business date}
         {--force : Refresh existing facts}
-        {--vehicle-types=* : Limit refresh to one or more vehicle type names or slugs}';
+        {--vehicle-types=* : Limit refresh to one or more vehicle type names or slugs}
+        {--monthly-source= : Monthly efficiency source: group_report or date_report}';
 
     protected $description = 'Queue the canonical Engine hours efficiency synchronization.';
 
@@ -21,6 +22,14 @@ class QueueEfficiencySync extends Command
     {
         $from = $this->option('from') ?: now(config('app.timezone'))->subDay()->toDateString();
         $to = $this->option('to') ?: $from;
+        $monthlySource = strtolower(trim((string) $this->option('monthly-source')));
+
+        if ($monthlySource !== '' && ! in_array($monthlySource, ['group_report', 'date_report'], true)) {
+            $this->error('Invalid monthly source. Allowed values: group_report, date_report.');
+
+            return self::FAILURE;
+        }
+
         $plan = [
             'date_from' => $from,
             'date_to' => $to,
@@ -31,6 +40,7 @@ class QueueEfficiencySync extends Command
             'project_ids' => [],
             'force' => (bool) $this->option('force'),
             'vehicle_types' => $this->option('vehicle-types') ?: [],
+            'monthly_efficiency_source' => $monthlySource !== '' ? $monthlySource : null,
         ];
         $preview = $service->preview($plan);
         $result = $pipelines->queue([$plan], 'manual', $pipelines->priorityForSource('manual'));

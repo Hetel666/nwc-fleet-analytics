@@ -646,6 +646,9 @@ class HistoricalRecalculationService
                 ->unique()
                 ->values()
                 ->all(),
+            'monthly_efficiency_source' => $this->canonicalMonthlyEfficiencySource(
+                $payload['options']['monthly_efficiency_source'] ?? $payload['monthly_efficiency_source'] ?? null
+            ),
         ];
 
         return $payload;
@@ -678,6 +681,13 @@ class HistoricalRecalculationService
             ->unique()
             ->sort()
             ->values();
+    }
+
+    private function canonicalMonthlyEfficiencySource(mixed $source): ?string
+    {
+        $source = strtolower(trim((string) $source));
+
+        return in_array($source, ['group_report', 'date_report'], true) ? $source : null;
     }
 
     private function targets(array $payload): Collection

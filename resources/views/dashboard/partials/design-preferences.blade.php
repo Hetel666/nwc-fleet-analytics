@@ -82,6 +82,18 @@
                 </select>
             </div>
         </fieldset>
+
+        <fieldset class="dashboard-design-section">
+            <legend>Dashboard kartları</legend>
+            <div class="dashboard-hidden-widget-list">
+                @foreach ($dashboardWidgetDefaultTitles as $widgetKey => $widgetTitle)
+                    <label class="dashboard-hidden-widget-row" data-hidden-widget-row>
+                        <input type="checkbox" name="hidden_widgets[]" value="{{ $widgetKey }}">
+                        <span>{{ $widgetTitle }}</span>
+                    </label>
+                @endforeach
+            </div>
+        </fieldset>
     </form>
 
     <div class="dashboard-design-status small" id="dashboardDesignStatus" aria-live="polite"></div>

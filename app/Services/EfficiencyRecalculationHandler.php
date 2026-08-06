@@ -124,7 +124,9 @@ class EfficiencyRecalculationHandler
         }
 
         $sid = $this->sessions->sid();
-        $settings = $this->reports->settings();
+        $settings = $this->reportSettingsForRun($run);
+        $sourceReportName = (string) $settings['template_name'];
+        $updatesSharedDashboardFacts = $this->updatesSharedDashboardFacts($run);
         $facts = [];
         $unmatched = [];
         $reportRows = 0;
@@ -157,7 +159,7 @@ class EfficiencyRecalculationHandler
                 ->keyBy(fn (Equipment $item): string => (string) $item->wialon_unit_id);
 
             $eligibleCount += $equipment->count();
-            $report = $this->reports->execute($group, $date->startOfDay(), $date->endOfDay(), $sid);
+            $report = $this->reports->execute($group, $date->startOfDay(), $date->endOfDay(), $sid, $settings);
             $parsed = $this->parser->parse($report);
             $reportRows += $parsed['rows_received'];
             $sharedSyncItems[(string) $group->wialon_group_id] = [
@@ -225,12 +227,13 @@ class EfficiencyRecalculationHandler
             }
         }
 
-        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force, $sharedRecords, &$sharedSyncItems, $vehicleTypes): void {
+        DB::transaction(function () use ($task, $date, $facts, $unmatched, $force, $sharedRecords, &$sharedSyncItems, $vehicleTypes, $sourceReportName, $updatesSharedDashboardFacts): void {
             $unitIds = array_keys($facts);
             $vehicleTypeLabels = $this->vehicleTypeLabels($vehicleTypes);
             $stale = EfficiencyDailyFact::query()
                 ->where('project_id', $task->project_id)
-                ->whereDate('business_date', $date->toDateString());
+                ->whereDate('business_date', $date->toDateString())
+                ->where('source_report_name', $sourceReportName);
 
             if (! $this->usesDefaultVehicleTypes($vehicleTypes)) {
                 $stale->whereIn('vehicle_type', $vehicleTypeLabels);
@@ -248,7 +251,7 @@ class EfficiencyRecalculationHandler
                 } else {
                     EfficiencyDailyFact::query()->upsert(
                         array_values($facts),
-                        ['business_date', 'project_id', 'wialon_unit_id'],
+                        ['business_date', 'project_id', 'wialon_unit_id', 'source_report_name'],
                         [
                             'wialon_group_id', 'unit_name', 'vehicle_type', 'ownership',
                             'engine_hours_decimal', 'engine_seconds', 'engine_hours_raw',
@@ -268,7 +271,9 @@ class EfficiencyRecalculationHandler
                 );
             }
 
-            $this->replaceSharedEngineHoursFacts($task, $date, $sharedRecords, $sharedSyncItems, $vehicleTypes);
+            if ($updatesSharedDashboardFacts) {
+                $this->replaceSharedEngineHoursFacts($task, $date, $sharedRecords, $sharedSyncItems, $vehicleTypes);
+            }
         });
 
         return [
@@ -278,7 +283,7 @@ class EfficiencyRecalculationHandler
             'facts_saved_count' => count($facts),
             'missing_units_count' => $missingCount,
             'unmatched_report_rows' => count($unmatched),
-            'shared_rows_saved' => count($sharedRecords),
+            'shared_rows_saved' => $updatesSharedDashboardFacts ? count($sharedRecords) : 0,
         ];
     }
 
@@ -317,6 +322,27 @@ class EfficiencyRecalculationHandler
             'created_at' => now(),
             'updated_at' => now(),
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function reportSettingsForRun(EfficiencySyncRun $run): array
+    {
+        $source = strtolower(trim((string) ($run->historicalRecalculation?->options_json['monthly_efficiency_source'] ?? '')));
+
+        return match ($source) {
+            'group_report' => $this->reports->settings((string) config('fleet.wialon.monthly_efficiency_group_report_template_name')),
+            'date_report' => $this->reports->settings((string) config('fleet.wialon.monthly_efficiency_date_report_template_name')),
+            default => $this->reports->settings(),
+        };
+    }
+
+    private function updatesSharedDashboardFacts(EfficiencySyncRun $run): bool
+    {
+        return ! in_array(
+            strtolower(trim((string) ($run->historicalRecalculation?->options_json['monthly_efficiency_source'] ?? ''))),
+            ['group_report', 'date_report'],
+            true,
+        );
     }
 
     /**

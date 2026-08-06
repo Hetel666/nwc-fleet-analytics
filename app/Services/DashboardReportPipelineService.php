@@ -1127,6 +1127,7 @@ class DashboardReportPipelineService
                             ->unique()
                             ->values()
                             ->all(),
+                        'monthly_efficiency_source' => $this->canonicalMonthlyEfficiencySource($plan['monthly_efficiency_source'] ?? null),
                     ],
                 ];
             })
@@ -1149,5 +1150,12 @@ class DashboardReportPipelineService
             'force' => (bool) $plan['force'],
             'options' => $plan['options'],
         ];
+    }
+
+    private function canonicalMonthlyEfficiencySource(mixed $source): ?string
+    {
+        $source = strtolower(trim((string) $source));
+
+        return in_array($source, ['group_report', 'date_report'], true) ? $source : null;
     }
 }

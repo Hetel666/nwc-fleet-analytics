@@ -267,6 +267,37 @@ class NewEfficiencyModuleTest extends TestCase
         ]);
     }
 
+    public function test_monthly_source_sync_does_not_update_shared_dashboard_rows(): void
+    {
+        [$handler, $run, $task] = $this->handlerScenario($this->report('6001', '7,50', '4,25 km'));
+        $project = Project::query()->where('name', 'Sync project')->firstOrFail();
+        $equipment = Equipment::query()->where('wialon_unit_id', '6001')->firstOrFail();
+
+        $run->forceFill([
+            'options_json' => ['monthly_efficiency_source' => 'group_report'],
+        ])->save();
+
+        EquipmentDailyStat::query()->create([
+            'stat_date' => '2026-07-31',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 1.25,
+            'distance_km' => 2.5,
+            'utilization_percent' => 12.5,
+            'calculation_source' => 'wialon_engine_hours_report',
+            'calculation_status' => 'success',
+        ]);
+
+        $this->assertSame(2, $handler->execute($run->refresh(), $task));
+
+        $this->assertSame(2, EfficiencyDailyFact::query()->count());
+        $this->assertSame(1, EquipmentDailyStat::query()->count());
+        $this->assertSame(1.25, (float) EquipmentDailyStat::query()->value('worked_hours'));
+        $this->assertSame(0, DailyUnitAggregate::query()->count());
+        $this->assertSame(0, EngineHoursReportUnitDay::query()->count());
+    }
+
     public function test_forced_sync_report_failure_preserves_existing_facts(): void
     {
         [$handler, $run, $task] = $this->handlerScenario(new RuntimeException('Wialon report failed'));

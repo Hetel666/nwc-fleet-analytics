@@ -23,6 +23,8 @@ class UpdateDashboardPreferencesRequest extends FormRequest
             'donut_legend_position' => ['sometimes', 'required', Rule::in(UserDashboardPreference::LEGEND_POSITIONS)],
             'table_density' => ['sometimes', 'required', Rule::in(UserDashboardPreference::DENSITIES)],
             'kpi_size' => ['sometimes', 'required', Rule::in(UserDashboardPreference::KPI_SIZES)],
+            'hidden_widgets' => ['sometimes', 'array', 'max:80'],
+            'hidden_widgets.*' => ['string', Rule::in(UserDashboardPreference::DASHBOARD_WIDGET_KEYS)],
         ];
     }
 }

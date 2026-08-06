@@ -12,6 +12,7 @@ use Carbon\CarbonPeriod;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -239,7 +240,7 @@ class MonthlyEfficiencyDashboardService
             ['Ownership', $filters['ownership_type'] ? $this->ownershipLabel($filters['ownership_type']) : 'Hamısı'],
             ['Hesablama vahidi', 'Unikal texnika'],
             ['Normativ MS', number_format(self::NORMATIVE_HOURS, 0, '.', '')],
-            ['Mənbə', 'Qrup date report Engine hours (api)'],
+            ['Mənbə', $this->sourceReportName()],
         ];
         $sections = [
             ['title' => 'Xülasə', 'columns' => ['Ownership', 'Status', 'Unique unit count', 'Total Cari MS', 'Total Normativ MS', 'Effektivlik %'], 'rows' => $summaryRows],
@@ -373,6 +374,19 @@ class MonthlyEfficiencyDashboardService
     private function dailyFactRows(array $filters): Collection
     {
         $filters = $this->normalizeFilters($filters);
+
+        $rows = Cache::remember($this->dailyFactRowsCacheKey($filters), now()->addMinutes(5), function () use ($filters): Collection {
+            return $this->resolvedDailyFactRows($filters);
+        });
+
+        return $rows
+            ->when($filters['project_id'], fn (Collection $rows): Collection => $rows->where('project_id', $filters['project_id']))
+            ->when($filters['project_ids'], fn (Collection $rows): Collection => $rows->whereIn('project_id', $filters['project_ids']))
+            ->values();
+    }
+
+    private function resolvedDailyFactRows(array $filters): Collection
+    {
         $excludedProjects = collect(self::EXCLUDED_PROJECT_NAMES)
             ->map(fn (string $name): string => $this->normalName($name))
             ->all();
@@ -380,10 +394,10 @@ class MonthlyEfficiencyDashboardService
         return DB::table('efficiency_daily_facts')
             ->join('projects', 'projects.id', '=', 'efficiency_daily_facts.project_id')
             ->leftJoin('equipments', 'equipments.wialon_unit_id', '=', 'efficiency_daily_facts.wialon_unit_id')
-            ->whereDate('efficiency_daily_facts.business_date', '>=', $filters['from'])
-            ->whereDate('efficiency_daily_facts.business_date', '<=', $filters['to'])
+            ->whereBetween('efficiency_daily_facts.business_date', [$filters['from'], $filters['to']])
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('efficiency_daily_facts.ownership', $owner))
             ->whereIn('efficiency_daily_facts.vehicle_type', $filters['vehicle_types'])
+            ->where('efficiency_daily_facts.source_report_name', $this->sourceReportName())
             ->select([
                 'efficiency_daily_facts.project_id',
                 'efficiency_daily_facts.ownership',
@@ -412,9 +426,19 @@ class MonthlyEfficiencyDashboardService
                 return $row;
             })
             ->reject(fn (object $row): bool => in_array($this->normalName((string) $row->project), $excludedProjects, true))
-            ->when($filters['project_id'], fn (Collection $rows): Collection => $rows->where('project_id', $filters['project_id']))
-            ->when($filters['project_ids'], fn (Collection $rows): Collection => $rows->whereIn('project_id', $filters['project_ids']))
             ->values();
+    }
+
+    /** @param array<string, mixed> $filters */
+    private function dailyFactRowsCacheKey(array $filters): string
+    {
+        return 'monthly_efficiency:daily_fact_rows:'.sha1(json_encode([
+            'from' => $filters['from'],
+            'to' => $filters['to'],
+            'ownership_type' => $filters['ownership_type'],
+            'vehicle_types' => $filters['vehicle_types'],
+            'source_report_name' => $this->sourceReportName(),
+        ], JSON_THROW_ON_ERROR));
     }
 
     /** @return array<string, mixed> */
@@ -580,6 +604,16 @@ class MonthlyEfficiencyDashboardService
             ->map(fn (string $part): string => $labels[$part] ?? $part)
             ->unique()
             ->implode(', ');
+    }
+
+    private function sourceReportName(): string
+    {
+        $source = strtolower(trim((string) config('fleet.wialon.monthly_efficiency_source', 'group_report')));
+
+        return match ($source) {
+            'date_report' => (string) config('fleet.wialon.monthly_efficiency_date_report_template_name'),
+            default => (string) config('fleet.wialon.monthly_efficiency_group_report_template_name'),
+        };
     }
 
     private function normalName(string $name): string

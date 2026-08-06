@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class EfficiencySyncRun extends Model
@@ -22,5 +23,10 @@ class EfficiencySyncRun extends Model
     public function tasks(): HasMany
     {
         return $this->hasMany(EfficiencySyncTask::class, 'run_id');
+    }
+
+    public function historicalRecalculation(): BelongsTo
+    {
+        return $this->belongsTo(HistoricalRecalculation::class);
     }
 }

@@ -104,6 +104,9 @@
     $monthlyEfficiencyGroups = $data['monthlyEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
     $monthlyEfficiencySummaryNwc = collect($monthlyEfficiencyGroups[$nwc] ?? [])->merge(['total' => (int) ($monthlyEfficiencyGroups[$nwc]['total'] ?? 0)]);
     $monthlyEfficiencySummaryIcare = collect($monthlyEfficiencyGroups[$icare] ?? [])->merge(['total' => (int) ($monthlyEfficiencyGroups[$icare]['total'] ?? 0)]);
+    $monthlyEfficiencySourceName = strtolower(trim((string) config('fleet.wialon.monthly_efficiency_source', 'group_report'))) === 'date_report'
+        ? (string) config('fleet.wialon.monthly_efficiency_date_report_template_name')
+        : (string) config('fleet.wialon.monthly_efficiency_group_report_template_name');
     $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
     $projectComparisonTotals = [
         $nwc => (float) $projectComparisonRows->sum($nwc),
@@ -238,14 +241,29 @@
     };
     $dashboardWidgetVisibleFor = fn (string $key): bool => (bool) ($dashboardLayoutItems->get($key, [])['visible'] ?? true);
     $dashboardWidgetVisibilityClassFor = fn (string $key): string => $dashboardWidgetVisibleFor($key) ? '' : ' dashboard-widget-hidden';
+    $userHiddenDashboardWidgets = collect($dashboardPreferences['hidden_widgets'] ?? [])
+        ->map(fn ($key): string => (string) $key)
+        ->intersect(\App\Models\UserDashboardPreference::DASHBOARD_WIDGET_KEYS)
+        ->values();
+    $dashboardUserHiddenFor = fn (string $key): bool => $userHiddenDashboardWidgets->contains($key);
+    $dashboardUserHiddenClassFor = fn (string $key): string => $dashboardUserHiddenFor($key) ? ' dashboard-widget-user-hidden' : '';
+    $dashboardUserHiddenAttrFor = fn (string $key): string => $dashboardUserHiddenFor($key) ? '1' : '0';
     $dashboardWidgetDefaultTitles = [
         'ownership-share' => __('app.ownership_share'),
         'equipment-types-nwc' => __('app.equipment_type_distribution').': '.__('app.ownership_nwc'),
         'equipment-types-icare' => __('app.equipment_type_distribution').': '.__('app.ownership_icare'),
+        'monthly-efficiency-nwc' => 'Aylıq effektivlik - NWC üzrə',
+        'monthly-efficiency-icare' => 'Aylıq effektivlik - İcarə üzrə',
         'project-work-categories-nwc' => 'Project üzrə: '.__('app.ownership_nwc'),
         'project-work-categories-icare' => 'Project üzrə: '.__('app.ownership_icare'),
         'average-engine-hours' => 'Orta motosaat göstəricisi',
         'average-mileage' => 'Orta yürüş göstəricisi',
+        'daytime-efficiency-nwc' => 'Effektivlik gündüz: NWC üzrə',
+        'daytime-efficiency-icare' => 'Effektivlik gündüz: İcarə üzrə',
+        'nighttime-efficiency-nwc' => 'Effektivlik gecə: NWC üzrə',
+        'nighttime-efficiency-icare' => 'Effektivlik gecə: İcarə üzrə',
+        'night-day-efficiency-nwc' => 'Gün daxilində gecə effektivliyi: NWC üzrə',
+        'night-day-efficiency-icare' => 'Gün daxilində gecə effektivliyi: İcarə üzrə',
         'least-working' => __('app.least_working'),
         'most-working' => __('app.most_working'),
         'geofence-analysis' => __('app.geofence_analysis'),
@@ -324,6 +342,63 @@
     }
     .dashboard-widget-hidden {
         display: none;
+    }
+    .dashboard-widget-user-hidden {
+        display: none !important;
+    }
+    .dashboard-hidden-widget-tray {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        background: var(--fleet-card);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, .06);
+    }
+    .dashboard-hidden-widget-tray.is-empty {
+        display: none;
+    }
+    .dashboard-hidden-widget-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-right: 4px;
+        color: var(--fleet-muted);
+        font-size: .78rem;
+        font-weight: 800;
+    }
+    .dashboard-hidden-widget-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+    }
+    .dashboard-hidden-widget-restore {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 260px;
+        min-height: 30px;
+        padding: 5px 8px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        color: var(--fleet-ink);
+        background: var(--fleet-card-soft);
+        font-size: .76rem;
+        font-weight: 700;
+    }
+    .dashboard-hidden-widget-restore span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .dashboard-hidden-widget-restore:hover,
+    .dashboard-hidden-widget-restore:focus {
+        color: var(--fleet-blue);
+        border-color: color-mix(in srgb, var(--fleet-blue) 42%, var(--fleet-line));
+        background: color-mix(in srgb, var(--fleet-blue) 7%, var(--fleet-card));
     }
     .dashboard-layout-editing .dashboard-widget-hidden {
         display: block;
@@ -428,6 +503,7 @@
     }
     .dashboard-drag-handle,
     .dashboard-export-button,
+    .dashboard-personal-hide-toggle,
     .dashboard-visibility-toggle,
     .dashboard-reset-order {
         width: 32px;
@@ -448,10 +524,16 @@
     .dashboard-page:not(.dashboard-layout-editing) .dashboard-reset-order {
         display: none;
     }
+    .dashboard-efficiency-shift-section .dashboard-drag-handle,
+    .dashboard-efficiency-shift-section .dashboard-visibility-toggle {
+        display: none !important;
+    }
     .dashboard-drag-handle:hover,
     .dashboard-drag-handle:focus,
     .dashboard-export-button:hover,
     .dashboard-export-button:focus,
+    .dashboard-personal-hide-toggle:hover,
+    .dashboard-personal-hide-toggle:focus,
     .dashboard-visibility-toggle:hover,
     .dashboard-visibility-toggle:focus,
     .dashboard-reset-order:hover,
@@ -1707,6 +1789,7 @@
         min-height: 0;
     }
     .dashboard-export-button,
+    .dashboard-personal-hide-toggle,
     .dashboard-visibility-toggle,
     .dashboard-drag-handle,
     .foreign-geofence-action {
@@ -1714,6 +1797,7 @@
         transition: color .15s ease, background .15s ease, border-color .15s ease, transform .15s ease;
     }
     .dashboard-export-button:hover,
+    .dashboard-personal-hide-toggle:hover,
     .dashboard-visibility-toggle:hover,
     .dashboard-drag-handle:hover,
     .foreign-geofence-action:hover {
@@ -2132,6 +2216,33 @@
         color: var(--fleet-muted);
         font-size: .68rem;
         line-height: 1.35;
+    }
+    .dashboard-hidden-widget-list {
+        display: grid;
+        gap: 6px;
+        max-height: 260px;
+        overflow: auto;
+        padding-right: 4px;
+    }
+    .dashboard-hidden-widget-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 7px 9px;
+        border: 1px solid var(--fleet-line);
+        border-radius: 8px;
+        color: var(--fleet-ink);
+        background: var(--fleet-card);
+        font-size: .82rem;
+        line-height: 1.25;
+    }
+    .dashboard-hidden-widget-row.is-hidden-widget {
+        color: var(--fleet-muted);
+        background: var(--fleet-card-soft);
+    }
+    .dashboard-hidden-widget-row input {
+        flex: 0 0 auto;
     }
     .dashboard-layout-selected {
         position: absolute;
@@ -2578,6 +2689,14 @@
             @endif
         </div>
         @include('dashboard.partials.design-preferences')
+
+        <div class="dashboard-hidden-widget-tray is-empty mb-3" id="dashboardHiddenWidgetTray" aria-live="polite">
+            <div class="dashboard-hidden-widget-title">
+                <i class="bi bi-eye-slash"></i>
+                <span>GizlЙ™dilmiЕџ kartlar</span>
+            </div>
+            <div class="dashboard-hidden-widget-actions" id="dashboardHiddenWidgetActions"></div>
+        </div>
         @endunless
 
         <div
@@ -2595,7 +2714,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('ownership-share', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('ownership-share') }}" data-dashboard-widget="ownership-share" data-widget-key="ownership-share" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('ownership-share') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('ownership-share') }}{{ $dashboardUserHiddenClassFor('ownership-share') }}" data-dashboard-widget="ownership-share" data-widget-key="ownership-share" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('ownership-share') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('ownership-share') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
                     <x-dashboard-card-header
                         :title="$dashboardWidgetTitleFor('ownership-share', __('app.ownership_share'))"
@@ -2648,7 +2767,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('equipment-types-nwc', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('equipment-types-nwc') }}" data-dashboard-widget="equipment-types-nwc" data-widget-key="equipment-types-nwc" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('equipment-types-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('equipment-types-nwc') }}{{ $dashboardUserHiddenClassFor('equipment-types-nwc') }}" data-dashboard-widget="equipment-types-nwc" data-widget-key="equipment-types-nwc" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('equipment-types-nwc') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('equipment-types-nwc') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('equipment-types-nwc', __('app.equipment_type_distribution').': '.__('app.ownership_nwc'))" :export-url="$exportUrl('equipment-types-nwc')" />
                     @include('dashboard.partials.type-distribution-card', [
@@ -2668,7 +2787,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('equipment-types-icare', 'col-12 col-lg-6 col-xxl-4', 4);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('equipment-types-icare') }}" data-dashboard-widget="equipment-types-icare" data-widget-key="equipment-types-icare" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('equipment-types-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('equipment-types-icare') }}{{ $dashboardUserHiddenClassFor('equipment-types-icare') }}" data-dashboard-widget="equipment-types-icare" data-widget-key="equipment-types-icare" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('equipment-types-icare') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('equipment-types-icare') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-card--compact d-flex flex-column">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('equipment-types-icare', __('app.equipment_type_distribution').': '.__('app.ownership_icare'))" :export-url="$exportUrl('equipment-types-icare')" />
                     @include('dashboard.partials.type-distribution-card', [
@@ -2696,7 +2815,7 @@
             >
                 <h2 class="h4 fw-bold mb-1" id="efficiency-monthly-title">Aylıq effektivlik</h2>
                 <div class="dashboard-efficiency-section-meta">
-                    <span><i class="bi bi-database"></i>Mənbə: Qrup date report Engine hours (api)</span>
+                    <span><i class="bi bi-database"></i>Mənbə: {{ $monthlyEfficiencySourceName }}</span>
                     <span><i class="bi bi-calculator"></i>Hesablama vahidi: Unikal texnika</span>
                     <span><i class="bi bi-clock-history"></i>Normativ: 200 MS / ay</span>
                 </div>
@@ -2704,7 +2823,7 @@
             @endif
 
             @if ($dashboardDisplayVisibleFor('monthly_efficiency_nwc'))
-            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget" data-dashboard-widget="monthly-efficiency-nwc" data-widget-key="monthly-efficiency-nwc" data-efficiency-group="monthly" style="order: 110" draggable="false">
+            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardUserHiddenClassFor('monthly-efficiency-nwc') }}" data-dashboard-widget="monthly-efficiency-nwc" data-widget-key="monthly-efficiency-nwc" data-efficiency-group="monthly" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('monthly-efficiency-nwc') }}" style="order: 110" draggable="false">
                 @include('dashboard.partials.monthly-efficiency-card', [
                     'chartId' => 'monthlyEfficiencyNwc',
                     'ownershipCode' => $nwc,
@@ -2724,7 +2843,7 @@
             @endif
 
             @if ($dashboardDisplayVisibleFor('monthly_efficiency_rental'))
-            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget" data-dashboard-widget="monthly-efficiency-icare" data-widget-key="monthly-efficiency-icare" data-efficiency-group="monthly" style="order: 111" draggable="false">
+            <div class="col-12 col-md-6 d-flex dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardUserHiddenClassFor('monthly-efficiency-icare') }}" data-dashboard-widget="monthly-efficiency-icare" data-widget-key="monthly-efficiency-icare" data-efficiency-group="monthly" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('monthly-efficiency-icare') }}" style="order: 111" draggable="false">
                 @include('dashboard.partials.monthly-efficiency-card', [
                     'chartId' => 'monthlyEfficiencyIcare',
                     'ownershipCode' => $icare,
@@ -2763,7 +2882,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-nwc', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-nwc') }}{{ $dashboardUserHiddenClassFor('project-work-categories-nwc') }}" data-dashboard-widget="project-work-categories-nwc" data-widget-key="project-work-categories-nwc" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-nwc') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('project-work-categories-nwc') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesNwc',
                     'ownershipCode' => $nwc,
@@ -2785,7 +2904,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-work-categories-icare', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('project-work-categories-icare') }}{{ $dashboardUserHiddenClassFor('project-work-categories-icare') }}" data-dashboard-widget="project-work-categories-icare" data-widget-key="project-work-categories-icare" data-efficiency-group="general" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-work-categories-icare') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('project-work-categories-icare') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.project-engine-hours-status-card', [
                     'chartId' => 'projectWorkCategoriesIcare',
                     'ownershipCode' => $icare,
@@ -2815,7 +2934,7 @@
                 </div>
                 <div class="row g-3">
                     @if ($dashboardDisplayVisibleFor('efficiency_daytime_nwc'))
-                    <div class="col-12 col-md-6 d-flex">
+                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('daytime-efficiency-nwc') }}" data-dashboard-widget="daytime-efficiency-nwc" data-widget-key="daytime-efficiency-nwc" data-efficiency-group="daytime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('daytime-efficiency-nwc') }}" draggable="false">
                         @include('dashboard.partials.daytime-efficiency-card', [
                             'chartId' => 'daytimeEfficiencyNwc',
                             'ownershipCode' => $nwc,
@@ -2833,7 +2952,7 @@
                     </div>
                     @endif
                     @if ($dashboardDisplayVisibleFor('efficiency_daytime_rental'))
-                    <div class="col-12 col-md-6 d-flex">
+                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('daytime-efficiency-icare') }}" data-dashboard-widget="daytime-efficiency-icare" data-widget-key="daytime-efficiency-icare" data-efficiency-group="daytime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('daytime-efficiency-icare') }}" draggable="false">
                         @include('dashboard.partials.daytime-efficiency-card', [
                             'chartId' => 'daytimeEfficiencyIcare',
                             'ownershipCode' => $icare,
@@ -2867,7 +2986,7 @@
                 </div>
                 <div class="row g-3">
                     @if ($dashboardDisplayVisibleFor('efficiency_nighttime_nwc'))
-                    <div class="col-12 col-md-6 d-flex">
+                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('nighttime-efficiency-nwc') }}" data-dashboard-widget="nighttime-efficiency-nwc" data-widget-key="nighttime-efficiency-nwc" data-efficiency-group="nighttime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('nighttime-efficiency-nwc') }}" draggable="false">
                         @include('dashboard.partials.nighttime-efficiency-card', [
                             'chartId' => 'nighttimeEfficiencyNwc',
                             'ownershipCode' => $nwc,
@@ -2885,7 +3004,7 @@
                     </div>
                     @endif
                     @if ($dashboardDisplayVisibleFor('efficiency_nighttime_rental'))
-                    <div class="col-12 col-md-6 d-flex">
+                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('nighttime-efficiency-icare') }}" data-dashboard-widget="nighttime-efficiency-icare" data-widget-key="nighttime-efficiency-icare" data-efficiency-group="nighttime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('nighttime-efficiency-icare') }}" draggable="false">
                         @include('dashboard.partials.nighttime-efficiency-card', [
                             'chartId' => 'nighttimeEfficiencyIcare',
                             'ownershipCode' => $icare,
@@ -2918,7 +3037,7 @@
                 </div>
                 <div class="row g-3">
                     @if ($dashboardDisplayVisibleFor('night_day_efficiency_nwc'))
-                    <div class="col-12 col-md-6 d-flex">
+                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('night-day-efficiency-nwc') }}" data-dashboard-widget="night-day-efficiency-nwc" data-widget-key="night-day-efficiency-nwc" data-efficiency-group="night-day" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('night-day-efficiency-nwc') }}" draggable="false">
                         @include('dashboard.partials.night-day-efficiency-card', [
                             'chartId' => 'nightDayEfficiencyNwc',
                             'ownershipCode' => $nwc,
@@ -2936,7 +3055,7 @@
                     </div>
                     @endif
                     @if ($dashboardDisplayVisibleFor('night_day_efficiency_rental'))
-                    <div class="col-12 col-md-6 d-flex">
+                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('night-day-efficiency-icare') }}" data-dashboard-widget="night-day-efficiency-icare" data-widget-key="night-day-efficiency-icare" data-efficiency-group="night-day" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('night-day-efficiency-icare') }}" draggable="false">
                         @include('dashboard.partials.night-day-efficiency-card', [
                             'chartId' => 'nightDayEfficiencyIcare',
                             'ownershipCode' => $icare,
@@ -2966,7 +3085,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-engine-hours', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-engine-hours') }}{{ $dashboardUserHiddenClassFor('average-engine-hours') }}" data-dashboard-widget="average-engine-hours" data-widget-key="average-engine-hours" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-engine-hours') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('average-engine-hours') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'engine_hours',
                     'dashboard' => $dailyAverageDashboards['engine_hours'] ?? [],
@@ -2983,7 +3102,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('average-mileage', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('average-mileage') }}{{ $dashboardUserHiddenClassFor('average-mileage') }}" data-dashboard-widget="average-mileage" data-widget-key="average-mileage" data-efficiency-group="averages" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('average-mileage') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('average-mileage') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 @include('dashboard.partials.daily-average-dashboard-card', [
                     'metric' => 'mileage',
                     'dashboard' => $dailyAverageDashboards['mileage'] ?? [],
@@ -3006,7 +3125,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}{{ $dashboardUserHiddenClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('least-working') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-ranking-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
@@ -3018,7 +3137,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-md-6', 6);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}{{ $dashboardUserHiddenClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('most-working') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card dashboard-ranking-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
                     @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
@@ -3034,7 +3153,7 @@
                 $widgetLayout = $dashboardWidgetLayoutFor('geofence-analysis', 'col-12 col-xl-6', 6);
                 $geofenceAnalysisTitle = $dashboardWidgetTitleFor('geofence-analysis', __('app.geofence_analysis'));
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget geofence-paired-widget{{ $dashboardWidgetVisibilityClassFor('geofence-analysis') }}" data-dashboard-widget="geofence-analysis" data-widget-key="geofence-analysis" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-analysis') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget geofence-paired-widget{{ $dashboardWidgetVisibilityClassFor('geofence-analysis') }}{{ $dashboardUserHiddenClassFor('geofence-analysis') }}" data-dashboard-widget="geofence-analysis" data-widget-key="geofence-analysis" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-analysis') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('geofence-analysis') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel dashboard-card foreign-geofence-shell">
                     <div class="foreign-geofence-header">
                         <div class="min-w-0">
@@ -3047,6 +3166,9 @@
                             </div>
                         </div>
                         <div class="foreign-geofence-actions">
+                            <button type="button" class="btn btn-sm dashboard-personal-hide-toggle foreign-geofence-action" title="Hide" aria-label="Hide">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
                             <button type="button" class="btn btn-sm dashboard-visibility-toggle foreign-geofence-action" title="Bloku gizlət" aria-label="Bloku gizlət">
                                 <i class="bi bi-eye-slash"></i>
                             </button>
@@ -3107,7 +3229,7 @@
                 $widgetLayout = $dashboardWidgetLayoutFor('geofence-violations-report', 'col-12 col-xl-6', 6);
                 $geofenceReportTitle = $dashboardWidgetTitleFor('geofence-violations-report', __('app.geofence_violations'));
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget geofence-paired-widget{{ $dashboardWidgetVisibilityClassFor('geofence-violations-report') }}" data-dashboard-widget="geofence-violations-report" data-widget-key="geofence-violations-report" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-violations-report') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget geofence-paired-widget{{ $dashboardWidgetVisibilityClassFor('geofence-violations-report') }}{{ $dashboardUserHiddenClassFor('geofence-violations-report') }}" data-dashboard-widget="geofence-violations-report" data-widget-key="geofence-violations-report" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('geofence-violations-report') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('geofence-violations-report') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel dashboard-card foreign-geofence-shell" aria-labelledby="geofenceReportTitle">
                     <div class="foreign-geofence-header">
                         <div class="min-w-0">
@@ -3120,6 +3242,9 @@
                             </div>
                         </div>
                         <div class="foreign-geofence-actions">
+                            <button type="button" class="btn btn-sm dashboard-personal-hide-toggle foreign-geofence-action" title="Hide" aria-label="Hide">
+                                <i class="bi bi-eye-slash"></i>
+                            </button>
                             <button type="button" class="btn btn-sm dashboard-visibility-toggle foreign-geofence-action" title="Bloku gizlət" aria-label="Bloku gizlət">
                                 <i class="bi bi-eye-slash"></i>
                             </button>
@@ -3179,7 +3304,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('utilization-trend', 'col-12 col-xl-5', 5);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('utilization-trend') }}" data-dashboard-widget="utilization-trend" data-widget-key="utilization-trend" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('utilization-trend') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('utilization-trend') }}{{ $dashboardUserHiddenClassFor('utilization-trend') }}" data-dashboard-widget="utilization-trend" data-widget-key="utilization-trend" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('utilization-trend') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('utilization-trend') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('utilization-trend', __('app.utilization_trend'))" :export-url="$exportUrl('utilization-trend')" />
                     @if ($utilizationTrendByOwnership['has_data'] ?? false)
@@ -3194,7 +3319,7 @@
             @php
                 $widgetLayout = $dashboardWidgetLayoutFor('project-comparison', 'col-12', 12);
             @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-comparison') }}" data-dashboard-widget="project-comparison" data-widget-key="project-comparison" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-comparison') ? '1' : '0' }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget{{ $dashboardWidgetVisibilityClassFor('project-comparison') }}{{ $dashboardUserHiddenClassFor('project-comparison') }}" data-dashboard-widget="project-comparison" data-widget-key="project-comparison" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('project-comparison') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('project-comparison') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
                 <section class="panel p-3 dashboard-card">
                     <x-dashboard-card-header :title="$dashboardWidgetTitleFor('project-comparison', __('app.work_hours_by_ownership'))" :export-url="$exportUrl('project-comparison')" />
                     @if ($projectComparisonRows->isNotEmpty())
@@ -3462,6 +3587,7 @@ const applyDashboardChartData = data => {
 applyDashboardChartData(@json($dashboardChartData));
 const dashboardPage = document.querySelector('.dashboard-page');
 const dashboardGrid = document.getElementById('dashboardGrid');
+const dashboardDefaultTitles = @json($dashboardWidgetDefaultTitles);
 const dashboardPreferenceDefaults = {
     layout: 'standard',
     theme: 'system',
@@ -3470,18 +3596,117 @@ const dashboardPreferenceDefaults = {
     donut_legend_position: 'right',
     table_density: 'comfortable',
     kpi_size: 'medium',
+    hidden_widgets: [],
 };
 const dashboardDesignDrawer = document.getElementById('dashboardDesignDrawer');
 const dashboardDesignBackdrop = document.getElementById('dashboardDesignBackdrop');
 const dashboardDesignForm = document.getElementById('dashboardDesignForm');
 const dashboardDesignStatus = document.getElementById('dashboardDesignStatus');
-let savedDashboardPreferences = {
-    ...dashboardPreferenceDefaults,
-    ...JSON.parse(dashboardPage?.dataset.dashboardPreferences || '{}'),
+const dashboardHiddenWidgetTray = document.getElementById('dashboardHiddenWidgetTray');
+const dashboardHiddenWidgetActions = document.getElementById('dashboardHiddenWidgetActions');
+const normalizeDashboardPreferences = preferences => {
+    const resolved = {
+        ...dashboardPreferenceDefaults,
+        ...(preferences || {}),
+    };
+
+    resolved.hidden_widgets = Array.isArray(resolved.hidden_widgets)
+        ? [...new Set(resolved.hidden_widgets.map(String).filter(key => dashboardDefaultTitles[key]))]
+        : [];
+
+    return resolved;
+};
+let savedDashboardPreferences = normalizeDashboardPreferences(JSON.parse(dashboardPage?.dataset.dashboardPreferences || '{}'));
+
+const dashboardUserWidgets = () => dashboardPage
+    ? Array.from(dashboardPage.querySelectorAll('.dashboard-widget[data-widget-key]'))
+    : [];
+
+const updateEfficiencyGroupVisibility = () => {
+    document.querySelectorAll('[data-efficiency-group]').forEach(group => {
+        if (group.classList.contains('dashboard-widget')) {
+            return;
+        }
+
+        const key = group.dataset.efficiencyGroup;
+        const visibleWidgets = Array.from(document.querySelectorAll(`.dashboard-widget[data-efficiency-group="${key}"]`))
+            .filter(widget => !widget.classList.contains('dashboard-widget-user-hidden'));
+
+        group.classList.toggle('dashboard-widget-user-hidden', visibleWidgets.length === 0);
+    });
+};
+
+const refreshHiddenWidgetList = hiddenWidgets => {
+    if (!dashboardDesignForm) {
+        return;
+    }
+
+    const hiddenSet = new Set(hiddenWidgets);
+    dashboardDesignForm.querySelectorAll('[data-hidden-widget-row]').forEach(row => {
+        const input = row.querySelector('input[name="hidden_widgets[]"]');
+        const key = input?.value || '';
+        const isHidden = hiddenSet.has(key);
+
+        row.classList.toggle('is-hidden-widget', isHidden);
+        if (input) {
+            input.checked = !isHidden;
+        }
+    });
+};
+
+const renderHiddenWidgetTray = hiddenWidgets => {
+    if (!dashboardHiddenWidgetTray || !dashboardHiddenWidgetActions) {
+        return;
+    }
+
+    const hiddenSet = new Set(hiddenWidgets);
+    dashboardHiddenWidgetActions.textContent = '';
+
+    Object.entries(dashboardDefaultTitles).forEach(([key, title]) => {
+        if (!hiddenSet.has(key)) {
+            return;
+        }
+
+        const button = document.createElement('button');
+        const icon = document.createElement('i');
+        const label = document.createElement('span');
+        button.type = 'button';
+        button.className = 'dashboard-hidden-widget-restore';
+        button.dataset.dashboardRestoreWidget = key;
+        button.title = `${title} kartını göstər`;
+        button.setAttribute('aria-label', `${title} kartını göstər`);
+        icon.className = 'bi bi-eye';
+        label.textContent = title;
+        button.appendChild(icon);
+        button.appendChild(label);
+        dashboardHiddenWidgetActions.appendChild(button);
+    });
+
+    dashboardHiddenWidgetTray.classList.toggle('is-empty', hiddenSet.size === 0);
+};
+
+const applyUserHiddenWidgets = hiddenWidgets => {
+    const hiddenSet = new Set(hiddenWidgets);
+
+    dashboardUserWidgets().forEach(widget => {
+        const key = widget.dataset.widgetKey || '';
+        const isHidden = hiddenSet.has(key);
+
+        widget.classList.toggle('dashboard-widget-user-hidden', isHidden);
+        widget.dataset.widgetUserHidden = isHidden ? '1' : '0';
+        widget.querySelectorAll('.dashboard-personal-hide-toggle').forEach(button => {
+            button.disabled = false;
+        });
+    });
+
+    renderHiddenWidgetTray(hiddenWidgets);
+    refreshHiddenWidgetList(hiddenWidgets);
+    updateEfficiencyGroupVisibility();
+    window.dispatchEvent(new Event('resize'));
 };
 
 const applyDashboardPreferences = preferences => {
-    const resolved = { ...dashboardPreferenceDefaults, ...preferences };
+    const resolved = normalizeDashboardPreferences(preferences);
 
     if (dashboardPage) {
         dashboardPage.dataset.dashboardLayoutVariant = resolved.layout;
@@ -3493,6 +3718,7 @@ const applyDashboardPreferences = preferences => {
 
     document.documentElement.dataset.sidebarState = resolved.sidebar_state;
     window.applyFleetThemePreference?.(resolved.theme);
+    applyUserHiddenWidgets(resolved.hidden_widgets);
     window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0);
 
     return resolved;
@@ -3503,7 +3729,13 @@ const fillDashboardPreferenceForm = preferences => {
         return;
     }
 
-    Object.entries(preferences).forEach(([name, value]) => {
+    const resolved = normalizeDashboardPreferences(preferences);
+
+    Object.entries(resolved).forEach(([name, value]) => {
+        if (name === 'hidden_widgets') {
+            return;
+        }
+
         const controls = dashboardDesignForm.elements.namedItem(name);
         if (!controls) {
             return;
@@ -3515,11 +3747,25 @@ const fillDashboardPreferenceForm = preferences => {
             controls.value = value;
         }
     });
+
+    refreshHiddenWidgetList(resolved.hidden_widgets);
 };
 
-const readDashboardPreferenceForm = () => dashboardDesignForm
-    ? { ...dashboardPreferenceDefaults, ...Object.fromEntries(new FormData(dashboardDesignForm).entries()) }
-    : { ...savedDashboardPreferences };
+const readDashboardPreferenceForm = () => {
+    if (!dashboardDesignForm) {
+        return { ...savedDashboardPreferences };
+    }
+
+    const formData = new FormData(dashboardDesignForm);
+    const visibleWidgets = new Set(formData.getAll('hidden_widgets[]').map(String));
+    const allWidgetKeys = Object.keys(dashboardDefaultTitles);
+    const hiddenWidgets = allWidgetKeys.filter(key => !visibleWidgets.has(key));
+    const preferences = { ...dashboardPreferenceDefaults, ...Object.fromEntries(formData.entries()) };
+    delete preferences['hidden_widgets[]'];
+    preferences.hidden_widgets = hiddenWidgets;
+
+    return normalizeDashboardPreferences(preferences);
+};
 
 const setDashboardDesignOpen = open => {
     if (!dashboardDesignDrawer || !dashboardDesignBackdrop) {
@@ -3551,6 +3797,94 @@ const requestDashboardPreferences = async (method, url, payload = null) => {
 
     return response.json();
 };
+
+const saveDashboardPreferences = async preferences => {
+    const saved = await requestDashboardPreferences(
+        'PUT',
+        dashboardPage.dataset.dashboardPreferencesUpdateUrl,
+        normalizeDashboardPreferences(preferences),
+    );
+
+    savedDashboardPreferences = normalizeDashboardPreferences(saved);
+    window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+    applyDashboardPreferences(savedDashboardPreferences);
+
+    return savedDashboardPreferences;
+};
+
+document.addEventListener('click', async event => {
+    const restoreButton = event.target.closest('[data-dashboard-restore-widget]');
+
+    if (restoreButton && dashboardPage?.contains(restoreButton)) {
+        event.preventDefault();
+        const key = restoreButton.dataset.dashboardRestoreWidget || '';
+
+        if (!dashboardDefaultTitles[key]) {
+            return;
+        }
+
+        const previousPreferences = normalizeDashboardPreferences(savedDashboardPreferences);
+        const hiddenWidgets = previousPreferences.hidden_widgets.filter(widgetKey => widgetKey !== key);
+
+        restoreButton.disabled = true;
+        savedDashboardPreferences = normalizeDashboardPreferences({
+            ...previousPreferences,
+            hidden_widgets: hiddenWidgets,
+        });
+        window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+        applyDashboardPreferences(savedDashboardPreferences);
+
+        try {
+            await saveDashboardPreferences(savedDashboardPreferences);
+            setDashboardLayoutStatus('Kart gГ¶stЙ™rildi.', 'success');
+        } catch (error) {
+            savedDashboardPreferences = previousPreferences;
+            window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+            applyDashboardPreferences(savedDashboardPreferences);
+            setDashboardLayoutStatus('Kart gГ¶stЙ™rilmЙ™di. YenidЙ™n cЙ™hd edin.', 'danger');
+        }
+
+        return;
+    }
+
+    const button = event.target.closest('.dashboard-personal-hide-toggle');
+
+    if (!button || !dashboardPage?.contains(button)) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const widget = button.closest('.dashboard-widget[data-widget-key]');
+    const key = widget?.dataset.widgetKey || '';
+
+    if (!widget || !dashboardDefaultTitles[key]) {
+        return;
+    }
+
+    const previousPreferences = normalizeDashboardPreferences(savedDashboardPreferences);
+    const hiddenWidgets = [...new Set([...previousPreferences.hidden_widgets, key])];
+
+    button.disabled = true;
+    savedDashboardPreferences = normalizeDashboardPreferences({
+        ...previousPreferences,
+        hidden_widgets: hiddenWidgets,
+    });
+    window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+    applyDashboardPreferences(savedDashboardPreferences);
+
+    try {
+        await saveDashboardPreferences(savedDashboardPreferences);
+        setDashboardLayoutStatus('Kart gizlЙ™dildi.', 'success');
+    } catch (error) {
+        savedDashboardPreferences = previousPreferences;
+        window.fleetDashboardPreferences = { ...savedDashboardPreferences };
+        applyDashboardPreferences(savedDashboardPreferences);
+        button.disabled = false;
+        setDashboardLayoutStatus('Kart gizlədilmədi. Yenidən cəhd edin.', 'danger');
+    }
+});
 
 document.getElementById('openDashboardDesign')?.addEventListener('click', () => {
     savedDashboardPreferences = {
@@ -3591,14 +3925,7 @@ document.getElementById('dashboardDesignApply')?.addEventListener('click', async
     }
 
     try {
-        const saved = await requestDashboardPreferences(
-            'PUT',
-            dashboardPage.dataset.dashboardPreferencesUpdateUrl,
-            draft,
-        );
-        savedDashboardPreferences = { ...dashboardPreferenceDefaults, ...saved };
-        window.fleetDashboardPreferences = { ...savedDashboardPreferences };
-        applyDashboardPreferences(savedDashboardPreferences);
+        await saveDashboardPreferences(draft);
         setDashboardDesignOpen(false);
     } catch (error) {
         applyDashboardPreferences(savedDashboardPreferences);
@@ -3620,7 +3947,7 @@ document.getElementById('dashboardDesignReset')?.addEventListener('click', async
             'DELETE',
             dashboardPage.dataset.dashboardPreferencesResetUrl,
         );
-        savedDashboardPreferences = { ...dashboardPreferenceDefaults, ...defaults };
+        savedDashboardPreferences = normalizeDashboardPreferences(defaults);
         window.fleetDashboardPreferences = { ...savedDashboardPreferences };
         fillDashboardPreferenceForm(savedDashboardPreferences);
         applyDashboardPreferences(savedDashboardPreferences);
@@ -3664,7 +3991,6 @@ const parseDashboardDatasetJson = (value, fallback) => {
 const dashboardSavedLayout = new Map(parseDashboardDatasetJson(dashboardPage?.dataset.dashboardSavedLayout, [])
     .filter(item => item && typeof item === 'object' && item.key)
     .map(item => [String(item.key), item]));
-const dashboardDefaultTitles = parseDashboardDatasetJson(dashboardPage?.dataset.dashboardDefaultTitles, {});
 let dashboardLayoutRevision = Number(dashboardPage?.dataset.dashboardLayoutRevision || 0);
 const dashboardFilterForm = document.getElementById('dashboardFilterForm');
 const dashboardFilterButton = document.getElementById('dashboardFilterButton');
@@ -4142,6 +4468,7 @@ document.addEventListener('click', event => {
 const dashboardWidgets = () => dashboardGrid
     ? Array.from(dashboardGrid.children).filter(child => child.classList.contains('dashboard-widget'))
     : [];
+const isDashboardLayoutWidget = widget => Boolean(widget && widget.parentElement === dashboardGrid);
 
 const disableDashboardDragging = () => {
     dashboardWidgets().forEach(widget => {
@@ -4339,7 +4666,7 @@ const bindDashboardWidgetControls = () => {
             }
 
             const widget = handle.closest('.dashboard-widget');
-            if (widget) {
+            if (isDashboardLayoutWidget(widget)) {
                 widget.draggable = true;
             }
         });
@@ -4354,7 +4681,7 @@ const bindDashboardWidgetControls = () => {
 
             const widget = toggle.closest('.dashboard-widget');
 
-            if (!widget) {
+            if (!isDashboardLayoutWidget(widget)) {
                 return;
             }
 
@@ -4380,7 +4707,7 @@ if (dashboardGrid) {
     dashboardGrid.addEventListener('dragstart', event => {
         const widget = event.target.closest('.dashboard-widget');
 
-        if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing') || !widget || !dashboardGrid.contains(widget) || !widget.draggable) {
+        if (!dashboardLayoutEditable || !dashboardPage?.classList.contains('dashboard-layout-editing') || !isDashboardLayoutWidget(widget) || !widget.draggable) {
             event.preventDefault();
             return;
         }
@@ -4526,6 +4853,7 @@ const readEfficiencyDurationFormat = () => {
 let drilldownController = null;
 let drilldownRequestId = 0;
 let drilldownReturnFocus = null;
+let drilldownLoading = false;
 let drilldownState = {
     title: '',
     filters: {},
@@ -4705,6 +5033,22 @@ const renderDrilldownRows = rows => {
     });
 };
 
+const renderDrilldownLoadingRows = () => {
+    if (!drilldownRows) {
+        return;
+    }
+
+    drilldownRows.textContent = '';
+    const columns = Object.keys(drilldownState.columns || {});
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = Math.max(1, columns.length);
+    td.className = 'text-center text-secondary py-4';
+    td.textContent = 'Məlumatlar yüklənir...';
+    tr.appendChild(td);
+    drilldownRows.appendChild(tr);
+};
+
 const renderDrilldownColumns = columns => {
     if (!drilldownHeader) {
         return;
@@ -4815,6 +5159,7 @@ const resetDashboardDrilldownState = (options = {}) => {
         drilldownController = null;
     }
 
+    drilldownLoading = false;
     drilldownRequestId += 1;
     drilldownState = {
         title: '',
@@ -4876,10 +5221,11 @@ const loadDashboardDrilldown = async () => {
     drilldownController = new AbortController();
     const requestId = drilldownRequestId + 1;
     drilldownRequestId = requestId;
+    drilldownLoading = true;
 
     setDrilldownStatus('Məlumatlar yüklənir...');
     drilldownRetry?.classList.add('d-none');
-    renderDrilldownRows([]);
+    renderDrilldownLoadingRows();
     drilldownModalElement?.classList.add('dashboard-drilldown-loading');
     drilldownBody?.setAttribute('aria-busy', 'true');
     updateDrilldownFilterButtons();
@@ -4935,6 +5281,7 @@ const loadDashboardDrilldown = async () => {
         drilldownRetry?.classList.remove('d-none');
     } finally {
         if (requestId === drilldownRequestId) {
+            drilldownLoading = false;
             drilldownModalElement?.classList.remove('dashboard-drilldown-loading');
             drilldownBody?.setAttribute('aria-busy', 'false');
         }
@@ -5161,6 +5508,12 @@ document.addEventListener('click', event => {
         return;
     }
 
+    if (drilldownLoading && drilldownModalElement?.classList.contains('show')) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
     openDashboardDrilldown({
@@ -5199,6 +5552,11 @@ drilldownRows?.addEventListener('click', event => {
     const trigger = event.target.closest('.dashboard-project-type-row');
 
     if (trigger) {
+        if (drilldownLoading) {
+            event.preventDefault();
+            return;
+        }
+
         openSummaryUnits(trigger);
     }
 });
@@ -5212,6 +5570,10 @@ drilldownRows?.addEventListener('keydown', event => {
 
     if (trigger) {
         event.preventDefault();
+        if (drilldownLoading) {
+            return;
+        }
+
         openSummaryUnits(trigger);
     }
 });

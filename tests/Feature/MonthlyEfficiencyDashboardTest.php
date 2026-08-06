@@ -171,6 +171,65 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('Wialon lokasiya', $secondProjectUnits[0]['project_source_label']);
     }
 
+    public function test_monthly_efficiency_reads_only_the_configured_source_report(): void
+    {
+        $project = Project::query()->create(['name' => 'Füzuli', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+
+        Equipment::query()->create([
+            'name' => 'SOURCE-UNIT',
+            'registration_number' => 'SOURCE-UNIT',
+            'wialon_unit_id' => 'source-unit',
+            'equipment_type_id' => $dumpTruck->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        $this->seedDailyFact(
+            $project,
+            'source-unit',
+            'SOURCE-UNIT',
+            'Dump Truck',
+            Equipment::OWNERSHIP_NWC,
+            '2026-07-01',
+            210.00,
+            null,
+            'Qrup report Engine hours (api)',
+        );
+        $this->seedDailyFact(
+            $project,
+            'source-unit',
+            'SOURCE-UNIT',
+            'Dump Truck',
+            Equipment::OWNERSHIP_NWC,
+            '2026-07-01',
+            90.00,
+            null,
+            'Qrup date report Engine hours (api)',
+        );
+
+        config()->set('fleet.wialon.monthly_efficiency_source', 'group_report');
+        $groupReportSummary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $groupReportSummary['total']);
+        $this->assertSame(1, $groupReportSummary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(100.0, $groupReportSummary['efficiency_percent']);
+
+        config()->set('fleet.wialon.monthly_efficiency_source', 'date_report');
+        $dateReportSummary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $dateReportSummary['total']);
+        $this->assertSame(1, $dateReportSummary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
+        $this->assertSame(0.0, $dateReportSummary['efficiency_percent']);
+    }
+
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void
     {
         Queue::fake();
@@ -204,7 +263,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->seedDailyFact($project, $unitId, strtoupper($unitId), $type->name, $ownership, '2026-05-01', $hours);
     }
 
-    private function seedDailyFact(Project $project, string $unitId, string $unitName, string $vehicleType, string $ownership, string $date, float $hours, ?array $rawRow = null): void
+    private function seedDailyFact(Project $project, string $unitId, string $unitName, string $vehicleType, string $ownership, string $date, float $hours, ?array $rawRow = null, string $sourceReportName = 'Qrup report Engine hours (api)'): void
     {
         DB::table('efficiency_daily_facts')->insert([
             'business_date' => $date,
@@ -221,7 +280,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'mileage_km' => 0,
             'efficiency_status' => 'over_10',
             'source_report_template_id' => 601701680,
-            'source_report_name' => 'Qrup report Engine hours (api)',
+            'source_report_name' => $sourceReportName,
             'raw_row_json' => $rawRow === null ? null : json_encode($rawRow, JSON_UNESCAPED_UNICODE),
             'created_at' => now(),
             'updated_at' => now(),

@@ -9,7 +9,8 @@ use Throwable;
 
 class WialonEfficiencyReportService
 {
-    private ?array $resolvedSettings = null;
+    /** @var array<string, array<string, mixed>> */
+    private array $resolvedSettings = [];
 
     public function __construct(
         private WialonService $wialon,
@@ -17,15 +18,17 @@ class WialonEfficiencyReportService
     ) {}
 
     /** @return array<string, mixed> */
-    public function settings(): array
+    public function settings(?string $templateName = null): array
     {
-        if ($this->resolvedSettings !== null) {
-            return $this->resolvedSettings;
+        $templateName = trim((string) ($templateName ?: config('fleet.wialon.efficiency_report_template_name')));
+        $cacheKey = $templateName;
+
+        if (isset($this->resolvedSettings[$cacheKey])) {
+            return $this->resolvedSettings[$cacheKey];
         }
 
         $resourceId = (int) config('fleet.wialon.efficiency_report_resource_id');
         $templateId = (int) config('fleet.wialon.efficiency_report_template_id');
-        $templateName = (string) config('fleet.wialon.efficiency_report_template_name');
         $template = $this->wialon->findReportTemplateByName($resourceId ?: null, $templateName);
 
         if ($template !== null) {
@@ -41,7 +44,7 @@ class WialonEfficiencyReportService
             throw new RuntimeException("Wialon efficiency report '{$templateName}' is not bound to unit groups.");
         }
 
-        return $this->resolvedSettings = [
+        return $this->resolvedSettings[$cacheKey] = [
             'resource_id' => $resourceId,
             'template_id' => $templateId,
             'template_name' => $templateName,
@@ -51,10 +54,10 @@ class WialonEfficiencyReportService
     }
 
     /** @return array<string, mixed> */
-    public function execute(ProjectWialonGroup $group, CarbonInterface $from, CarbonInterface $to, string $sid): array
+    public function execute(ProjectWialonGroup $group, CarbonInterface $from, CarbonInterface $to, string $sid, ?array $settings = null): array
     {
-        return $this->reportSessionLock->run(function () use ($group, $from, $to, $sid): array {
-            $settings = $this->settings();
+        return $this->reportSessionLock->run(function () use ($group, $from, $to, $sid, $settings): array {
+            $settings ??= $this->settings();
             $response = null;
 
             try {

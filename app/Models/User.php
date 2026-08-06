@@ -180,7 +180,7 @@ class User extends Authenticatable
         return $this->hasOne(UserDashboardPreference::class);
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     public function resolvedDashboardPreferences(): array
     {
         if (! Schema::hasTable('user_dashboard_preferences')) {

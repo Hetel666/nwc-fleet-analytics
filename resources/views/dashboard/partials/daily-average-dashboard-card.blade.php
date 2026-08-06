@@ -50,10 +50,13 @@
             <div class="small text-secondary">{{ $subtitle }}</div>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
+            <button type="button" class="btn btn-sm dashboard-personal-hide-toggle" title="Hide" aria-label="Hide">
+                <i class="bi bi-eye-slash"></i>
+            </button>
             <button type="button" class="btn btn-sm dashboard-visibility-toggle" title="Bloku gizlət" aria-label="Bloku gizlət">
                 <i class="bi bi-eye-slash"></i>
             </button>
-            <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
+        <button type="button" class="btn btn-sm dashboard-drag-handle" title="Bloku daşı" aria-label="Bloku daşı">
                 <i class="bi bi-grip-vertical"></i>
             </button>
         </div>

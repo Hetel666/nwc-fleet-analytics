@@ -12,6 +12,9 @@
         <div class="min-w-0">
             <h3 class="h5 dashboard-work-status-title fw-bold mb-0 dashboard-card-title-text">{{ $title }}</h3>
         </div>
+            <button type="button" class="btn btn-sm dashboard-personal-hide-toggle" title="Hide" aria-label="Hide">
+                <i class="bi bi-eye-slash"></i>
+            </button>
         <a href="{{ $exportUrl }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
             <i class="bi bi-download"></i>
         </a>
