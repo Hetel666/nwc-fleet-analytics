@@ -104,9 +104,12 @@
     $monthlyEfficiencyGroups = $data['monthlyEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
     $monthlyEfficiencySummaryNwc = collect($monthlyEfficiencyGroups[$nwc] ?? [])->merge(['total' => (int) ($monthlyEfficiencyGroups[$nwc]['total'] ?? 0)]);
     $monthlyEfficiencySummaryIcare = collect($monthlyEfficiencyGroups[$icare] ?? [])->merge(['total' => (int) ($monthlyEfficiencyGroups[$icare]['total'] ?? 0)]);
-    $monthlyEfficiencySourceName = strtolower(trim((string) config('fleet.wialon.monthly_efficiency_source', 'group_report'))) === 'date_report'
-        ? (string) config('fleet.wialon.monthly_efficiency_date_report_template_name')
-        : (string) config('fleet.wialon.monthly_efficiency_group_report_template_name');
+    $monthlyEfficiencySourceMode = strtolower(trim((string) config('fleet.wialon.monthly_efficiency_source', 'daily_stats')));
+    $monthlyEfficiencySourceName = match ($monthlyEfficiencySourceMode) {
+        'daily_stats' => '24 saat Dashboard daily stats',
+        'date_report' => (string) config('fleet.wialon.monthly_efficiency_date_report_template_name'),
+        default => (string) config('fleet.wialon.monthly_efficiency_group_report_template_name'),
+    };
     $projectComparisonRows = collect($data['projectOwnershipComparison'] ?? []);
     $projectComparisonTotals = [
         $nwc => (float) $projectComparisonRows->sum($nwc),
