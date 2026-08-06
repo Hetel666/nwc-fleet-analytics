@@ -6,6 +6,7 @@ use App\Models\DashboardExport;
 use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Services\MonthlyEfficiencyDashboardService;
 use App\Support\MonthlyEfficiencyStatus;
@@ -320,6 +321,58 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(1, $units[0]['synced_days_count']);
         $this->assertSame('140.00', $units[0]['current_hours']);
         $this->assertSame('24 saat Dashboard cədvəli', $units[0]['project_source_label']);
+    }
+
+    public function test_monthly_efficiency_uses_object_group_ownership_for_daily_stats_source(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_source', 'daily_stats');
+
+        $project = Project::query()->create(['name' => 'Fuzuli', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => 'icare-group',
+            'name' => 'Fuzuli ICARE',
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => true,
+        ]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $equipment = Equipment::query()->create([
+            'name' => 'GROUP-OWNED-1',
+            'registration_number' => 'GROUP-OWNED-1',
+            'wialon_unit_id' => 'group-owned-1',
+            'equipment_type_id' => $dumpTruck->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        DB::table('equipment_daily_stats')->insert([
+            'stat_date' => '2026-07-01',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 210.00,
+            'distance_km' => 0,
+            'utilization_percent' => 0,
+            'calculation_source' => 'wialon_engine_hours_report',
+            'calculation_status' => 'success',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $nwc = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_NWC);
+        $icare = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_ICARE);
+
+        $this->assertSame(0, $nwc['total']);
+        $this->assertSame(1, $icare['total']);
+        $this->assertSame(1, $icare[MonthlyEfficiencyStatus::NORMAL]);
     }
 
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void

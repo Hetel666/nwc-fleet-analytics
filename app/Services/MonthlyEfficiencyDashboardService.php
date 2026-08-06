@@ -397,14 +397,20 @@ class MonthlyEfficiencyDashboardService
 
         return DB::table('efficiency_daily_facts')
             ->join('projects', 'projects.id', '=', 'efficiency_daily_facts.project_id')
+            ->leftJoin('project_wialon_groups', 'project_wialon_groups.wialon_group_id', '=', 'efficiency_daily_facts.wialon_group_id')
             ->leftJoin('equipments', 'equipments.wialon_unit_id', '=', 'efficiency_daily_facts.wialon_unit_id')
             ->whereBetween('efficiency_daily_facts.business_date', [$filters['from'], $filters['to']])
-            ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('efficiency_daily_facts.ownership', $owner))
+            ->when(
+                $filters['ownership_type'],
+                fn (Builder $query, string $owner): Builder => $query->whereRaw(
+                    'COALESCE(project_wialon_groups.ownership_type, efficiency_daily_facts.ownership) = ?',
+                    [$owner],
+                ),
+            )
             ->whereIn('efficiency_daily_facts.vehicle_type', $filters['vehicle_types'])
             ->where('efficiency_daily_facts.source_report_name', $this->sourceReportName())
             ->select([
                 'efficiency_daily_facts.project_id',
-                'efficiency_daily_facts.ownership',
                 'efficiency_daily_facts.wialon_group_id',
                 'efficiency_daily_facts.wialon_unit_id',
                 'efficiency_daily_facts.unit_name',
@@ -414,6 +420,7 @@ class MonthlyEfficiencyDashboardService
                 'efficiency_daily_facts.raw_row_json',
                 'projects.name as project',
                 DB::raw("NULLIF(equipments.registration_number, '') as registration_number"),
+                DB::raw('COALESCE(project_wialon_groups.ownership_type, efficiency_daily_facts.ownership) as ownership'),
             ])
             ->get()
             ->map(function (object $row): object {
@@ -443,12 +450,18 @@ class MonthlyEfficiencyDashboardService
             ->join('equipments', 'equipments.id', '=', 'equipment_daily_stats.equipment_id')
             ->leftJoin('projects', 'projects.id', '=', 'equipment_daily_stats.project_id')
             ->leftJoin('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
+            ->leftJoin('project_wialon_groups', 'project_wialon_groups.id', '=', 'equipments.project_wialon_group_id')
             ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
-            ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('equipment_daily_stats.ownership_type', $owner))
+            ->when(
+                $filters['ownership_type'],
+                fn (Builder $query, string $owner): Builder => $query->whereRaw(
+                    'COALESCE(project_wialon_groups.ownership_type, equipment_daily_stats.ownership_type) = ?',
+                    [$owner],
+                ),
+            )
             ->whereIn('equipment_types.name', $filters['vehicle_types'])
             ->select([
                 'equipment_daily_stats.project_id',
-                'equipment_daily_stats.ownership_type as ownership',
                 'equipments.wialon_unit_id',
                 'equipments.name as unit_name',
                 'equipment_types.name as vehicle_type',
@@ -456,6 +469,7 @@ class MonthlyEfficiencyDashboardService
                 'equipment_daily_stats.worked_hours as engine_hours_decimal',
                 'projects.name as project',
                 DB::raw("NULLIF(equipments.registration_number, '') as registration_number"),
+                DB::raw('COALESCE(project_wialon_groups.ownership_type, equipment_daily_stats.ownership_type) as ownership'),
             ])
             ->get()
             ->map(function (object $row): object {
