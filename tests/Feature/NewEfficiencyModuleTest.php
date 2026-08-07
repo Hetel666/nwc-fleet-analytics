@@ -24,6 +24,7 @@ use App\Services\WialonSessionManager;
 use App\Services\XlsxExportService;
 use App\Support\EfficiencyStatus;
 use App\Support\FleetVehicleType;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 use RuntimeException;
@@ -191,6 +192,64 @@ class NewEfficiencyModuleTest extends TestCase
             'vehicle_type' => 'Loader',
             'engine_hours_decimal' => 4,
         ]);
+    }
+
+    public function test_sync_uses_actual_baku_interval_and_merges_split_wialon_date_rows(): void
+    {
+        $report = ['tables' => [[
+            'index' => 0,
+            'table' => [
+                'header' => ['Grouping', 'Engine hours', 'Begin', 'End', 'Mileage'],
+                'header_type' => ['', 'duration', 'time_begin', 'time_end', 'mileage'],
+                'rows' => 1,
+            ],
+            'rows' => [[
+                'uid' => 6001,
+                'c' => ['Unit 6001', '1.13', '00:01:23', '08:07:19', '16.29 km'],
+                'r' => [
+                    ['c' => [
+                        '2026-07-30',
+                        '0.40',
+                        ['t' => '00:01:23', 'v' => CarbonImmutable::parse('2026-07-31 00:01:23', 'Asia/Baku')->timestamp, 'u' => 6001],
+                        ['t' => '00:25:23', 'v' => CarbonImmutable::parse('2026-07-31 00:25:23', 'Asia/Baku')->timestamp, 'u' => 6001],
+                        '1.00 km',
+                    ]],
+                    ['c' => [
+                        '2026-07-31',
+                        '0.73',
+                        ['t' => '07:23:24', 'v' => CarbonImmutable::parse('2026-07-31 07:23:24', 'Asia/Baku')->timestamp, 'u' => 6001],
+                        ['t' => '08:07:19', 'v' => CarbonImmutable::parse('2026-07-31 08:07:19', 'Asia/Baku')->timestamp, 'u' => 6001],
+                        '15.29 km',
+                    ]],
+                ],
+            ]],
+        ]]];
+        [$handler, $run, $task] = $this->handlerScenario($report);
+
+        $this->assertSame(2, $handler->execute($run, $task));
+
+        $this->assertDatabaseHas('efficiency_daily_facts', [
+            'business_date' => '2026-07-31',
+            'wialon_unit_id' => '6001',
+            'engine_hours_decimal' => 1.13,
+            'engine_seconds' => 4068,
+            'mileage_km' => 16.29,
+            'efficiency_status' => EfficiencyStatus::ONE_TO_SEVEN,
+        ]);
+        $this->assertDatabaseHas('efficiency_daily_facts', [
+            'business_date' => '2026-07-31',
+            'wialon_unit_id' => '6002',
+            'engine_seconds' => 0,
+            'efficiency_status' => EfficiencyStatus::NO_DATA,
+        ]);
+        $this->assertSame('2026-07-31 00:01:23', EfficiencyDailyFact::query()
+            ->where('wialon_unit_id', '6001')
+            ->value('started_at')
+            ?->format('Y-m-d H:i:s'));
+        $this->assertSame(1.13, (float) EquipmentDailyStat::query()->where('equipment_id', Equipment::query()
+            ->where('wialon_unit_id', '6001')
+            ->value('id'))->value('worked_hours'));
+        $this->assertSame(16.29, (float) DailyUnitAggregate::query()->where('unit_id', '6001')->value('mileage'));
     }
 
     public function test_forced_sync_updates_shared_dashboard_rows_when_equipment_project_changed(): void

@@ -16,6 +16,7 @@ use App\Models\WialonReportSyncItem;
 use App\Models\WialonSyncCheckpoint;
 use App\Support\EfficiencyStatus;
 use App\Support\FleetVehicleType;
+use Carbon\CarbonInterface;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
@@ -170,7 +171,7 @@ class EfficiencyRecalculationHandler
             $matchedIds = [];
 
             foreach ($parsed['records'] as $record) {
-                if (($record['record_date'] ?? null) !== null && $record['record_date'] !== $date->toDateString()) {
+                if (! $this->recordBelongsToDate($record, $date)) {
                     continue;
                 }
 
@@ -193,11 +194,14 @@ class EfficiencyRecalculationHandler
                     continue;
                 }
 
-                if (isset($facts[(string) $unitId])) {
+                if (isset($facts[(string) $unitId]) && (string) $facts[(string) $unitId]['wialon_group_id'] !== (string) $group->wialon_group_id) {
                     throw new RuntimeException("Wialon unit {$unitId} is present in more than one project ownership group.");
                 }
 
                 $matchedIds[(string) $unitId] = true;
+                $record = isset($sharedRecords[(int) $item->id])
+                    ? $this->mergeReportRecords($sharedRecords[(int) $item->id]['record'], $record)
+                    : $record;
                 $facts[(string) $unitId] = $this->factRow($run, $group, $item, $date, $record, $settings);
                 $sharedRecords[(int) $item->id] = [
                     'group' => $group,
@@ -285,6 +289,144 @@ class EfficiencyRecalculationHandler
             'unmatched_report_rows' => count($unmatched),
             'shared_rows_saved' => $updatesSharedDashboardFacts ? count($sharedRecords) : 0,
         ];
+    }
+
+    /** @param array<string, mixed> $record */
+    private function recordBelongsToDate(array $record, CarbonImmutable $date): bool
+    {
+        $timezone = (string) config('historical_recalculation.timezone', config('app.timezone', 'Asia/Baku'));
+        $dayStart = $date->timezone($timezone)->startOfDay();
+        $dayEnd = $date->timezone($timezone)->endOfDay();
+        $startedAt = $this->recordDateTime($record['started_at'] ?? null, $timezone);
+        $endedAt = $this->recordDateTime($record['ended_at'] ?? null, $timezone);
+
+        if ($startedAt !== null || $endedAt !== null) {
+            $start = $startedAt ?? $endedAt;
+            $end = $endedAt ?? $startedAt;
+
+            return $start !== null
+                && $end !== null
+                && $start->lessThanOrEqualTo($dayEnd)
+                && $end->greaterThanOrEqualTo($dayStart);
+        }
+
+        $recordDate = $record['record_date'] ?? null;
+
+        return $recordDate === null || $recordDate === $date->toDateString();
+    }
+
+    private function recordDateTime(mixed $value, string $timezone): ?CarbonImmutable
+    {
+        if ($value instanceof CarbonInterface) {
+            return CarbonImmutable::instance($value)->timezone($timezone);
+        }
+
+        $text = trim((string) $value);
+
+        if ($text === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($text, $timezone);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $existing
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    private function mergeReportRecords(array $existing, array $incoming): array
+    {
+        $seconds = max(0, (int) ($existing['engine_seconds'] ?? 0))
+            + max(0, (int) ($incoming['engine_seconds'] ?? 0));
+        $mileage = $this->sumNullableFloats($existing['mileage_km'] ?? null, $incoming['mileage_km'] ?? null);
+        $startedAt = $this->earliestDateTime($existing['started_at'] ?? null, $incoming['started_at'] ?? null);
+        $endedAt = $this->latestDateTime($existing['ended_at'] ?? null, $incoming['ended_at'] ?? null);
+
+        return [
+            ...$existing,
+            'engine_hours_decimal' => round($seconds / 3600, 2),
+            'engine_seconds' => $seconds,
+            'engine_hours_raw' => $this->joinRawValues($existing['engine_hours_raw'] ?? null, $incoming['engine_hours_raw'] ?? null),
+            'started_at' => $startedAt,
+            'ended_at' => $endedAt,
+            'mileage_km' => $mileage,
+            'mileage_raw' => $this->joinRawValues($existing['mileage_raw'] ?? null, $incoming['mileage_raw'] ?? null),
+            'raw_row_json' => array_values(array_filter([
+                ...$this->rawRows($existing['raw_row_json'] ?? null),
+                ...$this->rawRows($incoming['raw_row_json'] ?? null),
+            ], fn (mixed $row): bool => $row !== null)),
+        ];
+    }
+
+    private function sumNullableFloats(mixed $left, mixed $right): ?float
+    {
+        $hasLeft = $left !== null && $left !== '';
+        $hasRight = $right !== null && $right !== '';
+
+        if (! $hasLeft && ! $hasRight) {
+            return null;
+        }
+
+        return round(max(0, (float) $left) + max(0, (float) $right), 2);
+    }
+
+    private function earliestDateTime(mixed $left, mixed $right): mixed
+    {
+        if ($left === null) {
+            return $right;
+        }
+
+        if ($right === null) {
+            return $left;
+        }
+
+        return $this->recordDateTime($left, 'UTC')?->lessThanOrEqualTo($this->recordDateTime($right, 'UTC') ?? $this->recordDateTime($left, 'UTC'))
+            ? $left
+            : $right;
+    }
+
+    private function latestDateTime(mixed $left, mixed $right): mixed
+    {
+        if ($left === null) {
+            return $right;
+        }
+
+        if ($right === null) {
+            return $left;
+        }
+
+        return $this->recordDateTime($left, 'UTC')?->greaterThanOrEqualTo($this->recordDateTime($right, 'UTC') ?? $this->recordDateTime($left, 'UTC'))
+            ? $left
+            : $right;
+    }
+
+    private function joinRawValues(mixed $left, mixed $right): ?string
+    {
+        $values = array_values(array_filter([
+            $left === null ? null : trim((string) $left),
+            $right === null ? null : trim((string) $right),
+        ], fn (?string $value): bool => $value !== null && $value !== ''));
+
+        return $values === [] ? null : implode(' + ', $values);
+    }
+
+    /** @return array<int, mixed> */
+    private function rawRows(mixed $value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        if (is_array($value) && array_is_list($value)) {
+            return $value;
+        }
+
+        return [$value];
     }
 
     /** @return array<string, mixed> */
