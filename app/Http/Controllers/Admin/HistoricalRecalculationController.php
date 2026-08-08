@@ -7,6 +7,7 @@ use App\Http\Requests\StoreHistoricalRecalculationRequest;
 use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
+use App\Services\DashboardModuleRegistry;
 use App\Services\DashboardReportPipelineService;
 use App\Services\HistoricalRecalculationService;
 use Illuminate\Http\JsonResponse;
@@ -17,12 +18,33 @@ use Illuminate\View\View;
 
 class HistoricalRecalculationController extends Controller
 {
-    public function index(Request $request, DashboardReportPipelineService $pipelines): View
+    public function index(
+        Request $request,
+        DashboardReportPipelineService $pipelines,
+        DashboardModuleRegistry $dashboardModules
+    ): View
     {
         $this->authorize('manage-historical-recalculations');
+        $historicalModuleContracts = $dashboardModules->all()
+            ->filter(fn (array $module): bool => ($module['dashboard_section'] ?? null) !== null)
+            ->keyBy(fn (array $module): string => (string) $module['dashboard_section'])
+            ->map(fn (array $module): array => [
+                'code' => $module['code'],
+                'title' => $module['title'],
+                'source_report' => $module['source_report'],
+                'collector_command' => $module['collector_command'],
+                'manual_command' => $module['manual_command'],
+                'auto_schedule' => $module['auto_schedule'],
+                'result_tables' => $module['result_tables'],
+                'shared_result_tables' => $module['shared_result_tables'],
+                'safe_resync_scope' => $module['safe_resync_scope'],
+                'writes_shared_tables' => $module['writes_shared_tables'],
+                'failure_isolation' => $module['failure_isolation'],
+            ]);
 
         return view('admin.historical-recalculations.index', [
             'projects' => Project::query()->where('active', true)->orderBy('name')->get(['id', 'name']),
+            'historicalModuleContracts' => $historicalModuleContracts,
             'pipelineQueue' => $pipelines->queueSnapshot(),
             'runs' => HistoricalRecalculation::query()
                 ->with('requestedBy:id,name')

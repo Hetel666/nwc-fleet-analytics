@@ -148,6 +148,19 @@
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-violations" value="geofence_violations" autocomplete="off" @checked(old('dashboard_section') === 'geofence_violations')>
                                 <label class="btn btn-outline-primary text-start" for="section-geofence-violations">Geofence Pozuntuları</label>
                             </div>
+                            <div id="section-source-info" class="alert alert-light border small mt-3 mb-0">
+                                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                    <span class="fw-semibold" data-source-field="title"></span>
+                                    <span class="badge text-bg-secondary" data-source-field="code"></span>
+                                    <span class="badge" data-source-field="write-mode"></span>
+                                    <span class="badge text-bg-light" data-source-field="isolation"></span>
+                                </div>
+                                <div class="mb-1"><span class="fw-semibold">Wialon report:</span> <span data-source-field="source-report"></span></div>
+                                <div class="mb-1"><span class="fw-semibold">Yeniləmə komandası:</span> <span data-source-field="manual-command"></span></div>
+                                <div class="mb-1"><span class="fw-semibold">Avtomatik yeniləmə:</span> <span data-source-field="auto-schedule"></span></div>
+                                <div class="mb-1"><span class="fw-semibold">Yazılan cədvəllər:</span> <span data-source-field="result-tables"></span></div>
+                                <div class="mb-0 text-secondary" data-source-field="risk"></div>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Əməliyyat növü</label>
@@ -267,13 +280,53 @@
         const previewButton = document.getElementById('preview-button');
         const previewResult = document.getElementById('preview-result');
         const form = document.getElementById('historical-recalculation-form');
+        const sectionSourceInfo = document.getElementById('section-source-info');
+        const moduleContracts = @json($historicalModuleContracts);
 
         function toggleProjects() {
             projectWrap.classList.toggle('d-none', scopeSelect.value !== 'selected_projects');
         }
 
+        function selectedSection() {
+            return form.querySelector('input[name="dashboard_section"]:checked')?.value || 'daily_averages';
+        }
+
+        function setSourceField(name, value) {
+            const target = sectionSourceInfo.querySelector(`[data-source-field="${name}"]`);
+
+            if (target) {
+                target.textContent = value || '-';
+            }
+        }
+
+        function refreshSectionSourceInfo() {
+            const contract = moduleContracts[selectedSection()] || {};
+            const safeScope = contract.safe_resync_scope || {};
+            const resultTables = Array.isArray(contract.result_tables) ? contract.result_tables : [];
+            const writesShared = Boolean(contract.writes_shared_tables);
+            const writeMode = sectionSourceInfo.querySelector('[data-source-field="write-mode"]');
+
+            setSourceField('title', contract.title);
+            setSourceField('code', contract.code);
+            setSourceField('isolation', safeScope.status || 'unknown');
+            setSourceField('source-report', contract.source_report);
+            setSourceField('manual-command', contract.manual_command || contract.collector_command);
+            setSourceField('auto-schedule', contract.auto_schedule);
+            setSourceField('result-tables', resultTables.join(', '));
+            setSourceField('risk', safeScope.risk || contract.failure_isolation);
+
+            if (writeMode) {
+                writeMode.textContent = writesShared ? 'shared write' : 'isolated write';
+                writeMode.className = `badge ${writesShared ? 'text-bg-warning' : 'text-bg-success'}`;
+            }
+        }
+
         scopeSelect.addEventListener('change', toggleProjects);
+        form.querySelectorAll('input[name="dashboard_section"]').forEach((input) => {
+            input.addEventListener('change', refreshSectionSourceInfo);
+        });
         toggleProjects();
+        refreshSectionSourceInfo();
 
         previewButton.addEventListener('click', async () => {
             previewResult.classList.remove('d-none', 'alert-danger');

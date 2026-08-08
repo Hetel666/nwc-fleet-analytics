@@ -69,7 +69,12 @@ class HistoricalRecalculationTest extends TestCase
             ->get(route('admin.historical-recalculations.index'))
             ->assertOk()
             ->assertSee('Tarixi məlumatların yenilənməsi')
-            ->assertSee('Geofence Pozuntuları');
+            ->assertSee('Geofence Pozuntuları')
+            ->assertSee('Wialon report:')
+            ->assertSee('Qrup date report Engine hours (api)')
+            ->assertSee('day report Engine hours (api)')
+            ->assertSee('night report Engine hours (api)')
+            ->assertSee('night day report Engine hours (api)');
     }
 
     public function test_viewer_cannot_open_historical_recalculation_page(): void
