@@ -182,6 +182,7 @@ class MonthlyEfficiencyDashboardService
             'registration_number' => 'registration_number',
             'vehicle_type' => 'vehicle_type',
             'ownership' => 'ownership',
+            'actual_project' => 'actual_project',
             'total_hours' => 'total_engine_hours',
             'known_hours' => 'known_engine_hours',
             'unknown_hours' => 'unknown_engine_hours',
@@ -203,6 +204,7 @@ class MonthlyEfficiencyDashboardService
                 'name' => $row->unit_name,
                 'vehicle_type' => $row->vehicle_type,
                 'ownership' => $this->ownershipLabel($row->ownership),
+                'actual_project' => $row->actual_project ?: '-',
                 'period' => $row->period_from.' - '.$row->period_to,
                 'synced_days_count' => (int) $row->synced_days_count,
                 'total_hours' => number_format((float) $row->total_engine_hours, 2, '.', ''),
@@ -237,6 +239,7 @@ class MonthlyEfficiencyDashboardService
                 'number' => null,
                 'registration_number' => $row->registration_number ?: $row->unit_name,
                 'geofence_name' => $row->geofence_name,
+                'actual_project' => $row->actual_project ?: '-',
                 'motosaat' => number_format((float) $row->engine_hours_decimal, 2, '.', ''),
                 'yurush' => number_format((float) $row->mileage_km, 2, '.', ''),
                 'visits' => (int) $row->visits_count,
@@ -265,6 +268,7 @@ class MonthlyEfficiencyDashboardService
                 'date' => $row->stat_date,
                 'registration_number' => $row->registration_number ?: $row->unit_name,
                 'geofence_name' => $row->geofence_name,
+                'actual_project' => $row->actual_project ?: '-',
                 'motosaat' => number_format((float) $row->engine_hours_decimal, 2, '.', ''),
                 'yurush' => number_format((float) $row->mileage_km, 2, '.', ''),
                 'visits' => (int) $row->visits_count,
@@ -516,6 +520,13 @@ class MonthlyEfficiencyDashboardService
             return $row;
         })->values();
 
+        $projectNames = $this->objectActualProjectNames($filters);
+        $rows = $rows->map(function (object $row) use ($projectNames): object {
+            $row->actual_project = $projectNames->get((string) $row->wialon_unit_id, '-');
+
+            return $row;
+        });
+
         if ($filters['search'] !== '') {
             $needle = mb_strtolower($filters['search']);
             $rows = $rows->filter(fn (object $row): bool => str_contains(mb_strtolower((string) $row->unit_name), $needle)
@@ -533,6 +544,39 @@ class MonthlyEfficiencyDashboardService
         return $rows->values();
     }
 
+    private function objectActualProjectNames(array $filters): Collection
+    {
+        return $this->objectSegmentBaseQuery($filters)
+            ->whereIn('segment_type', [self::SEGMENT_GEOFENCE, self::SEGMENT_UNKNOWN])
+            ->select([
+                'wialon_unit_id',
+                DB::raw($this->actualProjectSql().' as actual_project'),
+            ])
+            ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name')
+            ->get()
+            ->groupBy('wialon_unit_id')
+            ->map(fn (Collection $rows): string => $rows
+                ->pluck('actual_project')
+                ->filter(fn (?string $project): bool => filled($project) && $project !== '-')
+                ->unique()
+                ->sort()
+                ->implode(', ') ?: '-');
+    }
+
+    private function actualProjectSql(): string
+    {
+        return "COALESCE(("
+            ."SELECT projects.name "
+            ."FROM wialon_geofences "
+            ."JOIN projects ON projects.id = wialon_geofences.linked_project_id "
+            ."WHERE wialon_geofences.name = monthly_efficiency_unit_geofence_facts.geofence_name "
+            ."AND wialon_geofences.is_active = 1 "
+            ."AND wialon_geofences.linked_project_id IS NOT NULL "
+            ."ORDER BY wialon_geofences.is_home_geofence DESC, wialon_geofences.id ASC "
+            ."LIMIT 1"
+            ."), CASE WHEN monthly_efficiency_unit_geofence_facts.segment_type = '".self::SEGMENT_UNKNOWN."' THEN 'Naməlum' ELSE '-' END)";
+    }
+
     private function objectGeofenceRows(array $filters, string $unitId): Collection
     {
         return $this->objectSegmentBaseQuery($filters)
@@ -544,6 +588,7 @@ class MonthlyEfficiencyDashboardService
                 DB::raw('MAX(registration_number) as registration_number'),
                 'segment_type',
                 'geofence_name',
+                DB::raw($this->actualProjectSql().' as actual_project'),
                 DB::raw('ROUND(SUM(engine_hours_decimal), 2) as engine_hours_decimal'),
                 DB::raw('ROUND(SUM(mileage_km), 2) as mileage_km'),
                 DB::raw('SUM(visits_count) as visits_count'),
@@ -565,6 +610,7 @@ class MonthlyEfficiencyDashboardService
                 'unit_name',
                 'registration_number',
                 'geofence_name',
+                DB::raw($this->actualProjectSql().' as actual_project'),
                 'engine_hours_decimal',
                 'mileage_km',
                 'visits_count',

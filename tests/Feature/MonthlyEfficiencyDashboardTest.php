@@ -391,6 +391,16 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $bulldozerUnit = $this->seedEquipment($project, $bulldozer, '10-BD-100', Equipment::OWNERSHIP_NWC);
         $loaderUnit = $this->seedEquipment($project, $loader, '10-LD-100', Equipment::OWNERSHIP_NWC);
 
+        DB::table('wialon_geofences')->insert([
+            'wialon_geofence_id' => 'zone-object-source',
+            'name' => 'Füzuli Xocavənd yolu',
+            'resource_id' => '601701680',
+            'linked_project_id' => $project->id,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $this->seedObjectFact($dump, '2026-07-01', 'total', 'Total', 8.0, 20.0);
         $this->seedObjectFact($dump, '2026-07-01', 'geofence', 'Füzuli Xocavənd yolu', 7.0, 18.0, 1);
         $this->seedObjectFact($dump, '2026-07-01', 'unknown', 'Naməlum', 1.0, 2.0);
@@ -421,6 +431,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('8.00', $objects[0]['total_hours']);
         $this->assertSame('7.00', $objects[0]['known_hours']);
         $this->assertSame('1.00', $objects[0]['unknown_hours']);
+        $this->assertSame('Naməlum, Object source', $objects[0]['actual_project']);
 
         $geofences = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofences', [
             'date_from' => '2026-07-01',
@@ -433,6 +444,14 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             ['Füzuli Xocavənd yolu', 'Naməlum'],
             collect($geofences)->pluck('geofence_name')->all(),
         );
+        $this->assertSame(
+            'Object source',
+            collect($geofences)->firstWhere('geofence_name', 'Füzuli Xocavənd yolu')['actual_project'],
+        );
+        $this->assertSame(
+            'Naməlum',
+            collect($geofences)->firstWhere('geofence_name', 'Naməlum')['actual_project'],
+        );
 
         $days = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofence-days', [
             'date_from' => '2026-07-01',
@@ -444,6 +463,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 
         $this->assertCount(1, $days);
         $this->assertSame('2026-07-01', $days[0]['date']);
+        $this->assertSame('Object source', $days[0]['actual_project']);
         $this->assertSame('7.00', $days[0]['motosaat']);
     }
 
