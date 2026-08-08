@@ -214,6 +214,7 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         foreach ($totals as $date => $total) {
             $knownForDate = collect($geofences[$date] ?? []);
+            $knownForDate = $this->normalizeKnownSegments($knownForDate->all(), (float) $total['hours']);
             $knownHours = round((float) $knownForDate->sum('hours'), 2);
             $knownMileage = round((float) $knownForDate->sum('mileage'), 2);
             $unknown = max(0.0, round((float) $total['hours'] - $knownHours, 2));
@@ -345,6 +346,10 @@ class SyncMonthlyEfficiencyObjects extends Command
                 $name = $this->cellText($cells[$nameIndex] ?? null);
 
                 if ($name === '') {
+                    $name = $this->cellText($cells[0] ?? null);
+                }
+
+                if ($name === '') {
                     continue;
                 }
 
@@ -363,6 +368,32 @@ class SyncMonthlyEfficiencyObjects extends Command
         }
 
         return $result;
+    }
+
+    /** @param array<int, array<string, mixed>> $segments */
+    private function normalizeKnownSegments(array $segments, float $totalHours): \Illuminate\Support\Collection
+    {
+        $knownHours = round((float) collect($segments)->sum('hours'), 2);
+
+        if ($knownHours <= 0.0 || $knownHours <= round($totalHours, 2)) {
+            return collect($segments);
+        }
+
+        $ratio = max(0.0, $totalHours) / $knownHours;
+
+        return collect($segments)->map(function (array $segment) use ($ratio, $knownHours, $totalHours): array {
+            $originalHours = (float) ($segment['hours'] ?? 0.0);
+            $adjustedHours = round($originalHours * $ratio, 2);
+
+            $segment['hours'] = $adjustedHours;
+            $segment['seconds'] = (int) round($adjustedHours * 3600);
+            $segment['raw']['normalized_to_total'] = true;
+            $segment['raw']['original_hours'] = $originalHours;
+            $segment['raw']['known_hours_before_normalization'] = $knownHours;
+            $segment['raw']['total_hours'] = $totalHours;
+
+            return $segment;
+        });
     }
 
     private function columnIndex(array $table, array $headers, array $headerTypes, int $default): int
