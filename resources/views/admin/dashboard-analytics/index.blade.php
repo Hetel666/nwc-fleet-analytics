@@ -255,6 +255,108 @@
         @endforeach
     </div>
 
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+        <h3 class="h5 fw-bold mb-0">Module contracts</h3>
+        <span class="text-secondary small">{{ count($moduleContracts) }} modules</span>
+    </div>
+
+    @if (! empty($moduleContractErrors))
+        <div class="alert alert-warning">
+            <div class="fw-bold mb-1">Registry contract warnings</div>
+            <ul class="mb-0">
+                @foreach ($moduleContractErrors as $code => $errors)
+                    <li>{{ $code }}: {{ implode(', ', $errors) }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    <div class="row g-3 mb-4">
+        @foreach ($moduleContracts as $module)
+            <div class="col-12 col-xl-6">
+                <article class="analytics-map-binding h-100 p-3">
+                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                        <div>
+                            <span class="analytics-map-key">{{ $module['code'] }}</span>
+                            <h4 class="h5 fw-bold mt-3 mb-1">{{ $module['title'] }}</h4>
+                            <p class="text-secondary mb-0">{{ $module['failure_isolation'] }}</p>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <span class="analytics-map-chip"><i class="bi bi-window-sidebar"></i> {{ $module['tab'] }}</span>
+                            <span class="analytics-map-chip"><i class="bi bi-shield-check"></i> {{ $module['writes_shared_tables'] ? 'Shared write' : 'Isolated write' }}</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-1">Source report</div>
+                            <div class="small text-secondary">{{ $module['source_report'] }}</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-1">Collector command</div>
+                            <div class="small text-secondary">{{ $module['collector_command'] }}</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-1">Read service</div>
+                            <div class="small text-secondary">{{ $module['read_service'] }}</div>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-1">Collector service</div>
+                            <div class="small text-secondary">{{ $module['collector_service'] ?: '-' }}</div>
+                        </div>
+                        <div class="col-12">
+                            <div class="analytics-map-label mb-1">Safe resync scope</div>
+                            <div class="small text-secondary">
+                                {{ $module['safe_resync_scope']['status'] ?? '-' }}:
+                                {{ implode(', ', $module['safe_resync_scope']['keys'] ?? []) }}
+                                @if (! empty($module['safe_resync_scope']['risk']))
+                                    <br>{{ $module['safe_resync_scope']['risk'] }}
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-2">Result tables</div>
+                            <ul class="analytics-map-list small">
+                                @foreach ($module['result_tables'] as $table)
+                                    <li>{{ $table }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-2">Shared tables</div>
+                            <ul class="analytics-map-list small">
+                                @forelse ($module['shared_result_tables'] as $table)
+                                    <li>{{ $table }}</li>
+                                @empty
+                                    <li>none</li>
+                                @endforelse
+                            </ul>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-2">API endpoints</div>
+                            <ul class="analytics-map-list small">
+                                @foreach ($module['api_endpoints'] as $endpoint)
+                                    <li>{{ $endpoint }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div class="analytics-map-label mb-2">Frontend widgets</div>
+                            <ul class="analytics-map-list small">
+                                @foreach ($module['frontend_widgets'] as $widget)
+                                    <li>{{ $widget }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        @endforeach
+    </div>
+
     <div class="row g-3 mb-4">
         @foreach ($sharedBindings as $binding)
             <div class="col-12 col-lg-4">

@@ -31,6 +31,7 @@ class HistoricalRecalculationService
     public function __construct(
         private HistoricalRecalculationModuleRegistry $modules,
         private GeofenceExcludedGroups $geofenceExcludedGroups,
+        private DashboardResyncDryRunPlanner $dryRunPlanner,
     ) {}
 
     public function preview(array $payload): array
@@ -47,12 +48,16 @@ class HistoricalRecalculationService
             ? $this->fetchTaskCount($payload, $dates, $targets)
             : 0;
 
-        return [
+        $preview = [
             'days' => $dates->count(),
             'project_groups' => $targets->count(),
             'fetch_tasks' => $fetchTasks,
             'aggregate_tasks' => $aggregateTasks,
             'total_tasks' => $fetchTasks + $aggregateTasks,
+        ];
+
+        return $preview + [
+            'dry_run' => $this->dryRunPlanner->plan($payload, $preview),
         ];
     }
 

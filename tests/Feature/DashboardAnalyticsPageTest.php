@@ -33,6 +33,10 @@ class DashboardAnalyticsPageTest extends TestCase
             ->assertSee('Geofence Pozuntuları')
             ->assertSee('Tarixi məlumatların yenilənməsi')
             ->assertSee('fleet:sync-geozon-api')
-            ->assertSee('fleet:sync-geofence-violations-report');
+            ->assertSee('fleet:sync-geofence-violations-report')
+            ->assertSee('Module contracts')
+            ->assertSee('monthly_efficiency')
+            ->assertSee('monthly_efficiency_unit_geofence_facts')
+            ->assertSee('partially_isolated');
     }
 }

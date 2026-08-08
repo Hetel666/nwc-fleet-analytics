@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CleanupHistoricalRecalculationQueueController;
 use App\Http\Controllers\Admin\DashboardAnalyticsController;
+use App\Http\Controllers\Admin\DashboardResyncDryRunController;
 use App\Http\Controllers\Admin\DashboardVisibilityController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
 use App\Http\Controllers\Admin\WialonCatalogController;
@@ -101,6 +102,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/admin/dashboard-analytics', [DashboardAnalyticsController::class, 'index'])
         ->middleware('admin')
         ->name('admin.dashboard-analytics.index');
+
+    Route::post('/admin/dashboard-resync/dry-run', DashboardResyncDryRunController::class)
+        ->middleware('admin')
+        ->name('admin.dashboard-resync.dry-run');
 
     Route::get('/admin/dashboard-visibility', [DashboardVisibilityController::class, 'index'])
         ->middleware('can:manage-dashboard-visibility')

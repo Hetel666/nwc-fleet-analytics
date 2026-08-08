@@ -13,6 +13,7 @@ use App\Models\ProjectWialonGroup;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\DashboardReportPipelineService;
+use App\Services\DashboardResyncDryRunPlanner;
 use App\Services\EfficiencyRecalculationHandler;
 use App\Services\HistoricalRecalculationModuleRegistry;
 use App\Services\HistoricalRecalculationService;
@@ -119,6 +120,118 @@ class HistoricalRecalculationTest extends TestCase
                 'aggregate_tasks' => 1,
                 'total_tasks' => 7,
             ]);
+    }
+
+    public function test_preview_includes_read_only_dry_run_impact_plan(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Dry run project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '1100',
+            'name' => 'Dry run project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $equipment = $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '1100');
+
+        DB::table('equipment_daily_stats')->insert([
+            'stat_date' => '2026-07-14',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'worked_hours' => 8.5,
+            'distance_km' => 12,
+            'utilization_percent' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-13',
+                'date_to' => '2026-07-15',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+                'operation' => 'fetch_and_recalculate',
+                'scope' => 'selected_projects',
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('dry_run.dashboard_code', 'daily_averages')
+            ->assertJsonPath('dry_run.read_only', true)
+            ->assertJsonPath('dry_run.writes_shared_tables', true)
+            ->assertJsonPath('dry_run.tables.0.table', 'equipment_daily_stats')
+            ->assertJsonPath('dry_run.tables.0.existing_rows', 1)
+            ->assertJsonPath('dry_run.existing_rows_in_scope', 1);
+    }
+
+    public function test_monthly_efficiency_dry_run_counts_isolated_object_facts(): void
+    {
+        $project = Project::query()->create(['name' => 'Monthly dry run project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '1200',
+            'name' => 'Monthly dry run project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $equipment = $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '1200');
+
+        DB::table('monthly_efficiency_unit_geofence_facts')->insert([
+            'stat_date' => '2026-07-20',
+            'equipment_id' => $equipment->id,
+            'wialon_unit_id' => '1200',
+            'unit_name' => 'Unit 1200',
+            'registration_number' => '10-AA-120',
+            'vehicle_type' => 'Excavator',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'segment_type' => 'geofence',
+            'geofence_name' => 'Test geofence',
+            'engine_hours_decimal' => 7.5,
+            'engine_seconds' => 27000,
+            'mileage_km' => 4.2,
+            'source_report_name' => 'Report for Aylıq effektivlik',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $plan = app(DashboardResyncDryRunPlanner::class)->plan([
+            'dashboard_code' => 'monthly_efficiency',
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'project_ids' => [],
+            'force' => true,
+        ]);
+
+        $this->assertSame('monthly_efficiency', $plan['dashboard_code']);
+        $this->assertSame('partially_isolated', $plan['isolation']);
+        $this->assertFalse($plan['writes_shared_tables']);
+        $this->assertSame(1, $plan['tables'][0]['existing_rows']);
+        $this->assertStringContainsString('Force mode may replace existing rows', implode(' ', $plan['warnings']));
+    }
+
+    public function test_admin_can_request_dashboard_code_dry_run_without_queueing_run(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.dashboard-resync.dry-run'), [
+                'dashboard_code' => 'monthly_efficiency',
+                'date_from' => '2026-07-01',
+                'date_to' => '2026-07-31',
+                'timezone' => 'Asia/Baku',
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('dashboard_code', 'monthly_efficiency')
+            ->assertJsonPath('read_only', true)
+            ->assertJsonPath('isolation', 'partially_isolated')
+            ->assertJsonPath('writes_shared_tables', false);
+
+        $this->assertDatabaseCount('historical_recalculations', 0);
+        $this->assertDatabaseCount('jobs', 0);
     }
 
     public function test_preview_for_top20_section_has_no_aggregate_tasks(): void

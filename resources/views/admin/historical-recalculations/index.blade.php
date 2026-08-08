@@ -296,12 +296,71 @@
                     throw new Error(Object.values(data.errors || {}).flat().join(' ') || 'Ön baxış alınmadı.');
                 }
 
-                previewResult.textContent = `${data.days} gün, ${data.project_groups} obyekt, ${data.fetch_tasks} yükləmə tapşırığı, ${data.aggregate_tasks} hesablama tapşırığı. Cəmi: ${data.total_tasks}.`;
+                previewResult.innerHTML = renderPreview(data);
             } catch (error) {
                 previewResult.classList.remove('alert-secondary');
                 previewResult.classList.add('alert-danger');
                 previewResult.textContent = error.message;
             }
         });
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#039;');
+        }
+
+        function renderPreview(data) {
+            const dryRun = data.dry_run || {};
+            const tables = Array.isArray(dryRun.tables) ? dryRun.tables : [];
+            const warnings = Array.isArray(dryRun.warnings) ? dryRun.warnings : [];
+            const rows = tables.map((table) => `
+                <tr>
+                    <td class="text-nowrap">${escapeHtml(table.table)}</td>
+                    <td>${table.shared ? '<span class="badge text-bg-warning">shared</span>' : '<span class="badge text-bg-success">isolated</span>'}</td>
+                    <td class="text-end">${table.existing_rows === null ? '-' : escapeHtml(table.existing_rows)}</td>
+                    <td>${escapeHtml((table.filters || []).join('; ') || '-')}</td>
+                    <td>${escapeHtml(table.note || '-')}</td>
+                </tr>
+            `).join('');
+            const warningHtml = warnings.length > 0
+                ? `<div class="alert alert-warning py-2 mt-2 mb-0">${warnings.map((warning) => `<div>${escapeHtml(warning)}</div>`).join('')}</div>`
+                : '<div class="text-success mt-2">Critical warning yoxdur.</div>';
+
+            return `
+                <div class="fw-semibold mb-2">
+                    ${escapeHtml(data.days)} gün, ${escapeHtml(data.project_groups)} obyekt, ${escapeHtml(data.fetch_tasks)} yükləmə tapşırığı,
+                    ${escapeHtml(data.aggregate_tasks)} hesablama tapşırığı. Cəmi: ${escapeHtml(data.total_tasks)}.
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <span class="badge text-bg-primary">${escapeHtml(dryRun.dashboard_code || '-')}</span>
+                    <span class="badge ${dryRun.writes_shared_tables ? 'text-bg-warning' : 'text-bg-success'}">
+                        ${dryRun.writes_shared_tables ? 'shared write' : 'isolated write'}
+                    </span>
+                    <span class="badge text-bg-secondary">${escapeHtml(dryRun.isolation || 'unknown')}</span>
+                    ${dryRun.force ? '<span class="badge text-bg-danger">force</span>' : '<span class="badge text-bg-light">no force</span>'}
+                </div>
+                <div class="mb-2"><span class="fw-semibold">Report:</span> ${escapeHtml(dryRun.source_report || '-')}</div>
+                <div class="mb-2"><span class="fw-semibold">Command:</span> ${escapeHtml(dryRun.manual_command || dryRun.collector_command || '-')}</div>
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                        <tr>
+                            <th>Table</th>
+                            <th>Scope</th>
+                            <th class="text-end">Rows</th>
+                            <th>Filters</th>
+                            <th>Note</th>
+                        </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="5" class="text-secondary">No registered dry-run tables.</td></tr>'}</tbody>
+                    </table>
+                </div>
+                ${warningHtml}
+            `;
+        }
     </script>
 @endpush
