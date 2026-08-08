@@ -8,11 +8,14 @@ use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
+use App\Models\WialonReportTemplate;
 use App\Services\MonthlyEfficiencyDashboardService;
+use App\Services\WialonService;
 use App\Support\MonthlyEfficiencyStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Mockery;
 use Tests\TestCase;
 
 class MonthlyEfficiencyDashboardTest extends TestCase
@@ -483,6 +486,107 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'block' => 'monthly_efficiency',
             'status' => DashboardExport::STATUS_PENDING,
         ]);
+    }
+
+    public function test_forced_object_sync_purges_full_unit_period_when_new_report_has_missing_days(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
+
+        $project = Project::query()->create(['name' => 'Object source', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $equipment = $this->seedEquipment($project, $dumpTruck, '10-AF-065', Equipment::OWNERSHIP_NWC);
+
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 91,
+            'name' => 'Monthly Unit Report',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit',
+            'is_active' => true,
+        ]);
+
+        $this->seedObjectFact($equipment, '2026-07-01', 'total', 'Total', 99.0, 0);
+        DB::table('monthly_efficiency_unit_geofence_facts')
+            ->where('wialon_unit_id', '10-AF-065')
+            ->update([
+                'source_report_template_id' => 91,
+                'source_report_name' => 'Monthly Unit Report',
+            ]);
+        DB::table('monthly_efficiency_unit_geofence_facts')->insert([
+            'stat_date' => '2026-07-02',
+            'equipment_id' => $equipment->id,
+            'wialon_unit_id' => (string) $equipment->wialon_unit_id,
+            'unit_name' => (string) $equipment->name,
+            'registration_number' => $equipment->registration_number,
+            'vehicle_type' => $equipment->type->name,
+            'ownership_type' => $equipment->ownership_type,
+            'segment_type' => 'total',
+            'geofence_name' => 'Total',
+            'engine_hours_decimal' => 77.0,
+            'engine_seconds' => 277200,
+            'mileage_km' => 0,
+            'visits_count' => 0,
+            'source_report_template_id' => 91,
+            'source_report_name' => 'Monthly Unit Report (unit)',
+            'raw_row_json' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('getSessionId')->once()->andReturn('sid-test');
+        $wialon->shouldReceive('cleanupReportResult')->twice();
+        $wialon->shouldReceive('executeReport')->once()->andReturn([
+            'reportResult' => [
+                'tables' => [
+                    [
+                        'name' => 'Engine hours',
+                        'header' => ['Grouping', 'Engine hours', 'Mileage', 'Beginning', 'End'],
+                        'header_type' => ['grouping', 'duration', 'mileage', 'time_begin', 'time_end'],
+                        'rows' => 1,
+                    ],
+                    [
+                        'name' => 'Geofence Engine hours',
+                        'header' => ['Grouping', 'Geofence', 'Entry time', 'Exit time', 'Engine hours', 'Mileage', 'Visits'],
+                        'header_type' => ['grouping', 'zone_name', 'time_begin', 'time_end', 'duration', 'mileage', 'visits_count'],
+                        'rows' => 1,
+                    ],
+                ],
+            ],
+        ]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(0, 0, 0, 'sid-test')
+            ->andReturn([['c' => ['2026-07-01', '8:00:00', '10 km', '08:00:00', '16:00:00']]]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(1, 0, 0, 'sid-test')
+            ->andReturn([['c' => ['2026-07-01']]]);
+        $wialon->shouldReceive('getReportResultSubrows')
+            ->once()
+            ->with(1, 0, 'sid-test')
+            ->andReturn([['c' => ['', 'Object source', '08:00:00', '15:00:00', '7:00:00', '8 km', '1']]]);
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('monthly-efficiency:sync-objects', [
+            '--from' => '2026-07-01',
+            '--to' => '2026-07-02',
+            '--unit' => '10-AF-065',
+            '--force' => true,
+            '--unit-chunk' => 1,
+            '--flush-rows' => 2,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-02',
+            'wialon_unit_id' => '10-AF-065',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-01',
+            'wialon_unit_id' => '10-AF-065',
+            'segment_type' => 'total',
+            'source_report_name' => 'Monthly Unit Report',
+        ]);
+        $this->assertSame(3, DB::table('monthly_efficiency_unit_geofence_facts')->where('wialon_unit_id', '10-AF-065')->count());
     }
 
     private function seedMonthlyUnit(Project $project, EquipmentType $type, string $unitId, float $hours, string $ownership): void

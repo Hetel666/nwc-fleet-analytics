@@ -24,7 +24,9 @@ class SyncMonthlyEfficiencyObjects extends Command
         {--from= : Start date}
         {--to= : End date}
         {--unit= : Optional Wialon unit id, registration number or unit name}
-        {--force : Replace existing object-geofence facts for the selected period}';
+        {--force : Replace existing object-geofence facts for the selected period}
+        {--unit-chunk=25 : Number of units loaded from database at once}
+        {--flush-rows=250 : Number of fact rows written per database batch}';
 
     protected $description = 'Sync Aylıq effektivlik object/geofence facts from the individual Wialon report.';
 
@@ -47,18 +49,17 @@ class SyncMonthlyEfficiencyObjects extends Command
         }
 
         $template = $this->resolveUnitReportTemplate($wialon);
-        $equipment = $this->equipmentQuery()
+        $equipmentQuery = $this->equipmentQuery()
             ->when($this->option('unit'), function (Builder $query, string $unit): void {
                 $query->where(function (Builder $query) use ($unit): void {
                     $query->where('equipments.wialon_unit_id', $unit)
                         ->orWhere('equipments.registration_number', $unit)
                         ->orWhere('equipments.name', $unit);
                 });
-            })
-            ->orderBy('equipments.name')
-            ->get();
+            });
+        $totalUnits = (clone $equipmentQuery)->count('equipments.id');
 
-        if ($equipment->isEmpty()) {
+        if ($totalUnits === 0) {
             $this->warn('No matching Bulldozer, Excavator or Dump Truck units were found.');
 
             return self::SUCCESS;
@@ -66,7 +67,7 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         $this->info(sprintf(
             'Syncing %d units with %s / %s for %s - %s.',
-            $equipment->count(),
+            $totalUnits,
             (string) $template['name'],
             (string) $template['template_id'],
             $from->toDateString(),
@@ -75,32 +76,52 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         $ok = 0;
         $failed = 0;
+        $deleted = 0;
+        $written = 0;
+        $unitChunk = max(1, min(100, (int) $this->option('unit-chunk')));
+        $flushRows = max(1, min(1000, (int) $this->option('flush-rows')));
 
-        foreach ($equipment as $item) {
-            try {
-                $result = $this->syncOneUnit($wialon, $template, $item, $from, $to);
-                $ok++;
-                $this->line(sprintf(
-                    '%s: %d days, %.2f h total, %.2f h geofence, %.2f h unknown',
-                    (string) ($item->registration_number ?: $item->name),
-                    $result['days'],
-                    $result['total_hours'],
-                    $result['geofence_hours'],
-                    $result['unknown_hours'],
-                ));
-            } catch (Throwable $exception) {
-                $failed++;
-                $this->error(sprintf(
-                    '%s failed: %s',
-                    (string) ($item->registration_number ?: $item->name),
-                    $exception->getMessage(),
-                ));
-            }
-        }
+        $equipmentQuery
+            ->orderBy('equipments.id')
+            ->chunkById($unitChunk, function ($equipment) use ($wialon, $template, $from, $to, $flushRows, &$ok, &$failed, &$deleted, &$written): void {
+                foreach ($equipment as $item) {
+                    try {
+                        $result = $this->syncOneUnit($wialon, $template, $item, $from, $to, $flushRows);
+                        $ok++;
+                        $deleted += $result['deleted_rows'];
+                        $written += $result['written_rows'];
+                        $this->line(sprintf(
+                            '%s: %d days, %.2f h total, %.2f h geofence, %.2f h unknown, deleted %d, written %d',
+                            (string) ($item->registration_number ?: $item->name),
+                            $result['days'],
+                            $result['total_hours'],
+                            $result['geofence_hours'],
+                            $result['unknown_hours'],
+                            $result['deleted_rows'],
+                            $result['written_rows'],
+                        ));
+                    } catch (Throwable $exception) {
+                        $failed++;
+                        $this->error(sprintf(
+                            '%s failed: %s',
+                            (string) ($item->registration_number ?: $item->name),
+                            $exception->getMessage(),
+                        ));
+                    } finally {
+                        if (function_exists('gc_collect_cycles')) {
+                            gc_collect_cycles();
+                        }
+                    }
+                }
+            }, 'equipments.id', 'id');
 
         $this->table(['Metric', 'Value'], [
             ['Processed units', $ok],
             ['Failed units', $failed],
+            ['Deleted fact rows', $deleted],
+            ['Written fact rows', $written],
+            ['Unit chunk size', $unitChunk],
+            ['Write batch size', $flushRows],
             ['Allowed types', implode(', ', $this->allowedTypeLabels())],
             ['Source report', (string) $template['name']],
         ]);
@@ -179,8 +200,8 @@ class SyncMonthlyEfficiencyObjects extends Command
             ->all();
     }
 
-    /** @return array{days:int,total_hours:float,geofence_hours:float,unknown_hours:float} */
-    private function syncOneUnit(WialonService $wialon, array $template, object $equipment, CarbonImmutable $from, CarbonImmutable $to): array
+    /** @return array{days:int,total_hours:float,geofence_hours:float,unknown_hours:float,deleted_rows:int,written_rows:int} */
+    private function syncOneUnit(WialonService $wialon, array $template, object $equipment, CarbonImmutable $from, CarbonImmutable $to, int $flushRows): array
     {
         $sid = $wialon->getSessionId();
         $wialon->cleanupReportResult($sid);
@@ -207,10 +228,14 @@ class SyncMonthlyEfficiencyObjects extends Command
         $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table']);
         $geofences = $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']);
         $unknownLabel = (string) config('fleet.wialon.monthly_efficiency_unknown_label', 'Naməlum');
-        $rows = [];
+        $pendingRows = [];
+        $writtenRows = 0;
         $totalHours = 0.0;
         $geofenceHours = 0.0;
         $unknownHours = 0.0;
+        $deletedRows = $this->option('force')
+            ? $this->purgeExistingFacts($equipment, $template, $from, $to)
+            : 0;
 
         foreach ($totals as $date => $total) {
             $knownForDate = collect($geofences[$date] ?? []);
@@ -220,21 +245,13 @@ class SyncMonthlyEfficiencyObjects extends Command
             $unknown = max(0.0, round((float) $total['hours'] - $knownHours, 2));
             $unknownMileage = max(0.0, round((float) $total['mileage'] - $knownMileage, 2));
 
-            if ($this->option('force')) {
-                DB::table('monthly_efficiency_unit_geofence_facts')
-                    ->where('wialon_unit_id', (string) $equipment->wialon_unit_id)
-                    ->where('stat_date', $date)
-                    ->where('source_report_name', (string) $template['name'])
-                    ->delete();
-            }
-
-            $rows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_TOTAL, 'Total', $total);
+            $pendingRows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_TOTAL, 'Total', $total);
 
             foreach ($knownForDate as $item) {
-                $rows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_GEOFENCE, (string) $item['geofence'], $item);
+                $pendingRows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_GEOFENCE, (string) $item['geofence'], $item);
             }
 
-            $rows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_UNKNOWN, $unknownLabel, [
+            $pendingRows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_UNKNOWN, $unknownLabel, [
                 'hours' => $unknown,
                 'seconds' => (int) round($unknown * 3600),
                 'mileage' => $unknownMileage,
@@ -244,25 +261,69 @@ class SyncMonthlyEfficiencyObjects extends Command
                 'raw' => ['calculated' => true, 'total_hours' => $total['hours'], 'geofence_hours' => $knownHours],
             ]);
 
+            if (count($pendingRows) >= $flushRows) {
+                $writtenRows += $this->upsertFacts($pendingRows);
+                $pendingRows = [];
+            }
+
             $totalHours += (float) $total['hours'];
             $geofenceHours += $knownHours;
             $unknownHours += $unknown;
         }
 
-        if ($rows !== []) {
-            DB::table('monthly_efficiency_unit_geofence_facts')->upsert(
-                $rows,
-                ['stat_date', 'wialon_unit_id', 'segment_type', 'geofence_name', 'source_report_name'],
-                ['equipment_id', 'unit_name', 'registration_number', 'vehicle_type', 'ownership_type', 'engine_hours_decimal', 'engine_seconds', 'mileage_km', 'visits_count', 'started_at', 'ended_at', 'source_report_template_id', 'raw_row_json', 'updated_at'],
-            );
-        }
+        $writtenRows += $this->upsertFacts($pendingRows);
+        $wialon->cleanupReportResult($sid);
 
         return [
             'days' => count($totals),
             'total_hours' => round($totalHours, 2),
             'geofence_hours' => round($geofenceHours, 2),
             'unknown_hours' => round($unknownHours, 2),
+            'deleted_rows' => $deletedRows,
+            'written_rows' => $writtenRows,
         ];
+    }
+
+    private function purgeExistingFacts(object $equipment, array $template, CarbonImmutable $from, CarbonImmutable $to): int
+    {
+        return DB::table('monthly_efficiency_unit_geofence_facts')
+            ->where('wialon_unit_id', (string) $equipment->wialon_unit_id)
+            ->whereBetween('stat_date', [$from->toDateString(), $to->toDateString()])
+            ->whereIn('source_report_name', $this->sourceReportNames($template))
+            ->delete();
+    }
+
+    /** @param array<int, array<string, mixed>> $rows */
+    private function upsertFacts(array $rows): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+
+        DB::table('monthly_efficiency_unit_geofence_facts')->upsert(
+            $rows,
+            ['stat_date', 'wialon_unit_id', 'segment_type', 'geofence_name', 'source_report_name'],
+            ['equipment_id', 'unit_name', 'registration_number', 'vehicle_type', 'ownership_type', 'engine_hours_decimal', 'engine_seconds', 'mileage_km', 'visits_count', 'started_at', 'ended_at', 'source_report_template_id', 'raw_row_json', 'updated_at'],
+        );
+
+        return count($rows);
+    }
+
+    /** @return array<int, string> */
+    private function sourceReportNames(array $template): array
+    {
+        $configured = trim((string) config('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for Aylıq effektivlik'));
+
+        return collect([
+            $template['name'] ?? null,
+            $configured,
+            $configured !== '' ? $configured.' (unit)' : null,
+        ])
+            ->map(fn ($value): string => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function findTable(array $tables, string $kind): ?array
