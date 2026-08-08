@@ -10,6 +10,7 @@ use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+use ZipArchive;
 
 class GeofenceViolationsDashboardTest extends TestCase
 {
@@ -200,6 +201,7 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertDontSee('foreign-geofence-kpi-label', false)
             ->assertSee('data-geofence-violations-list-link', false)
             ->assertSee('data-geofence-violations-drilldown', false)
+            ->assertSee('geofence-violations/export', false)
             ->assertDontSee('Ətraflı baxış')
             ->assertSee(route('dashboard.geofence-violations.drilldown'))
             ->assertSee('Geofence Transferləri')
@@ -296,6 +298,71 @@ class GeofenceViolationsDashboardTest extends TestCase
         $this->assertDatabaseHas('geofence_violation_report_rows', [
             'equipment_name' => 'Hidden Layihəsiz violation',
         ]);
+    }
+
+    public function test_geofence_violations_export_downloads_current_filtered_rows(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$project, $type] = $this->fleet();
+        $otherProject = Project::create(['name' => 'Other project', 'active' => true]);
+
+        $this->reportRow($project, $type, 'Visible export unit', 14_400, [
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $this->reportRow($otherProject, $type, 'Hidden export unit', 18_000, [
+            'ownership_type' => Equipment::OWNERSHIP_ICARE,
+            'is_active' => false,
+            'ended_at' => '2026-07-27 15:00:00',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('geofence-violations.export', [
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+            'project_id' => $project->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'status' => 'active',
+            'search' => 'Visible',
+        ]));
+
+        $response->assertOk()
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        $content = $response->getContent();
+        $this->assertStringStartsWith('PK', $content);
+        $this->assertStringContainsString('.xlsx', $response->headers->get('Content-Disposition'));
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx-test-');
+        file_put_contents($path, $content);
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($path));
+        $this->assertNotFalse($zip->locateName('xl/worksheets/sheet3.xml'));
+        $sheet = $zip->getFromName('xl/worksheets/sheet3.xml');
+        $zip->close();
+        @unlink($path);
+
+        $this->assertStringContainsString('Visible export unit', $sheet);
+        $this->assertStringNotContainsString('Hidden export unit', $sheet);
+    }
+
+    public function test_dashboard_export_route_supports_geofence_violations_report_block(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$project, $type] = $this->fleet();
+
+        $this->reportRow($project, $type, 'Generic export unit', 14_400);
+
+        $this->actingAs($user)->get(route('dashboard.export', [
+            'block' => 'geofence-violations-report',
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+            'project_id' => $project->id,
+            'equipment_type_id' => $type->id,
+        ]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->assertSee('PK', false);
     }
 
     /**

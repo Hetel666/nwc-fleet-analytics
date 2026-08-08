@@ -636,7 +636,7 @@ return [
                 'Duration must equal the continuous entry-exit span',
             ],
             'click' => 'Donut və legend sətri seçilmiş period və layihə filtrləri ilə pozuntu siyahısını modalda açır.',
-            'excel' => 'Bu mərhələdə ayrıca Excel yoxdur; detallı cədvəl müstəqil modulda göstərilir.',
+            'excel' => 'Ayrıca /geofence-violations/export endpoint-i eyni filterlərlə Xülasə, Layihələr və Pozuntular vərəqlərini yaradır.',
         ],
         [
             'key' => 'utilization-trend',

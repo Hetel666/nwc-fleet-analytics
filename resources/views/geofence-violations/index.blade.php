@@ -387,6 +387,9 @@
     $donutBackground = $donutSegments === []
         ? 'conic-gradient(#E5E7EB 0% 100%)'
         : 'conic-gradient('.implode(', ', $donutSegments).')';
+    $exportQuery = collect($filters)
+        ->reject(fn ($value) => blank($value))
+        ->all();
 @endphp
 
 <div class="gv-shell py-4 px-3 px-lg-4">
@@ -443,6 +446,9 @@
                     <button class="btn btn-primary btn-icon" type="submit" title="Filtrlə">
                         <i data-lucide="filter"></i><span>Filtrlə</span>
                     </button>
+                    <a class="btn btn-outline-secondary btn-icon" href="{{ route('geofence-violations.export', $exportQuery) }}" title="Excel">
+                        <i data-lucide="download"></i><span>Excel</span>
+                    </a>
                     <a class="btn btn-outline-secondary btn-icon" href="{{ route('geofence-violations.index') }}" title="Filtrləri təmizlə">
                         <i data-lucide="rotate-ccw"></i>
                     </a>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\EquipmentType;
 use App\Models\GeofenceViolationReportRow;
+use App\Models\Project;
 use App\Support\GeofenceExcludedGroups;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -133,6 +134,197 @@ class GeofenceViolationsDashboardService
         $row = new GeofenceViolationReportRow(['outside_duration_seconds' => $seconds]);
 
         return $row->duration_label;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function export(array $filters): array
+    {
+        $rows = $this->filteredQuery($filters)
+            ->orderByDesc('is_active')
+            ->orderByDesc('outside_duration_seconds')
+            ->orderBy('equipment_name')
+            ->get();
+
+        $summary = $this->summary(clone $this->filteredQuery($filters));
+
+        return [
+            'filename' => 'geofence-pozuntulari-'.$filters['date_from'].'-'.$filters['date_to'].'.xlsx',
+            'title' => 'Geofence Pozuntuları',
+            'filters' => $this->exportFilters($filters, $summary),
+            'sections' => [
+                [
+                    'title' => 'Xülasə',
+                    'columns' => ['Göstərici', 'Dəyər'],
+                    'rows' => [
+                        ['Ümumi pozuntu', (int) $summary['kpis']['total_violations']],
+                        ['Hesabat sonuna aktiv', (int) $summary['kpis']['active_violations']],
+                        ['Aktiv layihələr', (int) $summary['kpis']['active_projects']],
+                        ['Ən uzun pozuntu', $this->formatDuration((int) $summary['kpis']['longest_duration_seconds'])],
+                    ],
+                ],
+                [
+                    'title' => 'Layihələr üzrə paylanma',
+                    'columns' => ['Layihə', 'Pozuntu sayı', 'Faiz'],
+                    'rows' => collect($summary['distribution'])
+                        ->map(fn (array $row): array => [
+                            $row['label'],
+                            (int) $row['count'],
+                            number_format((float) $row['percentage'], 1, '.', '').'%',
+                        ])
+                        ->values()
+                        ->all(),
+                ],
+                [
+                    'title' => 'Pozuntu dövrləri',
+                    'columns' => [
+                        '№',
+                        'Texnika',
+                        'Texnika növü',
+                        'Mənsubiyyət',
+                        'Layihə',
+                        'Son layihə geozonası',
+                        'Geozonadan çıxış vaxtı',
+                        'Son təsdiqlənmiş vaxt',
+                        'Geozonalardan kənarda müddət',
+                        'Son məkan',
+                        'Pozuntu statusu',
+                    ],
+                    'rows' => $rows
+                        ->values()
+                        ->map(fn (GeofenceViolationReportRow $row, int $index): array => [
+                            $index + 1,
+                            $row->equipment_name,
+                            $row->equipment_type,
+                            $row->ownership_type === 'ICARE' ? 'İCARƏ' : ($row->ownership_type ?: '-'),
+                            $row->project_name ?: 'Layihə göstərilməyib',
+                            $row->last_project_geofence ?: 'Hesabat təqdim etmir',
+                            $this->formatExportDateTime($row->exited_at),
+                            $this->formatExportDateTime($row->last_confirmed_at),
+                            $row->duration_label,
+                            $row->last_location ?: '-',
+                            $row->status_label,
+                        ])
+                        ->all(),
+                ],
+            ],
+            'sheets' => [
+                [
+                    'name' => 'Xülasə',
+                    'title' => 'Geofence Pozuntuları',
+                    'filters' => $this->exportFilters($filters, $summary),
+                    'sections' => [
+                        [
+                            'title' => 'Xülasə',
+                            'columns' => ['Göstərici', 'Dəyər'],
+                            'rows' => [
+                                ['Ümumi pozuntu', (int) $summary['kpis']['total_violations']],
+                                ['Hesabat sonuna aktiv', (int) $summary['kpis']['active_violations']],
+                                ['Aktiv layihələr', (int) $summary['kpis']['active_projects']],
+                                ['Ən uzun pozuntu', $this->formatDuration((int) $summary['kpis']['longest_duration_seconds'])],
+                            ],
+                        ],
+                    ],
+                ],
+                [
+                    'name' => 'Layihələr',
+                    'title' => 'Geofence Pozuntuları',
+                    'filters' => $this->exportFilters($filters, $summary),
+                    'sections' => [
+                        [
+                            'title' => 'Layihələr üzrə paylanma',
+                            'columns' => ['Layihə', 'Pozuntu sayı', 'Faiz'],
+                            'rows' => collect($summary['distribution'])
+                                ->map(fn (array $row): array => [
+                                    $row['label'],
+                                    (int) $row['count'],
+                                    number_format((float) $row['percentage'], 1, '.', '').'%',
+                                ])
+                                ->values()
+                                ->all(),
+                        ],
+                    ],
+                ],
+                [
+                    'name' => 'Pozuntular',
+                    'title' => 'Geofence Pozuntuları',
+                    'filters' => $this->exportFilters($filters, $summary),
+                    'sections' => [
+                        [
+                            'title' => 'Pozuntu dövrləri',
+                            'columns' => [
+                                '№',
+                                'Texnika',
+                                'Texnika növü',
+                                'Mənsubiyyət',
+                                'Layihə',
+                                'Son layihə geozonası',
+                                'Geozonadan çıxış vaxtı',
+                                'Son təsdiqlənmiş vaxt',
+                                'Geozonalardan kənarda müddət',
+                                'Son məkan',
+                                'Pozuntu statusu',
+                            ],
+                            'rows' => $rows
+                                ->values()
+                                ->map(fn (GeofenceViolationReportRow $row, int $index): array => [
+                                    $index + 1,
+                                    $row->equipment_name,
+                                    $row->equipment_type,
+                                    $row->ownership_type === 'ICARE' ? 'İCARƏ' : ($row->ownership_type ?: '-'),
+                                    $row->project_name ?: 'Layihə göstərilməyib',
+                                    $row->last_project_geofence ?: 'Hesabat təqdim etmir',
+                                    $this->formatExportDateTime($row->exited_at),
+                                    $this->formatExportDateTime($row->last_confirmed_at),
+                                    $row->duration_label,
+                                    $row->last_location ?: '-',
+                                    $row->status_label,
+                                ])
+                                ->all(),
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>  $summary
+     * @return array<int, array<int, mixed>>
+     */
+    private function exportFilters(array $filters, array $summary): array
+    {
+        $projectName = $filters['project_id']
+            ? (Project::query()->whereKey($filters['project_id'])->value('name') ?: $filters['project_id'])
+            : 'Bütün layihələr';
+        $status = match ($filters['status']) {
+            'active' => 'Aktiv pozuntu',
+            'completed' => 'Tamamlanmış pozuntu',
+            default => 'Bütün statuslar',
+        };
+
+        return [
+            ['Dövr', $filters['date_from'].' - '.$filters['date_to']],
+            ['Layihə', $projectName],
+            ['Texnika növü', $filters['equipment_type'] ?: 'Bütün icazəli növlər'],
+            ['Mənsubiyyət', $filters['ownership_type'] ?: 'NWC + İCARƏ'],
+            ['Status', $status],
+            ['Axtarış', $filters['search'] ?: '-'],
+            ['Mənbə', GeofenceViolationReportRow::REPORT_NAME],
+            ['Son təsdiqlənmiş hesabat', $this->formatExportDateTime($summary['latest_report_at'])],
+            ['Məlumatın son vaxtı', $this->formatExportDateTime($summary['latest_report_period_to'])],
+            ['Yaradıldı', now(config('app.timezone'))->format('Y-m-d H:i:s')],
+        ];
+    }
+
+    private function formatExportDateTime(mixed $value): string
+    {
+        return $value
+            ? Carbon::parse($value)->timezone(config('app.timezone', 'Asia/Baku'))->format('Y-m-d H:i:s')
+            : '-';
     }
 
     private function facetQuery(): Builder

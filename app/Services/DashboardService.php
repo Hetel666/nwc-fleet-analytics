@@ -794,6 +794,23 @@ class DashboardService
             return $this->efficiency->export($filters);
         }
 
+        if ($block === 'geofence-violations-report') {
+            $normalized = $this->normalizeFilters($filters, 'export');
+            $equipmentType = $normalized['equipment_type_id']
+                ? EquipmentType::query()->whereKey($normalized['equipment_type_id'])->value('name')
+                : null;
+
+            return app(GeofenceViolationsDashboardService::class)->export([
+                'date_from' => $normalized['from'],
+                'date_to' => $normalized['to'],
+                'project_id' => $normalized['project_id'],
+                'equipment_type' => $equipmentType,
+                'ownership_type' => $normalized['ownership_type'],
+                'status' => null,
+                'search' => '',
+            ]);
+        }
+
         [$filters, $block] = $this->normalizeExportRequest($filters, $block);
 
         if (in_array($block, ['actual-work-hours-nwc', 'actual-work-hours-icare'], true)) {

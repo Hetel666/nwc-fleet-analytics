@@ -451,6 +451,7 @@ return [
             'controller' => GeofenceViolationsDashboardController::class,
             'api_endpoints' => [
                 'GET /geofence-violations',
+                'GET /geofence-violations/export',
                 'GET /dashboard/geofence-violations/drilldown',
             ],
             'frontend_widgets' => [

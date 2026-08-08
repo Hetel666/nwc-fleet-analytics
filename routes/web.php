@@ -53,6 +53,9 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/geofence-violations', GeofenceViolationsDashboardController::class)
         ->middleware('dashboard.section:geozones')
         ->name('geofence-violations.index');
+    Route::get('/geofence-violations/export', [GeofenceViolationsDashboardController::class, 'export'])
+        ->middleware('dashboard.section:geozones')
+        ->name('geofence-violations.export');
     Route::get('/dashboard/geofence-violations/drilldown', GeofenceViolationsDrilldownController::class)
         ->middleware('dashboard.section:geozones')
         ->name('dashboard.geofence-violations.drilldown');

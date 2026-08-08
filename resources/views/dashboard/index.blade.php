@@ -185,6 +185,19 @@
             'ownership_type' => $filters['ownership_type'],
         ], fn ($value) => $value !== null && $value !== ''));
     };
+    $geofenceViolationsExportUrl = function (?int $projectId = null) use ($filters, $equipmentTypeOptions): string {
+        $equipmentType = $filters['equipment_type_id']
+            ? $equipmentTypeOptions->firstWhere('id', $filters['equipment_type_id'])?->name
+            : null;
+
+        return route('geofence-violations.export', array_filter([
+            'date_from' => $filters['from'],
+            'date_to' => $filters['to'],
+            'project_id' => $projectId ?? $filters['project_id'],
+            'equipment_type' => $equipmentType,
+            'ownership_type' => $filters['ownership_type'],
+        ], fn ($value) => $value !== null && $value !== ''));
+    };
     $defaultOwnershipExportType = match ($filters['ownership_type']) {
         $nwc => 'nwc',
         $icare => 'icare',
@@ -3169,6 +3182,9 @@
                             </div>
                         </div>
                         <div class="foreign-geofence-actions">
+                            <a href="{{ $geofenceViolationsExportUrl() }}" class="btn btn-sm dashboard-export-button foreign-geofence-action" title="Excel" aria-label="Excel">
+                                <i class="bi bi-download"></i>
+                            </a>
                             <button type="button" class="btn btn-sm dashboard-personal-hide-toggle foreign-geofence-action" title="Hide" aria-label="Hide">
                                 <i class="bi bi-eye-slash"></i>
                             </button>

@@ -9,6 +9,7 @@ use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -17,7 +18,9 @@ use Throwable;
 class SyncMonthlyEfficiencyObjects extends Command
 {
     private const SEGMENT_TOTAL = 'total';
+
     private const SEGMENT_GEOFENCE = 'geofence';
+
     private const SEGMENT_UNKNOWN = 'unknown';
 
     protected $signature = 'monthly-efficiency:sync-objects
@@ -205,83 +208,88 @@ class SyncMonthlyEfficiencyObjects extends Command
     {
         $sid = $wialon->getSessionId();
         $wialon->cleanupReportResult($sid);
-        $result = $wialon->executeReport(
-            $template['resource_id'],
-            $template['template_id'],
-            $equipment->wialon_unit_id,
-            $from->timestamp,
-            $to->timestamp,
-            (int) config('fleet.wialon.engine_hours_report_interval_flags', 0),
-            $sid,
-            false,
-            max(30, (int) config('fleet.wialon.efficiency_report_timeout', 90)),
-        );
 
-        $tables = $result['reportResult']['tables'] ?? [];
-        $engineTable = $this->findTable($tables, 'engine');
-        $geofenceTable = $this->findTable($tables, 'geofence');
+        try {
+            $result = $wialon->executeReport(
+                $template['resource_id'],
+                $template['template_id'],
+                $equipment->wialon_unit_id,
+                $from->timestamp,
+                $to->timestamp,
+                (int) config('fleet.wialon.engine_hours_report_interval_flags', 0),
+                $sid,
+                false,
+                max(30, (int) config('fleet.wialon.efficiency_report_timeout', 90)),
+            );
 
-        if ($engineTable === null || $geofenceTable === null) {
-            throw new RuntimeException('Required Engine hours or Geofence table is missing in report result.');
-        }
+            $tables = $result['reportResult']['tables'] ?? [];
+            $engineTable = $this->findTable($tables, 'engine');
+            $geofenceTable = $this->findTable($tables, 'geofence');
 
-        $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table']);
-        $geofences = $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']);
-        $unknownLabel = (string) config('fleet.wialon.monthly_efficiency_unknown_label', 'Naməlum');
-        $pendingRows = [];
-        $writtenRows = 0;
-        $totalHours = 0.0;
-        $geofenceHours = 0.0;
-        $unknownHours = 0.0;
-        $deletedRows = $this->option('force')
-            ? $this->purgeExistingFacts($equipment, $template, $from, $to)
-            : 0;
-
-        foreach ($totals as $date => $total) {
-            $knownForDate = collect($geofences[$date] ?? []);
-            $knownForDate = $this->normalizeKnownSegments($knownForDate->all(), (float) $total['hours']);
-            $knownHours = round((float) $knownForDate->sum('hours'), 2);
-            $knownMileage = round((float) $knownForDate->sum('mileage'), 2);
-            $unknown = max(0.0, round((float) $total['hours'] - $knownHours, 2));
-            $unknownMileage = max(0.0, round((float) $total['mileage'] - $knownMileage, 2));
-
-            $pendingRows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_TOTAL, 'Total', $total);
-
-            foreach ($knownForDate as $item) {
-                $pendingRows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_GEOFENCE, (string) $item['geofence'], $item);
+            if ($engineTable === null || $geofenceTable === null) {
+                throw new RuntimeException('Required Engine hours or Geofence table is missing in report result.');
             }
 
-            $pendingRows[] = $this->factRow($equipment, $template, $date, self::SEGMENT_UNKNOWN, $unknownLabel, [
-                'hours' => $unknown,
-                'seconds' => (int) round($unknown * 3600),
-                'mileage' => $unknownMileage,
-                'visits' => 0,
-                'started_at' => null,
-                'ended_at' => null,
-                'raw' => ['calculated' => true, 'total_hours' => $total['hours'], 'geofence_hours' => $knownHours],
-            ]);
+            $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table']);
+            $geofences = $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']);
+            $unknownLabel = (string) config('fleet.wialon.monthly_efficiency_unknown_label', 'Naməlum');
+            $rowsToWrite = [];
+            $writtenRows = 0;
+            $totalHours = 0.0;
+            $geofenceHours = 0.0;
+            $unknownHours = 0.0;
+            $deletedRows = 0;
 
-            if (count($pendingRows) >= $flushRows) {
-                $writtenRows += $this->upsertFacts($pendingRows);
-                $pendingRows = [];
+            foreach ($totals as $date => $total) {
+                $knownForDate = collect($geofences[$date] ?? []);
+                $knownForDate = $this->normalizeKnownSegments($knownForDate->all(), (float) $total['hours']);
+                $knownHours = round((float) $knownForDate->sum('hours'), 2);
+                $knownMileage = round((float) $knownForDate->sum('mileage'), 2);
+                $unknown = max(0.0, round((float) $total['hours'] - $knownHours, 2));
+                $unknownMileage = max(0.0, round((float) $total['mileage'] - $knownMileage, 2));
+
+                $rowsToWrite[] = $this->factRow($equipment, $template, $date, self::SEGMENT_TOTAL, 'Total', $total);
+
+                foreach ($knownForDate as $item) {
+                    $rowsToWrite[] = $this->factRow($equipment, $template, $date, self::SEGMENT_GEOFENCE, (string) $item['geofence'], $item);
+                }
+
+                $rowsToWrite[] = $this->factRow($equipment, $template, $date, self::SEGMENT_UNKNOWN, $unknownLabel, [
+                    'hours' => $unknown,
+                    'seconds' => (int) round($unknown * 3600),
+                    'mileage' => $unknownMileage,
+                    'visits' => 0,
+                    'started_at' => null,
+                    'ended_at' => null,
+                    'raw' => ['calculated' => true, 'total_hours' => $total['hours'], 'geofence_hours' => $knownHours],
+                ]);
+
+                $totalHours += (float) $total['hours'];
+                $geofenceHours += $knownHours;
+                $unknownHours += $unknown;
             }
 
-            $totalHours += (float) $total['hours'];
-            $geofenceHours += $knownHours;
-            $unknownHours += $unknown;
+            DB::transaction(function () use ($equipment, $template, $from, $to, $flushRows, $rowsToWrite, &$deletedRows, &$writtenRows): void {
+                $deletedRows = $this->option('force')
+                    ? $this->purgeExistingFacts($equipment, $template, $from, $to)
+                    : 0;
+
+                foreach (array_chunk($rowsToWrite, $flushRows) as $rows) {
+                    $writtenRows += $this->upsertFacts($rows);
+                }
+            });
+
+            return [
+                'days' => count($totals),
+                'total_hours' => round($totalHours, 2),
+                'geofence_hours' => round($geofenceHours, 2),
+                'unknown_hours' => round($unknownHours, 2),
+                'deleted_rows' => $deletedRows,
+                'written_rows' => $writtenRows,
+            ];
+        } finally {
+            $wialon->cleanupReportResult($sid);
         }
-
-        $writtenRows += $this->upsertFacts($pendingRows);
-        $wialon->cleanupReportResult($sid);
-
-        return [
-            'days' => count($totals),
-            'total_hours' => round($totalHours, 2),
-            'geofence_hours' => round($geofenceHours, 2),
-            'unknown_hours' => round($unknownHours, 2),
-            'deleted_rows' => $deletedRows,
-            'written_rows' => $writtenRows,
-        ];
     }
 
     private function purgeExistingFacts(object $equipment, array $template, CarbonImmutable $from, CarbonImmutable $to): int
@@ -432,7 +440,7 @@ class SyncMonthlyEfficiencyObjects extends Command
     }
 
     /** @param array<int, array<string, mixed>> $segments */
-    private function normalizeKnownSegments(array $segments, float $totalHours): \Illuminate\Support\Collection
+    private function normalizeKnownSegments(array $segments, float $totalHours): Collection
     {
         $knownHours = round((float) collect($segments)->sum('hours'), 2);
 
