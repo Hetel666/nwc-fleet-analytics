@@ -153,7 +153,7 @@ return [
         'monthly_efficiency' => [
             'title' => 'Aylıq effektivlik',
             'tab' => 'efficiency',
-            'dashboard_section' => null,
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
             'source_report' => 'daily_stats / efficiency_daily_facts; object mode uses Report for Aylıq effektivlik (unit)',
             'collector_command' => 'monthly-efficiency:sync-objects',
             'manual_command' => 'monthly-efficiency:sync-objects --from=YYYY-MM-DD --to=YYYY-MM-DD --force',

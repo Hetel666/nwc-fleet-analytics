@@ -127,6 +127,9 @@
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-daily-averages" value="daily_averages" autocomplete="off" @checked(old('dashboard_section', 'daily_averages') === 'daily_averages')>
                                 <label class="btn btn-outline-primary text-start" for="section-daily-averages">Orta motosaat göstəricisi / Orta yürüş göstəricisi</label>
 
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-monthly-efficiency" value="monthly_efficiency" autocomplete="off" @checked(old('dashboard_section') === 'monthly_efficiency')>
+                                <label class="btn btn-outline-primary text-start" for="section-monthly-efficiency">Aylıq effektivlik</label>
+
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-efficiency" value="efficiency" autocomplete="off" @checked(old('dashboard_section') === 'efficiency')>
                                 <label class="btn btn-outline-primary text-start" for="section-efficiency">Effektivlik</label>
 
@@ -244,6 +247,7 @@
                                     'daytime_efficiency' => 'Effektivlik gündüz',
                                     'nighttime_efficiency' => 'Effektivlik gecə',
                                     'night_day_efficiency' => 'Gün daxilində gecə effektivliyi',
+                                    'monthly_efficiency' => 'Aylıq effektivlik',
                                     'top_working_units' => 'Top 20',
                                     'geofence_outside' => 'Geofence Transferləri',
                                     'geofence_violations' => 'Geofence Pozuntuları',

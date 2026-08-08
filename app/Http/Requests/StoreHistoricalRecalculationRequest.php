@@ -57,6 +57,11 @@ class StoreHistoricalRecalculationRequest extends FormRequest
                 $validator->errors()->add('project_ids', 'Seçilmiş layihələr üçün ən azı bir layihə seçilməlidir.');
             }
 
+            if ($this->input('dashboard_section') === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY
+                && $this->input('scope') === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS) {
+                $validator->errors()->add('scope', 'Aylıq effektivlik yalnız Bütün layihələr rejimində yenilənə bilər.');
+            }
+
             if (! $this->filled(['date_from', 'date_to'])) {
                 return;
             }

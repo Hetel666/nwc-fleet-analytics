@@ -555,6 +555,23 @@ class HistoricalRecalculationService
     private function createTasks(HistoricalRecalculation $run, array $payload): void
     {
         if ($this->needsFetch($payload['operation'], $payload['dashboard_section'] ?? null)) {
+            if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY) {
+                HistoricalRecalculationTask::query()->updateOrCreate(
+                    [
+                        'historical_recalculation_id' => $run->id,
+                        'operation' => HistoricalRecalculation::OPERATION_FETCH,
+                        'stat_date' => $payload['date_from'],
+                        'project_id' => null,
+                        'ownership_type' => null,
+                    ],
+                    ['status' => HistoricalRecalculationTask::STATUS_PENDING]
+                );
+
+                $this->refreshProgress($run);
+
+                return;
+            }
+
             $dates = ($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS
                 ? collect([$payload['date_from']])
                 : $this->dates($payload['date_from'], $payload['date_to'], $payload['timezone']);
@@ -699,6 +716,13 @@ class HistoricalRecalculationService
     {
         $projectIds = $this->selectedProjectIds($payload);
 
+        if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY) {
+            return collect([(object) [
+                'project_id' => null,
+                'ownership_type' => null,
+            ]]);
+        }
+
         if (in_array(($payload['dashboard_section'] ?? null), [
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
@@ -769,6 +793,10 @@ class HistoricalRecalculationService
 
     private function needsFetch(string $operation, ?string $dashboardSection = null): bool
     {
+        if ($dashboardSection === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY) {
+            return true;
+        }
+
         if (in_array($dashboardSection, [
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
@@ -787,6 +815,10 @@ class HistoricalRecalculationService
 
     private function fetchTaskCount(array $payload, Collection $dates, Collection $targets): int
     {
+        if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY) {
+            return 1;
+        }
+
         if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS) {
             return $targets->count();
         }
@@ -801,6 +833,7 @@ class HistoricalRecalculationService
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
+            HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
             HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,

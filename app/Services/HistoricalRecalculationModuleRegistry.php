@@ -8,6 +8,7 @@ use App\Models\HistoricalRecalculation;
 use App\Models\HistoricalRecalculationTask;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -51,6 +52,15 @@ class HistoricalRecalculationModuleRegistry
                     'engine_hours_report_unit_days',
                     'wialon_report_sync_items',
                 ],
+                'aliases' => [],
+            ],
+            HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY => [
+                'label' => 'Aylıq effektivlik',
+                'handler' => 'executeMonthlyEfficiency',
+                'service' => 'App\\Console\\Commands\\SyncMonthlyEfficiencyObjects',
+                'job' => RunHistoricalRecalculationTaskJob::class,
+                'queue' => $queue,
+                'result_tables' => ['monthly_efficiency_unit_geofence_facts'],
                 'aliases' => [],
             ],
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => [
@@ -182,6 +192,23 @@ class HistoricalRecalculationModuleRegistry
     private function executeDaytimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
         return $this->daytimeEfficiency->execute($run, $task);
+    }
+
+    private function executeMonthlyEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
+    {
+        $this->runArtisanOrFail('monthly-efficiency:sync-objects', array_filter([
+            '--from' => $run->date_from->toDateString(),
+            '--to' => $run->date_to->toDateString(),
+            '--force' => (bool) $run->force,
+            '--unit-chunk' => 10,
+            '--flush-rows' => 100,
+        ], $this->hasValue(...)));
+
+        return DB::table('monthly_efficiency_unit_geofence_facts')
+            ->whereBetween('stat_date', [$run->date_from->toDateString(), $run->date_to->toDateString()])
+            ->where('segment_type', 'total')
+            ->distinct('wialon_unit_id')
+            ->count('wialon_unit_id');
     }
 
     private function executeNighttimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int

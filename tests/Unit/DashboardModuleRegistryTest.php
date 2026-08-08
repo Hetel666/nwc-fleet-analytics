@@ -32,7 +32,7 @@ class DashboardModuleRegistryTest extends TestCase
                 ->has('geofence_violations')
         );
         $this->assertTrue(
-            $registry->forHistoricalSection(null)
+            $registry->forHistoricalSection(HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY)
                 ->has('monthly_efficiency')
         );
     }

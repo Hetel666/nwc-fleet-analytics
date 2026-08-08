@@ -239,6 +239,82 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertDatabaseCount('jobs', 0);
     }
 
+    public function test_preview_for_monthly_efficiency_uses_single_object_sync_task(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-01',
+                'date_to' => '2026-07-31',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 31,
+                'project_groups' => 1,
+                'fetch_tasks' => 1,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 1,
+            ])
+            ->assertJsonPath('dry_run.dashboard_code', 'monthly_efficiency')
+            ->assertJsonPath('dry_run.read_only', true)
+            ->assertJsonPath('dry_run.writes_shared_tables', false)
+            ->assertJsonPath('dry_run.tables.0.table', 'monthly_efficiency_unit_geofence_facts');
+    }
+
+    public function test_monthly_efficiency_history_creates_one_global_fetch_task(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+
+        $run = app(HistoricalRecalculationService::class)->createRun([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'force' => true,
+        ], $admin);
+
+        $this->assertSame(HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY, $run->dashboard_section);
+        $this->assertSame(1, $run->total_tasks);
+        $this->assertSame(1, $run->tasks()->count());
+
+        $task = $run->tasks()->firstOrFail();
+        $this->assertSame(HistoricalRecalculation::OPERATION_FETCH, $task->operation);
+        $this->assertSame('2026-07-01', $task->stat_date->toDateString());
+        $this->assertNull($task->project_id);
+        $this->assertNull($task->ownership_type);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+        Queue::assertNotPushed(FinalizeHistoricalRecalculationJob::class);
+    }
+
+    public function test_monthly_efficiency_rejects_selected_projects_scope(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Monthly selected project', 'active' => true]);
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-01',
+                'date_to' => '2026-07-31',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('scope');
+    }
+
     public function test_preview_for_top20_section_has_no_aggregate_tasks(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
@@ -791,6 +867,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame([
             HistoricalRecalculation::SECTION_DAILY_AVERAGES,
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
             HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
