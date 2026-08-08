@@ -38,4 +38,17 @@ final class MonthlyEfficiencyStatus
             default => self::NORMAL,
         };
     }
+
+    public static function classifyForPeriod(float $hours, int $days): string
+    {
+        $days = max(1, $days);
+        $criticalLimit = $days * 5.0;
+        $normalLimit = $days * 7.0;
+
+        return match (true) {
+            $hours < $criticalLimit => self::CRITICAL_LOW,
+            $hours <= $normalLimit => self::LOW,
+            default => self::NORMAL,
+        };
+    }
 }

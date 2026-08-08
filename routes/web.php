@@ -73,6 +73,9 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/api/dashboard/monthly-efficiency/summary', [MonthlyEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.monthly-efficiency.summary');
         Route::get('/api/dashboard/monthly-efficiency/projects', [MonthlyEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.monthly-efficiency.projects');
         Route::get('/api/dashboard/monthly-efficiency/units', [MonthlyEfficiencyDashboardController::class, 'units'])->name('api.dashboard.monthly-efficiency.units');
+        Route::get('/api/dashboard/monthly-efficiency/objects', [MonthlyEfficiencyDashboardController::class, 'objects'])->name('api.dashboard.monthly-efficiency.objects');
+        Route::get('/api/dashboard/monthly-efficiency/object-geofences', [MonthlyEfficiencyDashboardController::class, 'objectGeofences'])->name('api.dashboard.monthly-efficiency.object-geofences');
+        Route::get('/api/dashboard/monthly-efficiency/object-geofence-days', [MonthlyEfficiencyDashboardController::class, 'objectGeofenceDays'])->name('api.dashboard.monthly-efficiency.object-geofence-days');
         Route::get('/api/dashboard/monthly-efficiency/export', [MonthlyEfficiencyDashboardController::class, 'export'])->name('api.dashboard.monthly-efficiency.export');
         Route::get('/api/dashboard/daytime-efficiency/summary', [DaytimeEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.daytime-efficiency.summary');
         Route::get('/api/dashboard/daytime-efficiency/projects', [DaytimeEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.daytime-efficiency.projects');

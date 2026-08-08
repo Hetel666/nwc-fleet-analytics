@@ -209,6 +209,24 @@ class WialonCatalogTest extends TestCase
         $this->assertSame('[masked]', $geofence->raw_metadata_json['sid']);
     }
 
+    public function test_monthly_efficiency_wialon_diagnosis_passes_when_dependencies_exist(): void
+    {
+        $this->seedMonthlyEfficiencyWialonDependencies();
+
+        $this->artisan('fleet:diagnose-monthly-efficiency-wialon')
+            ->expectsOutputToContain('Ready for backend sync implementation')
+            ->assertSuccessful();
+    }
+
+    public function test_monthly_efficiency_wialon_diagnosis_fails_when_geofence_template_is_missing(): void
+    {
+        $this->seedMonthlyEfficiencyWialonDependencies(includeGeofenceTemplate: false);
+
+        $this->artisan('fleet:diagnose-monthly-efficiency-wialon')
+            ->expectsOutputToContain('Missing: geofence_template')
+            ->assertExitCode(1);
+    }
+
     public function test_projects_manage_permission_allows_project_index_without_full_admin(): void
     {
         $viewer = User::factory()->create([
@@ -220,5 +238,52 @@ class WialonCatalogTest extends TestCase
         $this->actingAs($viewer)
             ->get(route('projects.index'))
             ->assertOk();
+    }
+
+    private function seedMonthlyEfficiencyWialonDependencies(bool $includeGeofenceTemplate = true): void
+    {
+        \Illuminate\Support\Facades\DB::table('wialon_resources')->insert([
+            'wialon_resource_id' => '601701680',
+            'name' => 'Main report resource',
+            'report_templates_count' => 2,
+            'geofences_count' => 31,
+            'geofence_groups_count' => 1,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        \Illuminate\Support\Facades\DB::table('wialon_report_templates')->insert([
+            [
+                'resource_id' => '601701680',
+                'wialon_template_id' => '19',
+                'name' => 'Qrup report Engine hours (api)',
+                'report_type' => 'avl_unit_group',
+                'usage_status' => 'used',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            ...($includeGeofenceTemplate ? [[
+                'resource_id' => '601701680',
+                'wialon_template_id' => '119',
+                'name' => 'Aylıq effektivlik Engine hours (api)',
+                'report_type' => 'avl_unit_group',
+                'usage_status' => 'used',
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]] : []),
+        ]);
+
+        \Illuminate\Support\Facades\DB::table('wialon_geofence_groups')->insert([
+            'resource_id' => '601701680',
+            'wialon_geofence_group_id' => '31',
+            'name' => 'Aylıq effektivlik üçün',
+            'geofences_count' => 31,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

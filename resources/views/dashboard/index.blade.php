@@ -4916,7 +4916,12 @@ const drilldownSortableColumns = new Set([
     'daytime_hours',
     'overtime_hours',
     'total_hours',
+    'known_hours',
+    'unknown_hours',
     'engine_hours',
+    'motosaat',
+    'yurush',
+    'visits',
     'mileage',
     'data_status',
     'wialon_id',
@@ -5010,6 +5015,23 @@ const renderDrilldownRows = rows => {
             tr.title = `${row.project || 'Layihə'} texnika siyahısını aç`;
         }
 
+        if (drilldownState.mode === 'monthly_efficiency_objects' && row.wialon_unit_id) {
+            tr.className = 'dashboard-project-type-row';
+            tr.setAttribute('role', 'button');
+            tr.tabIndex = 0;
+            tr.dataset.wialonUnitId = row.wialon_unit_id;
+            tr.dataset.unitName = row.registration_number || row.name || '';
+            tr.title = `${row.registration_number || row.name || 'Texnika'} geofence bГ¶lgГјsГјnГј aГ§`;
+        }
+
+        if (drilldownState.mode === 'monthly_efficiency_geofences' && row.geofence_name) {
+            tr.className = 'dashboard-project-type-row';
+            tr.setAttribute('role', 'button');
+            tr.tabIndex = 0;
+            tr.dataset.geofenceName = row.geofence_name;
+            tr.title = `${row.geofence_name || 'Geofence'} gГјnlЙ™r ГјzrЙ™ aГ§`;
+        }
+
         columns.forEach(key => {
             const td = document.createElement('td');
             const formattedDurationKey = {
@@ -5020,15 +5042,17 @@ const renderDrilldownRows = rows => {
             const value = key === 'number'
                 ? rowNumber
                 : (formattedDurationKey && row[formattedDurationKey] !== undefined ? row[formattedDurationKey] : row[key]);
-            const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)
+            const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)
                 && ['nwc_count', 'icare_count', 'count'].includes(key);
             const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-                || (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'project');
+                || (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+                || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
+                || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
             td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
             td.classList.toggle('dashboard-project-type-name', isSummaryName);
             td.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
+            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
             tr.appendChild(td);
         });
 
@@ -5063,10 +5087,10 @@ const renderDrilldownColumns = columns => {
     if (drilldownColgroup) {
         drilldownColgroup.textContent = '';
 
-        if (['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)) {
+        if (['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)) {
             Object.keys(drilldownState.columns).forEach(key => {
                 const col = document.createElement('col');
-                col.classList.toggle('dashboard-project-type-name', key === 'vehicle_type' || key === 'project');
+                col.classList.toggle('dashboard-project-type-name', key === 'vehicle_type' || key === 'project' || key === 'registration_number' || key === 'geofence_name');
                 col.classList.toggle('dashboard-project-type-number', ['nwc_count', 'icare_count', 'count'].includes(key));
                 drilldownColgroup.appendChild(col);
             });
@@ -5075,14 +5099,16 @@ const renderDrilldownColumns = columns => {
 
     Object.entries(drilldownState.columns).forEach(([key, label]) => {
         const th = document.createElement('th');
-        const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)
+        const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)
             && ['nwc_count', 'icare_count', 'count'].includes(key);
         const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-            || (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'project');
+            || (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+            || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
+            || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
         th.classList.toggle('dashboard-project-type-name', isSummaryName);
         th.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
+        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
 
         if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)) {
             const button = document.createElement('button');
@@ -5175,6 +5201,7 @@ const resetDashboardDrilldownState = (options = {}) => {
         columns: defaultDrilldownColumns(),
         endpointUrl: dashboardPage?.dataset.dashboardDrilldownUrl || '',
         unitsEndpointUrl: '',
+        daysEndpointUrl: '',
         exportUrl: '',
         exportEnabled: true,
         mode: 'fleet',
@@ -5293,9 +5320,9 @@ const loadDashboardDrilldown = async () => {
 
 const configureDrilldownMode = (mode, filters = {}) => {
     const isMetricDrilldown = Boolean(filters.metric);
-    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(mode);
+    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(mode);
 
-    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'night_day_efficiency_projects', 'nighttime_efficiency_projects'].includes(mode));
+    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'night_day_efficiency_projects', 'nighttime_efficiency_projects'].includes(mode));
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
     drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
 
@@ -5310,13 +5337,15 @@ const openDashboardDrilldown = (filters = {}) => {
     const nextFilters = cleanDrilldownFilters(filters);
     const endpointUrl = nextFilters.endpoint_url || dashboardPage?.dataset.dashboardDrilldownUrl || '';
     const unitsEndpointUrl = nextFilters.units_endpoint_url || '';
+    const daysEndpointUrl = nextFilters.days_endpoint_url || '';
     const exportUrl = nextFilters.export_url || '';
     const mode = nextFilters.drilldown_mode
         || (nextFilters.view === 'equipment_types' ? 'project_types' : (nextFilters.view === 'projects' ? 'efficiency_projects' : 'fleet'));
-    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(mode);
+    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(mode);
 
     delete nextFilters.endpoint_url;
     delete nextFilters.units_endpoint_url;
+    delete nextFilters.days_endpoint_url;
     delete nextFilters.export_url;
     delete nextFilters.export_enabled;
     delete nextFilters.drilldown_mode;
@@ -5347,6 +5376,7 @@ const openDashboardDrilldown = (filters = {}) => {
     drilldownState.title = nextFilters.title || '';
     drilldownState.endpointUrl = endpointUrl;
     drilldownState.unitsEndpointUrl = unitsEndpointUrl;
+    drilldownState.daysEndpointUrl = daysEndpointUrl;
     drilldownState.exportUrl = exportUrl;
     drilldownState.exportEnabled = exportEnabled;
     drilldownState.mode = mode;
@@ -5374,11 +5404,13 @@ const openSummaryUnits = trigger => {
     const isProjectTypeSummary = drilldownState.mode === 'project_types' && trigger?.dataset.equipmentTypeId;
     const isEfficiencyProjectSummary = drilldownState.mode === 'efficiency_projects' && trigger?.dataset.projectId;
     const isMonthlyEfficiencyProjectSummary = drilldownState.mode === 'monthly_efficiency_projects' && trigger?.dataset.projectId;
+    const isMonthlyEfficiencyObjectSummary = drilldownState.mode === 'monthly_efficiency_objects' && trigger?.dataset.wialonUnitId;
+    const isMonthlyEfficiencyGeofenceSummary = drilldownState.mode === 'monthly_efficiency_geofences' && trigger?.dataset.geofenceName;
     const isDaytimeEfficiencyProjectSummary = drilldownState.mode === 'daytime_efficiency_projects' && trigger?.dataset.projectId;
     const isNighttimeEfficiencyProjectSummary = drilldownState.mode === 'nighttime_efficiency_projects' && trigger?.dataset.projectId;
     const isNightDayEfficiencyProjectSummary = drilldownState.mode === 'night_day_efficiency_projects' && trigger?.dataset.projectId;
 
-    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isMonthlyEfficiencyProjectSummary && !isDaytimeEfficiencyProjectSummary && !isNighttimeEfficiencyProjectSummary && !isNightDayEfficiencyProjectSummary) {
+    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary && !isDaytimeEfficiencyProjectSummary && !isNighttimeEfficiencyProjectSummary && !isNightDayEfficiencyProjectSummary) {
         return;
     }
 
@@ -5388,6 +5420,7 @@ const openSummaryUnits = trigger => {
         baseFilters: { ...drilldownState.baseFilters },
         endpointUrl: drilldownState.endpointUrl,
         unitsEndpointUrl: drilldownState.unitsEndpointUrl,
+        daysEndpointUrl: drilldownState.daysEndpointUrl,
         exportUrl: drilldownState.exportUrl,
         exportEnabled: drilldownState.exportEnabled,
         mode: drilldownState.mode,
@@ -5408,6 +5441,18 @@ const openSummaryUnits = trigger => {
     if (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary) {
         nextFilters.project_id = trigger.dataset.projectId;
     }
+    if (isMonthlyEfficiencyObjectSummary) {
+        nextFilters.view = 'geofences';
+        nextFilters.wialon_unit_id = trigger.dataset.wialonUnitId;
+        nextFilters.sort = 'motosaat';
+        nextFilters.direction = 'desc';
+    }
+    if (isMonthlyEfficiencyGeofenceSummary) {
+        nextFilters.view = 'days';
+        nextFilters.geofence_name = trigger.dataset.geofenceName;
+        nextFilters.sort = 'date';
+        nextFilters.direction = 'asc';
+    }
 
     drilldownController?.abort();
     drilldownState.filters = nextFilters;
@@ -5421,13 +5466,25 @@ const openSummaryUnits = trigger => {
             ? (trigger.dataset.projectName || 'Layihə')
             : (trigger.dataset.equipmentTypeName || 'Texnika növü')
     }`;
+    if (isMonthlyEfficiencyObjectSummary) {
+        drilldownState.title = `${parent.title} - ${trigger.dataset.unitName || 'Texnika'}`;
+    }
+    if (isMonthlyEfficiencyGeofenceSummary) {
+        drilldownState.title = `${parent.title} - ${trigger.dataset.geofenceName || 'Geofence'}`;
+    }
     drilldownState.exportEnabled = true;
-    if (isMonthlyEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary) {
+    if (isMonthlyEfficiencyObjectSummary) {
+        drilldownState.endpointUrl = drilldownState.unitsEndpointUrl;
+        drilldownState.exportEnabled = false;
+    } else if (isMonthlyEfficiencyGeofenceSummary) {
+        drilldownState.endpointUrl = drilldownState.daysEndpointUrl;
+        drilldownState.exportEnabled = false;
+    } else if (isMonthlyEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary) {
         drilldownState.endpointUrl = drilldownState.unitsEndpointUrl;
     }
     drilldownState.mode = isNighttimeEfficiencyProjectSummary
         ? 'nighttime_efficiency_units'
-        : (isNightDayEfficiencyProjectSummary ? 'night_day_efficiency_units' : (isMonthlyEfficiencyProjectSummary ? 'monthly_efficiency_units' : (isDaytimeEfficiencyProjectSummary ? 'daytime_efficiency_units' : 'fleet')));
+        : (isNightDayEfficiencyProjectSummary ? 'night_day_efficiency_units' : (isMonthlyEfficiencyGeofenceSummary ? 'monthly_efficiency_geofence_days' : (isMonthlyEfficiencyObjectSummary ? 'monthly_efficiency_geofences' : (isMonthlyEfficiencyProjectSummary ? 'monthly_efficiency_units' : (isDaytimeEfficiencyProjectSummary ? 'daytime_efficiency_units' : 'fleet')))));
     drilldownState.parent = parent;
     drilldownBack?.classList.remove('d-none');
     if (drilldownSearch) {
@@ -5457,6 +5514,7 @@ const restoreDrilldownSummary = () => {
     drilldownState.title = parent.title;
     drilldownState.endpointUrl = parent.endpointUrl;
     drilldownState.unitsEndpointUrl = parent.unitsEndpointUrl;
+    drilldownState.daysEndpointUrl = parent.daysEndpointUrl;
     drilldownState.exportUrl = parent.exportUrl;
     drilldownState.exportEnabled = parent.exportEnabled;
     drilldownState.mode = parent.mode;
@@ -5543,6 +5601,7 @@ document.addEventListener('click', event => {
         geofence_violation: trigger.dataset.drilldownGeofenceViolation || undefined,
         endpoint_url: trigger.dataset.drilldownEndpointUrl || undefined,
         units_endpoint_url: trigger.dataset.drilldownUnitsEndpointUrl || undefined,
+        days_endpoint_url: trigger.dataset.drilldownDaysEndpointUrl || undefined,
         export_url: trigger.dataset.drilldownExportUrl || undefined,
         export_enabled: trigger.dataset.drilldownExportEnabled === '0' ? false : undefined,
         current_geozone_project_id: trigger.dataset.drilldownCurrentGeozoneProjectId || undefined,
@@ -5703,27 +5762,32 @@ const projectWorkCategoryIcareDonutDrilldownItems = workCategoryDonutKeys.map((k
 const monthlyEfficiencyEndpoints = {
     projects: @json(route('api.dashboard.monthly-efficiency.projects')),
     units: @json(route('api.dashboard.monthly-efficiency.units')),
+    objects: @json(route('api.dashboard.monthly-efficiency.objects')),
+    objectGeofences: @json(route('api.dashboard.monthly-efficiency.object-geofences')),
+    objectGeofenceDays: @json(route('api.dashboard.monthly-efficiency.object-geofence-days')),
     export: @json(route('api.dashboard.monthly-efficiency.export')),
 };
 const monthlyEfficiencyNwcDrilldownItems = monthlyEfficiencyKeys.map((key, index) => ({
     title: `${labels.nwc} üzrə — ${monthlyEfficiencyLabels[index]}`,
     ownership: 'nwc',
-    view: 'projects',
-    drilldown_mode: 'monthly_efficiency_projects',
+    view: 'objects',
+    drilldown_mode: 'monthly_efficiency_objects',
     status: key,
-    endpoint_url: monthlyEfficiencyEndpoints.projects,
-    units_endpoint_url: monthlyEfficiencyEndpoints.units,
+    endpoint_url: monthlyEfficiencyEndpoints.objects,
+    units_endpoint_url: monthlyEfficiencyEndpoints.objectGeofences,
+    days_endpoint_url: monthlyEfficiencyEndpoints.objectGeofenceDays,
     export_url: monthlyEfficiencyEndpoints.export,
     export_enabled: false,
 }));
 const monthlyEfficiencyIcareDrilldownItems = monthlyEfficiencyKeys.map((key, index) => ({
     title: `${labels.icare} üzrə — ${monthlyEfficiencyLabels[index]}`,
     ownership: 'icare',
-    view: 'projects',
-    drilldown_mode: 'monthly_efficiency_projects',
+    view: 'objects',
+    drilldown_mode: 'monthly_efficiency_objects',
     status: key,
-    endpoint_url: monthlyEfficiencyEndpoints.projects,
-    units_endpoint_url: monthlyEfficiencyEndpoints.units,
+    endpoint_url: monthlyEfficiencyEndpoints.objects,
+    units_endpoint_url: monthlyEfficiencyEndpoints.objectGeofences,
+    days_endpoint_url: monthlyEfficiencyEndpoints.objectGeofenceDays,
     export_url: monthlyEfficiencyEndpoints.export,
     export_enabled: false,
 }));

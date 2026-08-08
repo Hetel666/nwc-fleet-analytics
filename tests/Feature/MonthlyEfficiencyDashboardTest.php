@@ -375,6 +375,78 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(1, $icare[MonthlyEfficiencyStatus::NORMAL]);
     }
 
+    public function test_monthly_efficiency_object_dashboard_uses_only_requested_types_and_geofence_drilldown(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for Aylıq effektivlik');
+
+        $user = User::factory()->create(['active' => true]);
+        $project = Project::query()->create(['name' => 'Object source', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
+        $bulldozer = EquipmentType::query()->create(['name' => 'Bulldozer']);
+        $loader = EquipmentType::query()->create(['name' => 'Loader']);
+
+        $dump = $this->seedEquipment($project, $dumpTruck, '10-AF-065', Equipment::OWNERSHIP_NWC);
+        $excavatorUnit = $this->seedEquipment($project, $excavator, '10-EX-100', Equipment::OWNERSHIP_NWC);
+        $bulldozerUnit = $this->seedEquipment($project, $bulldozer, '10-BD-100', Equipment::OWNERSHIP_NWC);
+        $loaderUnit = $this->seedEquipment($project, $loader, '10-LD-100', Equipment::OWNERSHIP_NWC);
+
+        $this->seedObjectFact($dump, '2026-07-01', 'total', 'Total', 8.0, 20.0);
+        $this->seedObjectFact($dump, '2026-07-01', 'geofence', 'Füzuli Xocavənd yolu', 7.0, 18.0, 1);
+        $this->seedObjectFact($dump, '2026-07-01', 'unknown', 'Naməlum', 1.0, 2.0);
+        $this->seedObjectFact($excavatorUnit, '2026-07-01', 'total', 'Total', 12.0, 30.0);
+        $this->seedObjectFact($bulldozerUnit, '2026-07-01', 'total', 'Total', 16.0, 40.0);
+        $this->seedObjectFact($loaderUnit, '2026-07-01', 'total', 'Total', 24.0, 50.0);
+
+        $summary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(3, $summary['total']);
+        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
+        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::LOW]);
+        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::NORMAL]);
+
+        $objects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.objects', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+            'ownership' => 'nwc',
+            'status' => 'critical_low',
+        ]))->assertOk()->json('data');
+
+        $this->assertCount(1, $objects);
+        $this->assertSame('10-AF-065', $objects[0]['registration_number']);
+        $this->assertSame('Dump Truck', $objects[0]['vehicle_type']);
+        $this->assertSame('8.00', $objects[0]['total_hours']);
+        $this->assertSame('7.00', $objects[0]['known_hours']);
+        $this->assertSame('1.00', $objects[0]['unknown_hours']);
+
+        $geofences = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofences', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+            'ownership' => 'nwc',
+            'wialon_unit_id' => '10-AF-065',
+        ]))->assertOk()->json('data');
+
+        $this->assertEqualsCanonicalizing(
+            ['Füzuli Xocavənd yolu', 'Naməlum'],
+            collect($geofences)->pluck('geofence_name')->all(),
+        );
+
+        $days = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofence-days', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+            'ownership' => 'nwc',
+            'wialon_unit_id' => '10-AF-065',
+            'geofence_name' => 'Füzuli Xocavənd yolu',
+        ]))->assertOk()->json('data');
+
+        $this->assertCount(1, $days);
+        $this->assertSame('2026-07-01', $days[0]['date']);
+        $this->assertSame('7.00', $days[0]['motosaat']);
+    }
+
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void
     {
         Queue::fake();
@@ -406,6 +478,45 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         ]);
 
         $this->seedDailyFact($project, $unitId, strtoupper($unitId), $type->name, $ownership, '2026-05-01', $hours);
+    }
+
+    private function seedEquipment(Project $project, EquipmentType $type, string $unitId, string $ownership): Equipment
+    {
+        return Equipment::query()->create([
+            'name' => $unitId,
+            'registration_number' => $unitId,
+            'wialon_unit_id' => $unitId,
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'ownership_type' => $ownership,
+            'active' => true,
+        ]);
+    }
+
+    private function seedObjectFact(Equipment $equipment, string $date, string $segment, string $geofence, float $hours, float $mileage, int $visits = 0): void
+    {
+        DB::table('monthly_efficiency_unit_geofence_facts')->insert([
+            'stat_date' => $date,
+            'equipment_id' => $equipment->id,
+            'wialon_unit_id' => (string) $equipment->wialon_unit_id,
+            'unit_name' => (string) $equipment->name,
+            'registration_number' => $equipment->registration_number,
+            'vehicle_type' => $equipment->type->name,
+            'ownership_type' => $equipment->ownership_type,
+            'segment_type' => $segment,
+            'geofence_name' => $geofence,
+            'engine_hours_decimal' => $hours,
+            'engine_seconds' => (int) round($hours * 3600),
+            'mileage_km' => $mileage,
+            'visits_count' => $visits,
+            'started_at' => $date.' 00:00:00',
+            'ended_at' => $date.' 23:59:59',
+            'source_report_template_id' => 25,
+            'source_report_name' => 'Report for Aylıq effektivlik',
+            'raw_row_json' => json_encode(['test' => true], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function seedDailyFact(Project $project, string $unitId, string $unitName, string $vehicleType, string $ownership, string $date, float $hours, ?array $rawRow = null, string $sourceReportName = 'Qrup report Engine hours (api)'): void

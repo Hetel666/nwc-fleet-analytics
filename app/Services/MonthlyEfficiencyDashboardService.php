@@ -25,6 +25,14 @@ class MonthlyEfficiencyDashboardService
 
     private const ALLOWED_TYPES = FleetVehicleType::EFFICIENCY_TYPES;
 
+    private const OBJECT_ALLOWED_TYPES = FleetVehicleType::MONTHLY_OBJECT_EFFICIENCY_TYPES;
+
+    private const SEGMENT_TOTAL = 'total';
+
+    private const SEGMENT_GEOFENCE = 'geofence';
+
+    private const SEGMENT_UNKNOWN = 'unknown';
+
     private const EXCLUDED_PROJECT_NAMES = [
         'Layihəsiz',
         'Təmir',
@@ -56,6 +64,11 @@ class MonthlyEfficiencyDashboardService
         }
 
         $filters = $this->normalizeFilters([...$filters, 'ownership_type' => $ownership]);
+
+        if ($this->objectFactsAvailable($filters)) {
+            return $this->objectSummaryForOwnership($filters);
+        }
+
         $rows = $this->monthlyUnitRows($filters, false)->groupBy('monthly_status');
         $summary = collect(MonthlyEfficiencyStatus::labels())
             ->mapWithKeys(fn (string $label, string $status): array => [
@@ -90,6 +103,21 @@ class MonthlyEfficiencyDashboardService
         }
 
         $filters = $this->normalizeFilters($filters);
+        if ($this->objectFactsAvailable($filters)) {
+            $counts = $this->monthlyObjectRows($filters)
+                ->groupBy('monthly_status')
+                ->map(fn (Collection $rows): int => $rows->count());
+
+            return collect(MonthlyEfficiencyStatus::labels())
+                ->map(fn (string $label, string $status): array => [
+                    'status' => $status,
+                    'label' => $label,
+                    'count' => (int) ($counts[$status] ?? 0),
+                ])
+                ->values()
+                ->all();
+        }
+
         $counts = $this->monthlyUnitRows($filters, $this->usesProjectScope($filters))
             ->groupBy('monthly_status')
             ->map(fn (Collection $rows): int => $rows->count());
@@ -141,6 +169,107 @@ class MonthlyEfficiencyDashboardService
                 'total_current_hours' => number_format((float) $row->total_current_hours, 2, '.', ''),
                 'total_normative_hours' => number_format((float) $row->total_normative_hours, 2, '.', ''),
                 'efficiency_percent' => number_format((float) $row->efficiency_percent, 2, '.', '').'%',
+            ]);
+
+        return $this->paginateCollection($rows, $filters);
+    }
+
+    public function paginateObjects(array $filters): LengthAwarePaginator
+    {
+        $filters = $this->normalizeFilters($filters);
+        $sorts = [
+            'name' => 'unit_name',
+            'registration_number' => 'registration_number',
+            'vehicle_type' => 'vehicle_type',
+            'ownership' => 'ownership',
+            'total_hours' => 'total_engine_hours',
+            'known_hours' => 'known_engine_hours',
+            'unknown_hours' => 'unknown_engine_hours',
+            'mileage' => 'total_mileage_km',
+            'status' => 'monthly_status',
+        ];
+        $sort = $sorts[$filters['sort']] ?? 'total_engine_hours';
+        $direction = $filters['direction'] ?: ($filters['status'] === MonthlyEfficiencyStatus::NORMAL ? 'desc' : 'asc');
+
+        $rows = $this->monthlyObjectRows($filters)
+            ->sortBy([
+                [$sort, $direction],
+                ['unit_name', 'asc'],
+            ])
+            ->values()
+            ->map(fn (object $row): array => [
+                'number' => null,
+                'registration_number' => $row->registration_number ?: $row->unit_name,
+                'name' => $row->unit_name,
+                'vehicle_type' => $row->vehicle_type,
+                'ownership' => $this->ownershipLabel($row->ownership),
+                'period' => $row->period_from.' - '.$row->period_to,
+                'synced_days_count' => (int) $row->synced_days_count,
+                'total_hours' => number_format((float) $row->total_engine_hours, 2, '.', ''),
+                'known_hours' => number_format((float) $row->known_engine_hours, 2, '.', ''),
+                'unknown_hours' => number_format((float) $row->unknown_engine_hours, 2, '.', ''),
+                'mileage' => number_format((float) $row->total_mileage_km, 2, '.', ''),
+                'status' => $row->monthly_status,
+                'status_label' => MonthlyEfficiencyStatus::labels()[$row->monthly_status] ?? $row->monthly_status,
+                'wialon_unit_id' => $row->wialon_unit_id,
+            ]);
+
+        return $this->paginateCollection($rows, $filters);
+    }
+
+    public function paginateObjectGeofences(array $filters): LengthAwarePaginator
+    {
+        $filters = $this->normalizeFilters($filters);
+        $unitId = trim((string) ($filters['wialon_unit_id'] ?? ''));
+
+        if ($unitId === '' || ! $this->objectFactsReady()) {
+            return $this->paginateCollection(collect(), $filters);
+        }
+
+        $rows = $this->objectGeofenceRows($filters, $unitId)
+            ->sortBy([
+                ['sort_weight', 'asc'],
+                ['engine_hours_decimal', 'desc'],
+                ['geofence_name', 'asc'],
+            ])
+            ->values()
+            ->map(fn (object $row): array => [
+                'number' => null,
+                'registration_number' => $row->registration_number ?: $row->unit_name,
+                'geofence_name' => $row->geofence_name,
+                'motosaat' => number_format((float) $row->engine_hours_decimal, 2, '.', ''),
+                'yurush' => number_format((float) $row->mileage_km, 2, '.', ''),
+                'visits' => (int) $row->visits_count,
+                'segment_type' => $row->segment_type,
+                'wialon_unit_id' => $row->wialon_unit_id,
+            ]);
+
+        return $this->paginateCollection($rows, $filters);
+    }
+
+    public function paginateObjectGeofenceDays(array $filters): LengthAwarePaginator
+    {
+        $filters = $this->normalizeFilters($filters);
+        $unitId = trim((string) ($filters['wialon_unit_id'] ?? ''));
+        $geofenceName = trim((string) ($filters['geofence_name'] ?? ''));
+
+        if ($unitId === '' || $geofenceName === '' || ! $this->objectFactsReady()) {
+            return $this->paginateCollection(collect(), $filters);
+        }
+
+        $rows = $this->objectGeofenceDayRows($filters, $unitId, $geofenceName)
+            ->sortBy('stat_date')
+            ->values()
+            ->map(fn (object $row): array => [
+                'number' => null,
+                'date' => $row->stat_date,
+                'registration_number' => $row->registration_number ?: $row->unit_name,
+                'geofence_name' => $row->geofence_name,
+                'motosaat' => number_format((float) $row->engine_hours_decimal, 2, '.', ''),
+                'yurush' => number_format((float) $row->mileage_km, 2, '.', ''),
+                'visits' => (int) $row->visits_count,
+                'started_at' => $row->started_at,
+                'ended_at' => $row->ended_at,
             ]);
 
         return $this->paginateCollection($rows, $filters);
@@ -265,6 +394,7 @@ class MonthlyEfficiencyDashboardService
     public function normalizeFilters(array $filters, string $context = 'dashboard'): array
     {
         $period = $this->monthPeriod($filters, $context);
+        $objectPeriod = $this->objectPeriod($filters, $period);
         $ownership = $filters['ownership_type'] ?? $filters['ownership'] ?? null;
         $ownership = match (mb_strtolower((string) $ownership)) {
             'nwc' => Equipment::OWNERSHIP_NWC,
@@ -303,6 +433,8 @@ class MonthlyEfficiencyDashboardService
             'month' => $period['month'],
             'from' => $period['from'],
             'to' => $period['to'],
+            'object_from' => $objectPeriod['from'],
+            'object_to' => $objectPeriod['to'],
             'project_id' => filled($filters['project_id'] ?? null) ? (int) $filters['project_id'] : null,
             'project_ids' => collect($filters['project_ids'] ?? [])->map(fn ($id): int => (int) $id)->filter()->all(),
             'ownership_type' => $ownership,
@@ -314,7 +446,167 @@ class MonthlyEfficiencyDashboardService
             'direction' => ($filters['direction'] ?? '') === 'desc' ? 'desc' : (($filters['direction'] ?? '') === 'asc' ? 'asc' : ''),
             'page' => max(1, (int) ($filters['page'] ?? 1)),
             'per_page' => min(100, max(10, (int) ($filters['per_page'] ?? 20))),
+            'wialon_unit_id' => trim((string) ($filters['wialon_unit_id'] ?? '')),
+            'geofence_name' => trim((string) ($filters['geofence_name'] ?? '')),
         ];
+    }
+
+    private function objectSummaryForOwnership(array $filters): array
+    {
+        $rows = $this->monthlyObjectRows($filters)->groupBy('monthly_status');
+        $summary = collect(MonthlyEfficiencyStatus::labels())
+            ->mapWithKeys(fn (string $label, string $status): array => [
+                $status => (int) $rows->get($status, collect())->count(),
+            ])
+            ->all();
+        $totalUnits = array_sum($summary);
+        $normalUnits = (int) ($summary[MonthlyEfficiencyStatus::NORMAL] ?? 0);
+        $summary['total'] = $totalUnits;
+        $summary['total_current_hours'] = round((float) $rows->flatten(1)->sum(fn (object $row): float => (float) $row->total_engine_hours), 2);
+        $summary['total_normative_hours'] = $this->selectedDaysCount($filters) * 7 * $totalUnits;
+        $summary['efficiency_percent'] = $totalUnits > 0
+            ? round($normalUnits / $totalUnits * 100, 2)
+            : 0.0;
+        $summary['month'] = $filters['month'];
+        $summary['period'] = ['from' => $filters['object_from'], 'to' => $filters['object_to']];
+        $summary['completeness'] = $this->objectCompleteness($filters);
+
+        return $summary;
+    }
+
+    private function monthlyObjectRows(array $filters): Collection
+    {
+        $filters = $this->normalizeFilters($filters);
+        $days = $this->selectedDaysCount($filters);
+        $totals = $this->objectSegmentBaseQuery($filters)
+            ->where('segment_type', self::SEGMENT_TOTAL)
+            ->select([
+                'wialon_unit_id',
+                DB::raw('MAX(unit_name) as unit_name'),
+                DB::raw('MAX(registration_number) as registration_number'),
+                DB::raw('MAX(vehicle_type) as vehicle_type'),
+                DB::raw('MAX(ownership_type) as ownership'),
+                DB::raw('MIN(stat_date) as period_from'),
+                DB::raw('MAX(stat_date) as period_to'),
+                DB::raw('COUNT(DISTINCT stat_date) as synced_days_count'),
+                DB::raw('ROUND(SUM(engine_hours_decimal), 2) as total_engine_hours'),
+                DB::raw('ROUND(SUM(mileage_km), 2) as total_mileage_km'),
+            ])
+            ->groupBy('wialon_unit_id')
+            ->get()
+            ->keyBy('wialon_unit_id');
+
+        $segments = $this->objectSegmentBaseQuery($filters)
+            ->whereIn('segment_type', [self::SEGMENT_GEOFENCE, self::SEGMENT_UNKNOWN])
+            ->select([
+                'wialon_unit_id',
+                DB::raw("ROUND(SUM(CASE WHEN segment_type = '".self::SEGMENT_GEOFENCE."' THEN engine_hours_decimal ELSE 0 END), 2) as known_engine_hours"),
+                DB::raw("ROUND(SUM(CASE WHEN segment_type = '".self::SEGMENT_UNKNOWN."' THEN engine_hours_decimal ELSE 0 END), 2) as unknown_engine_hours"),
+            ])
+            ->groupBy('wialon_unit_id')
+            ->get()
+            ->keyBy('wialon_unit_id');
+
+        $rows = $totals->map(function (object $row, string $unitId) use ($segments, $days): object {
+            $segment = $segments->get($unitId);
+            $row->known_engine_hours = (float) ($segment->known_engine_hours ?? 0);
+            $row->unknown_engine_hours = (float) ($segment->unknown_engine_hours ?? 0);
+            $row->monthly_status = MonthlyEfficiencyStatus::classifyForPeriod((float) $row->total_engine_hours, $days);
+
+            return $row;
+        })->values();
+
+        if ($filters['search'] !== '') {
+            $needle = mb_strtolower($filters['search']);
+            $rows = $rows->filter(fn (object $row): bool => str_contains(mb_strtolower((string) $row->unit_name), $needle)
+                || str_contains(mb_strtolower((string) $row->registration_number), $needle));
+        }
+
+        if ($filters['status'] !== null) {
+            $rows = $rows->filter(fn (object $row): bool => $row->monthly_status === $filters['status']);
+        } elseif (is_array($filters['visible_statuses'])) {
+            $rows = $filters['visible_statuses'] === []
+                ? collect()
+                : $rows->filter(fn (object $row): bool => in_array($row->monthly_status, $filters['visible_statuses'], true));
+        }
+
+        return $rows->values();
+    }
+
+    private function objectGeofenceRows(array $filters, string $unitId): Collection
+    {
+        return $this->objectSegmentBaseQuery($filters)
+            ->where('wialon_unit_id', $unitId)
+            ->whereIn('segment_type', [self::SEGMENT_GEOFENCE, self::SEGMENT_UNKNOWN])
+            ->select([
+                'wialon_unit_id',
+                DB::raw('MAX(unit_name) as unit_name'),
+                DB::raw('MAX(registration_number) as registration_number'),
+                'segment_type',
+                'geofence_name',
+                DB::raw('ROUND(SUM(engine_hours_decimal), 2) as engine_hours_decimal'),
+                DB::raw('ROUND(SUM(mileage_km), 2) as mileage_km'),
+                DB::raw('SUM(visits_count) as visits_count'),
+                DB::raw("CASE WHEN segment_type = '".self::SEGMENT_UNKNOWN."' THEN 2 ELSE 1 END as sort_weight"),
+            ])
+            ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name')
+            ->get();
+    }
+
+    private function objectGeofenceDayRows(array $filters, string $unitId, string $geofenceName): Collection
+    {
+        return $this->objectSegmentBaseQuery($filters)
+            ->where('wialon_unit_id', $unitId)
+            ->whereIn('segment_type', [self::SEGMENT_GEOFENCE, self::SEGMENT_UNKNOWN])
+            ->where('geofence_name', $geofenceName)
+            ->select([
+                'stat_date',
+                'wialon_unit_id',
+                'unit_name',
+                'registration_number',
+                'geofence_name',
+                'engine_hours_decimal',
+                'mileage_km',
+                'visits_count',
+                'started_at',
+                'ended_at',
+            ])
+            ->get();
+    }
+
+    private function objectSegmentBaseQuery(array $filters): Builder
+    {
+        $filters = $this->normalizeFilters($filters);
+        $allowedVehicleTypes = $this->objectAllowedVehicleTypeLabels();
+        $vehicleTypes = collect($filters['vehicle_types'])->intersect($allowedVehicleTypes)->values()->all();
+
+        if ($vehicleTypes === []) {
+            $vehicleTypes = $allowedVehicleTypes;
+        }
+
+        return DB::table('monthly_efficiency_unit_geofence_facts')
+            ->whereBetween('stat_date', [$filters['object_from'], $filters['object_to']])
+            ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership_type', $owner))
+            ->whereIn('vehicle_type', $vehicleTypes)
+            ->whereIn('source_report_name', $this->objectSourceReportNames());
+    }
+
+    private function objectFactsReady(): bool
+    {
+        return Schema::hasTable('monthly_efficiency_unit_geofence_facts');
+    }
+
+    private function objectFactsAvailable(array $filters): bool
+    {
+        if (! $this->objectFactsReady()) {
+            return false;
+        }
+
+        $filters = $this->normalizeFilters($filters);
+
+        return $this->objectSegmentBaseQuery($filters)
+            ->where('segment_type', self::SEGMENT_TOTAL)
+            ->exists();
     }
 
     private function monthlyUnitRows(array $filters, bool $byProject): Collection
@@ -588,10 +880,38 @@ class MonthlyEfficiencyDashboardService
         ];
     }
 
+    /** @param array{month: string, from: string, to: string} $monthPeriod */
+    private function objectPeriod(array $filters, array $monthPeriod): array
+    {
+        $timezone = config('app.timezone');
+        if (filled($filters['object_from'] ?? null) && filled($filters['object_to'] ?? null)) {
+            return [
+                'from' => CarbonImmutable::parse((string) $filters['object_from'], $timezone)->toDateString(),
+                'to' => CarbonImmutable::parse((string) $filters['object_to'], $timezone)->toDateString(),
+            ];
+        }
+
+        $fromValue = $filters['from'] ?? $filters['date_from'] ?? null;
+        $toValue = $filters['to'] ?? $filters['date_to'] ?? null;
+
+        if (! filled($fromValue) || ! filled($toValue)) {
+            return ['from' => $monthPeriod['from'], 'to' => $monthPeriod['to']];
+        }
+
+        $from = CarbonImmutable::parse((string) $fromValue, $timezone)->startOfDay();
+        $to = CarbonImmutable::parse((string) $toValue, $timezone)->startOfDay();
+
+        if ($from->greaterThan($to) || ! $from->isSameMonth($to)) {
+            return ['from' => $monthPeriod['from'], 'to' => $monthPeriod['to']];
+        }
+
+        return ['from' => $from->toDateString(), 'to' => $to->toDateString()];
+    }
+
     /** @return array<string, mixed> */
     private function completeness(array $filters): array
     {
-        $expected = collect(CarbonPeriod::create($filters['from'], $filters['to']))
+        $expected = collect(CarbonPeriod::create($filters['object_from'], $filters['object_to']))
             ->map(fn ($date): string => $date->toDateString())
             ->values();
         $completed = $this->dailyFactRows($filters)
@@ -609,6 +929,35 @@ class MonthlyEfficiencyDashboardService
             'is_complete' => $missing->isEmpty(),
             'message' => $missing->isEmpty() ? null : 'Seçilmiş ay üzrə məlumatlar tam sinxronlaşdırılmayıb.',
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function objectCompleteness(array $filters): array
+    {
+        $expected = collect(CarbonPeriod::create($filters['from'], $filters['to']))
+            ->map(fn ($date): string => $date->toDateString())
+            ->values();
+        $completed = $this->objectSegmentBaseQuery($filters)
+            ->where('segment_type', self::SEGMENT_TOTAL)
+            ->pluck('stat_date')
+            ->unique()
+            ->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())
+            ->values();
+        $missing = $expected->diff($completed)->values();
+
+        return [
+            'expected_days' => $expected->count(),
+            'completed_days' => $completed->count(),
+            'failed_days' => 0,
+            'missing_days' => $missing->all(),
+            'is_complete' => $missing->isEmpty(),
+            'message' => $missing->isEmpty() ? null : 'Seçilmiş period üzrə obyekt effektivliyi məlumatları tam sinxronlaşdırılmayıb.',
+        ];
+    }
+
+    private function selectedDaysCount(array $filters): int
+    {
+        return max(1, collect(CarbonPeriod::create($filters['object_from'] ?? $filters['from'], $filters['object_to'] ?? $filters['to']))->count());
     }
 
     private function statusSql(string $column): string
@@ -634,6 +983,14 @@ class MonthlyEfficiencyDashboardService
     private function allowedVehicleTypeLabels(): array
     {
         return collect(self::ALLOWED_TYPES)
+            ->map(fn (string $type): string => FleetVehicleType::label($type))
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private function objectAllowedVehicleTypeLabels(): array
+    {
+        return collect(self::OBJECT_ALLOWED_TYPES)
             ->map(fn (string $type): string => FleetVehicleType::label($type))
             ->all();
     }
@@ -672,6 +1029,24 @@ class MonthlyEfficiencyDashboardService
             'date_report' => (string) config('fleet.wialon.monthly_efficiency_date_report_template_name'),
             default => (string) config('fleet.wialon.monthly_efficiency_group_report_template_name'),
         };
+    }
+
+    private function objectSourceReportName(): string
+    {
+        return (string) config('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for Aylıq effektivlik');
+    }
+
+    /** @return array<int, string> */
+    private function objectSourceReportNames(): array
+    {
+        $name = $this->objectSourceReportName();
+
+        return collect([$name, $name.' (unit)'])
+            ->map(fn (string $value): string => trim($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function sourceMode(): string

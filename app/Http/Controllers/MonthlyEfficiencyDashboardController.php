@@ -88,6 +88,99 @@ class MonthlyEfficiencyDashboardController extends Controller
         ];
     }
 
+    public function objects(
+        Request $request,
+        MonthlyEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array|JsonResponse {
+        abort_unless($dashboard->isReady(), 503, 'Monthly efficiency storage is not ready.');
+
+        try {
+            $rows = $dashboard->paginateObjects($this->visibleFilters($request, $displayConfiguration));
+        } catch (InvalidArgumentException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return [
+            'title' => ($request->string('ownership')->lower()->toString() === 'icare' ? 'İcarə üzrə' : 'NWC üzrə')
+                .' — '.$this->statusLabel($request->string('status')->toString()),
+            'columns' => [
+                'number' => '№',
+                'registration_number' => 'Maşın nömrəsi',
+                'vehicle_type' => 'Texnika tipi',
+                'ownership' => 'Mənsubiyyət',
+                'period' => 'Dövr',
+                'synced_days_count' => 'Gün',
+                'total_hours' => 'Total motosaat',
+                'known_hours' => 'Geofence motosaat',
+                'unknown_hours' => 'Naməlum',
+                'mileage' => 'Yürüş',
+                'status_label' => 'Status',
+            ],
+            ...$this->paginated($rows),
+            'summary' => ['total' => $rows->total()],
+        ];
+    }
+
+    public function objectGeofences(
+        Request $request,
+        MonthlyEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array|JsonResponse {
+        abort_unless($dashboard->isReady(), 503, 'Monthly efficiency storage is not ready.');
+
+        try {
+            $rows = $dashboard->paginateObjectGeofences($this->visibleFilters($request, $displayConfiguration));
+        } catch (InvalidArgumentException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return [
+            'title' => 'Aylıq effektivlik - Geofence bölgüsü',
+            'columns' => [
+                'number' => '№',
+                'registration_number' => 'Maşın nömrəsi',
+                'geofence_name' => 'Geofence adı',
+                'motosaat' => 'Motosaat',
+                'yurush' => 'Yürüş',
+                'visits' => 'Giriş sayı',
+            ],
+            ...$this->paginated($rows),
+            'summary' => ['total' => $rows->total()],
+        ];
+    }
+
+    public function objectGeofenceDays(
+        Request $request,
+        MonthlyEfficiencyDashboardService $dashboard,
+        DashboardDisplayConfigurationService $displayConfiguration
+    ): array|JsonResponse {
+        abort_unless($dashboard->isReady(), 503, 'Monthly efficiency storage is not ready.');
+
+        try {
+            $rows = $dashboard->paginateObjectGeofenceDays($this->visibleFilters($request, $displayConfiguration));
+        } catch (InvalidArgumentException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+
+        return [
+            'title' => 'Aylıq effektivlik - Günlər üzrə',
+            'columns' => [
+                'number' => '№',
+                'date' => 'Tarix',
+                'registration_number' => 'Maşın nömrəsi',
+                'geofence_name' => 'Geofence adı',
+                'motosaat' => 'Motosaat',
+                'yurush' => 'Yürüş',
+                'visits' => 'Giriş sayı',
+                'started_at' => 'Başlama',
+                'ended_at' => 'Bitmə',
+            ],
+            ...$this->paginated($rows),
+            'summary' => ['total' => $rows->total()],
+        ];
+    }
+
     public function export(
         Request $request,
         MonthlyEfficiencyDashboardService $dashboard,
@@ -141,11 +234,13 @@ class MonthlyEfficiencyDashboardController extends Controller
             'equipment_type_id' => ['nullable', 'integer', 'exists:equipment_types,id'],
             'status' => ['nullable', Rule::in(['critical_low', 'low', 'normal'])],
             'search' => ['nullable', 'string', 'max:120'],
-            'sort' => ['nullable', Rule::in(['name', 'registration_number', 'project', 'vehicle_type', 'ownership', 'current_hours', 'normative_hours', 'efficiency_percent', 'status'])],
+            'sort' => ['nullable', Rule::in(['date', 'name', 'registration_number', 'project', 'vehicle_type', 'ownership', 'current_hours', 'normative_hours', 'efficiency_percent', 'status', 'total_hours', 'known_hours', 'unknown_hours', 'mileage', 'motosaat', 'yurush', 'visits'])],
             'direction' => ['nullable', Rule::in(['asc', 'desc'])],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
             'view' => ['nullable', 'string', 'max:30'],
+            'wialon_unit_id' => ['nullable', 'string', 'max:64'],
+            'geofence_name' => ['nullable', 'string', 'max:255'],
         ]);
     }
 

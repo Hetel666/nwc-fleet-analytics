@@ -39,6 +39,12 @@ final class FleetVehicleType
         self::ROAD_ROLLER,
     ];
 
+    public const MONTHLY_OBJECT_EFFICIENCY_TYPES = [
+        self::BULLDOZER,
+        self::EXCAVATOR,
+        self::DUMP_TRUCK,
+    ];
+
     public const FOREIGN_GEOFENCE_TYPES = [
         self::DUMP_TRUCK,
         self::BULLDOZER,
