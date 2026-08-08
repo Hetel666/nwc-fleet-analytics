@@ -434,7 +434,7 @@ class SyncMonthlyEfficiencyObjects extends Command
     {
         $text = $this->cellText($cell);
 
-        if ($text === '') {
+        if ($text === '' || in_array($text, ['-', '-----'], true)) {
             return null;
         }
 
