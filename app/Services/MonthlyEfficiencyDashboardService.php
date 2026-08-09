@@ -553,7 +553,7 @@ class MonthlyEfficiencyDashboardService
                 'wialon_unit_id',
                 DB::raw($this->actualProjectSql().' as actual_project'),
             ])
-            ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name')
+            ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name', 'project_id')
             ->get()
             ->groupBy('wialon_unit_id')
             ->map(fn (Collection $rows): string => $rows
@@ -601,7 +601,7 @@ class MonthlyEfficiencyDashboardService
                 DB::raw('SUM(visits_count) as visits_count'),
                 DB::raw("CASE WHEN segment_type = '".self::SEGMENT_UNKNOWN."' THEN 2 ELSE 1 END as sort_weight"),
             ])
-            ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name')
+            ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name', 'project_id')
             ->get();
     }
 
