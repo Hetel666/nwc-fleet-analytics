@@ -303,12 +303,14 @@ class SyncMonthlyEfficiencyObjects extends Command
             $engineTable = $this->findTable($tables, 'engine');
             $geofenceTable = $this->findTable($tables, 'geofence');
 
-            if ($engineTable === null || $geofenceTable === null) {
-                throw new MissingMonthlyObjectReportTable('Required Engine hours or Geofence table is missing in report result.');
+            if ($engineTable === null) {
+                throw new MissingMonthlyObjectReportTable('Required Engine hours table is missing in report result.');
             }
 
             $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table']);
-            $geofences = $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']);
+            $geofences = $geofenceTable === null
+                ? []
+                : $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']);
             $unknownLabel = (string) config('fleet.wialon.monthly_efficiency_unknown_label', 'Naməlum');
             $rowsToWrite = [];
             $writtenRows = 0;

@@ -589,13 +589,13 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(3, DB::table('monthly_efficiency_unit_geofence_facts')->where('wialon_unit_id', '10-AF-065')->count());
     }
 
-    public function test_object_sync_skips_units_when_wialon_report_has_no_required_tables(): void
+    public function test_object_sync_records_unknown_hours_when_wialon_report_has_no_geofence_table(): void
     {
         config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
 
         $project = Project::query()->create(['name' => 'Object source', 'active' => true]);
         $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
-        $this->seedEquipment($project, $dumpTruck, '10-MISSING-REPORT', Equipment::OWNERSHIP_NWC);
+        $this->seedEquipment($project, $dumpTruck, '10-MISSING-GEOFENCE', Equipment::OWNERSHIP_NWC);
 
         WialonReportTemplate::query()->create([
             'wialon_template_id' => 91,
@@ -620,21 +620,31 @@ class MonthlyEfficiencyDashboardTest extends TestCase
                 ],
             ],
         ]);
-        $wialon->shouldReceive('getReportResultRows')->never();
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(0, 0, 0, 'sid-test')
+            ->andReturn([['c' => ['2026-07-01', '8:00:00', '12 km', '08:00:00', '16:00:00']]]);
         $wialon->shouldReceive('getReportResultSubrows')->never();
         $this->app->instance(WialonService::class, $wialon);
 
         $this->artisan('monthly-efficiency:sync-objects', [
             '--from' => '2026-07-01',
             '--to' => '2026-07-01',
-            '--unit' => '10-MISSING-REPORT',
+            '--unit' => '10-MISSING-GEOFENCE',
             '--force' => true,
             '--unit-chunk' => 1,
             '--flush-rows' => 2,
         ])->assertExitCode(0);
 
-        $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
-            'wialon_unit_id' => '10-MISSING-REPORT',
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '10-MISSING-GEOFENCE',
+            'segment_type' => 'total',
+            'engine_hours_decimal' => 8,
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '10-MISSING-GEOFENCE',
+            'segment_type' => 'unknown',
+            'engine_hours_decimal' => 8,
         ]);
     }
 
