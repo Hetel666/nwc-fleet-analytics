@@ -434,7 +434,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('8.00', $objects[0]['total_hours']);
         $this->assertSame('7.00', $objects[0]['known_hours']);
         $this->assertSame('1.00', $objects[0]['unknown_hours']);
-        $this->assertSame('Naməlum, Object source', $objects[0]['actual_project']);
+        $this->assertSame('Object source', $objects[0]['actual_project']);
 
         $geofences = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofences', [
             'date_from' => '2026-07-01',
@@ -452,7 +452,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             collect($geofences)->firstWhere('geofence_name', 'Füzuli Xocavənd yolu')['actual_project'],
         );
         $this->assertSame(
-            'Naməlum',
+            'Object source',
             collect($geofences)->firstWhere('geofence_name', 'Naməlum')['actual_project'],
         );
 
@@ -606,12 +606,54 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 
     private function seedEquipment(Project $project, EquipmentType $type, string $unitId, string $ownership): Equipment
     {
+        $projectGroup = ProjectWialonGroup::query()->firstOrCreate(
+            [
+                'project_id' => $project->id,
+                'wialon_group_id' => 'project-group-'.$project->id.'-'.$ownership,
+            ],
+            [
+                'name' => $project->name.' - '.$ownership,
+                'ownership_type' => $ownership,
+                'is_active' => true,
+            ],
+        );
+
+        $allowedGroupId = 'allowed-monthly-object-types';
+        DB::table('wialon_unit_groups')->updateOrInsert(
+            ['wialon_group_id' => $allowedGroupId],
+            [
+                'name' => 'Bulldozer, Excavator, Dump Truck',
+                'units_count' => 1,
+                'is_active' => true,
+                'last_seen_at' => now(),
+                'last_synced_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        );
+        $wialonUnitGroupId = DB::table('wialon_unit_groups')->where('wialon_group_id', $allowedGroupId)->value('id');
+
+        DB::table('wialon_unit_group_members')->updateOrInsert(
+            [
+                'wialon_group_id' => $allowedGroupId,
+                'wialon_unit_item_id' => $unitId,
+            ],
+            [
+                'wialon_unit_group_id' => $wialonUnitGroupId,
+                'last_synced_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        );
+
         return Equipment::query()->create([
             'name' => $unitId,
             'registration_number' => $unitId,
             'wialon_unit_id' => $unitId,
             'equipment_type_id' => $type->id,
             'project_id' => $project->id,
+            'project_wialon_group_id' => $projectGroup->id,
+            'matched_wialon_group_id' => $projectGroup->wialon_group_id,
             'ownership_type' => $ownership,
             'active' => true,
         ]);
@@ -622,6 +664,9 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         DB::table('monthly_efficiency_unit_geofence_facts')->insert([
             'stat_date' => $date,
             'equipment_id' => $equipment->id,
+            'project_id' => $equipment->project_id,
+            'project_wialon_group_id' => $equipment->project_wialon_group_id,
+            'wialon_group_id' => $equipment->matched_wialon_group_id,
             'wialon_unit_id' => (string) $equipment->wialon_unit_id,
             'unit_name' => (string) $equipment->name,
             'registration_number' => $equipment->registration_number,

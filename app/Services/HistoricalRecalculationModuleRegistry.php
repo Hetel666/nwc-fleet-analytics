@@ -196,16 +196,18 @@ class HistoricalRecalculationModuleRegistry
 
     private function executeMonthlyEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
+        $date = $task->stat_date->toDateString();
+
         $this->runArtisanOrFail('monthly-efficiency:sync-objects', array_filter([
-            '--from' => $run->date_from->toDateString(),
-            '--to' => $run->date_to->toDateString(),
+            '--from' => $date,
+            '--to' => $date,
             '--force' => (bool) $run->force,
             '--unit-chunk' => 10,
             '--flush-rows' => 100,
         ], $this->hasValue(...)));
 
         return DB::table('monthly_efficiency_unit_geofence_facts')
-            ->whereBetween('stat_date', [$run->date_from->toDateString(), $run->date_to->toDateString()])
+            ->where('stat_date', $date)
             ->where('segment_type', 'total')
             ->distinct('wialon_unit_id')
             ->count('wialon_unit_id');

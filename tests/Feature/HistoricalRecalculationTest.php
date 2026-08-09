@@ -239,7 +239,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertDatabaseCount('jobs', 0);
     }
 
-    public function test_preview_for_monthly_efficiency_uses_single_object_sync_task(): void
+    public function test_preview_for_monthly_efficiency_queues_one_object_sync_task_per_day(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
 
@@ -257,9 +257,9 @@ class HistoricalRecalculationTest extends TestCase
             ->assertJson([
                 'days' => 31,
                 'project_groups' => 1,
-                'fetch_tasks' => 1,
+                'fetch_tasks' => 31,
                 'aggregate_tasks' => 0,
-                'total_tasks' => 1,
+                'total_tasks' => 31,
             ])
             ->assertJsonPath('dry_run.dashboard_code', 'monthly_efficiency')
             ->assertJsonPath('dry_run.read_only', true)
@@ -267,7 +267,7 @@ class HistoricalRecalculationTest extends TestCase
             ->assertJsonPath('dry_run.tables.0.table', 'monthly_efficiency_unit_geofence_facts');
     }
 
-    public function test_monthly_efficiency_history_creates_one_global_fetch_task(): void
+    public function test_monthly_efficiency_history_creates_daily_fetch_tasks(): void
     {
         Queue::fake();
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
@@ -283,10 +283,10 @@ class HistoricalRecalculationTest extends TestCase
         ], $admin);
 
         $this->assertSame(HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY, $run->dashboard_section);
-        $this->assertSame(1, $run->total_tasks);
-        $this->assertSame(1, $run->tasks()->count());
+        $this->assertSame(31, $run->total_tasks);
+        $this->assertSame(31, $run->tasks()->count());
 
-        $task = $run->tasks()->firstOrFail();
+        $task = $run->tasks()->orderBy('stat_date')->firstOrFail();
         $this->assertSame(HistoricalRecalculation::OPERATION_FETCH, $task->operation);
         $this->assertSame('2026-07-01', $task->stat_date->toDateString());
         $this->assertNull($task->project_id);

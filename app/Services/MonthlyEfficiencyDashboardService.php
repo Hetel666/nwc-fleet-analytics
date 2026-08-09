@@ -486,6 +486,7 @@ class MonthlyEfficiencyDashboardService
             ->where('segment_type', self::SEGMENT_TOTAL)
             ->select([
                 'wialon_unit_id',
+                DB::raw('MAX(project_id) as project_id'),
                 DB::raw('MAX(unit_name) as unit_name'),
                 DB::raw('MAX(registration_number) as registration_number'),
                 DB::raw('MAX(vehicle_type) as vehicle_type'),
@@ -567,6 +568,12 @@ class MonthlyEfficiencyDashboardService
     {
         return "COALESCE(("
             ."SELECT projects.name "
+            ."FROM projects "
+            ."WHERE projects.id = monthly_efficiency_unit_geofence_facts.project_id "
+            ."AND projects.active = 1 "
+            ."LIMIT 1"
+            ."), ("
+            ."SELECT projects.name "
             ."FROM wialon_geofences "
             ."JOIN projects ON projects.id = wialon_geofences.linked_project_id "
             ."WHERE wialon_geofences.name = monthly_efficiency_unit_geofence_facts.geofence_name "
@@ -632,6 +639,8 @@ class MonthlyEfficiencyDashboardService
 
         return DB::table('monthly_efficiency_unit_geofence_facts')
             ->whereBetween('stat_date', [$filters['object_from'], $filters['object_to']])
+            ->when($filters['project_id'], fn (Builder $query, int $projectId): Builder => $query->where('project_id', $projectId))
+            ->when($filters['project_ids'], fn (Builder $query, array $projectIds): Builder => $query->whereIn('project_id', $projectIds))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership_type', $owner))
             ->whereIn('vehicle_type', $vehicleTypes)
             ->whereIn('source_report_name', $this->objectSourceReportNames());

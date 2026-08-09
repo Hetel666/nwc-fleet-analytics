@@ -33,6 +33,8 @@ return [
         'monthly_efficiency_geofence_report_template_name' => env('WIALON_MONTHLY_EFFICIENCY_GEOFENCE_REPORT_TEMPLATE_NAME', 'Aylıq effektivlik Engine hours (api)'),
         'monthly_efficiency_unit_report_template_name' => env('WIALON_MONTHLY_EFFICIENCY_UNIT_REPORT_TEMPLATE_NAME', 'Report for Aylıq effektivlik'),
         'monthly_efficiency_geofence_group_name' => env('WIALON_MONTHLY_EFFICIENCY_GEOFENCE_GROUP_NAME', 'Aylıq effektivlik üçün'),
+        'monthly_efficiency_unit_group_id' => env('WIALON_MONTHLY_EFFICIENCY_UNIT_GROUP_ID'),
+        'monthly_efficiency_unit_group_name' => env('WIALON_MONTHLY_EFFICIENCY_UNIT_GROUP_NAME', 'Bulldozer, Excavator, Dump Truck'),
         'monthly_efficiency_unknown_label' => env('MONTHLY_EFFICIENCY_UNKNOWN_LABEL', 'Naməlum'),
         'efficiency_report_timeout' => (int) env('WIALON_EFFICIENCY_REPORT_TIMEOUT', 90),
         'efficiency_report_chunk_size' => (int) env('WIALON_EFFICIENCY_REPORT_CHUNK_SIZE', 500),

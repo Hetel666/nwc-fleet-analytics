@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Equipment;
 use App\Models\WialonReportTemplate;
+use App\Models\WialonUnitGroup;
 use App\Services\WialonService;
 use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
@@ -126,6 +127,7 @@ class SyncMonthlyEfficiencyObjects extends Command
             ['Unit chunk size', $unitChunk],
             ['Write batch size', $flushRows],
             ['Allowed types', implode(', ', $this->allowedTypeLabels())],
+            ['Allowed Wialon group', $this->allowedWialonUnitGroupLabel()],
             ['Source report', (string) $template['name']],
         ]);
 
@@ -185,14 +187,80 @@ class SyncMonthlyEfficiencyObjects extends Command
                 'equipments.name',
                 'equipments.registration_number',
                 'equipments.wialon_unit_id',
-                'equipments.ownership_type',
+                DB::raw('COALESCE(direct_project_groups.project_id, matched_project_groups.project_id) as project_id'),
+                DB::raw('COALESCE(direct_project_groups.id, matched_project_groups.id) as project_wialon_group_id'),
+                DB::raw('COALESCE(direct_project_groups.wialon_group_id, matched_project_groups.wialon_group_id) as wialon_group_id'),
+                DB::raw('COALESCE(direct_project_groups.ownership_type, matched_project_groups.ownership_type, equipments.ownership_type) as ownership_type'),
                 'equipment_types.name as vehicle_type',
             ])
             ->join('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
+            ->leftJoin('project_wialon_groups as direct_project_groups', 'direct_project_groups.id', '=', 'equipments.project_wialon_group_id')
+            ->leftJoin('project_wialon_groups as matched_project_groups', function ($join): void {
+                $join->on('matched_project_groups.wialon_group_id', '=', 'equipments.matched_wialon_group_id')
+                    ->whereNull('equipments.project_wialon_group_id');
+            })
             ->whereNotNull('equipments.wialon_unit_id')
             ->where('equipments.wialon_unit_id', '<>', '')
             ->whereIn('equipment_types.name', $this->allowedTypeLabels())
+            ->where(function (Builder $query): void {
+                $this->applyActiveProjectGroup($query, 'direct_project_groups');
+                $query->orWhere(function (Builder $query): void {
+                    $query->whereNull('equipments.project_wialon_group_id');
+                    $this->applyActiveProjectGroup($query, 'matched_project_groups');
+                });
+            })
+            ->whereExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('wialon_unit_group_members')
+                    ->join('wialon_unit_groups', 'wialon_unit_groups.id', '=', 'wialon_unit_group_members.wialon_unit_group_id')
+                    ->whereColumn('wialon_unit_group_members.wialon_unit_item_id', 'equipments.wialon_unit_id')
+                    ->where('wialon_unit_groups.is_active', true)
+                    ->where(function ($query): void {
+                        $groupId = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_id', ''));
+                        $groupName = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_name', 'Bulldozer, Excavator, Dump Truck'));
+
+                        if ($groupId !== '') {
+                            $query->where('wialon_unit_groups.wialon_group_id', $groupId);
+                        }
+
+                        if ($groupName !== '') {
+                            $method = $groupId !== '' ? 'orWhereRaw' : 'whereRaw';
+                            $query->{$method}('LOWER(wialon_unit_groups.name) = ?', [mb_strtolower($groupName)]);
+                        }
+                    });
+            })
             ->visibleInDashboard();
+    }
+
+    private function applyActiveProjectGroup(Builder $query, string $alias): void
+    {
+        $query->whereNotNull($alias.'.id')
+            ->whereExists(function ($query) use ($alias): void {
+                $query->selectRaw('1')
+                    ->from('projects')
+                    ->whereColumn('projects.id', $alias.'.project_id')
+                    ->where('projects.active', true);
+            });
+
+        if (Schema::hasColumn('project_wialon_groups', 'is_active')) {
+            $query->where($alias.'.is_active', true);
+        }
+    }
+
+    private function allowedWialonUnitGroupLabel(): string
+    {
+        $groupId = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_id', ''));
+        $groupName = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_name', 'Bulldozer, Excavator, Dump Truck'));
+
+        if ($groupId !== '') {
+            $catalogName = WialonUnitGroup::query()
+                ->where('wialon_group_id', $groupId)
+                ->value('name');
+
+            return $catalogName ? $catalogName.' / '.$groupId : $groupId;
+        }
+
+        return $groupName;
     }
 
     /** @return array<int, string> */
@@ -311,7 +379,7 @@ class SyncMonthlyEfficiencyObjects extends Command
         DB::table('monthly_efficiency_unit_geofence_facts')->upsert(
             $rows,
             ['stat_date', 'wialon_unit_id', 'segment_type', 'geofence_name', 'source_report_name'],
-            ['equipment_id', 'unit_name', 'registration_number', 'vehicle_type', 'ownership_type', 'engine_hours_decimal', 'engine_seconds', 'mileage_km', 'visits_count', 'started_at', 'ended_at', 'source_report_template_id', 'raw_row_json', 'updated_at'],
+            ['equipment_id', 'project_id', 'project_wialon_group_id', 'wialon_group_id', 'unit_name', 'registration_number', 'vehicle_type', 'ownership_type', 'engine_hours_decimal', 'engine_seconds', 'mileage_km', 'visits_count', 'started_at', 'ended_at', 'source_report_template_id', 'raw_row_json', 'updated_at'],
         );
 
         return count($rows);
@@ -494,6 +562,9 @@ class SyncMonthlyEfficiencyObjects extends Command
         return [
             'stat_date' => $date,
             'equipment_id' => (int) $equipment->id,
+            'project_id' => $equipment->project_id ? (int) $equipment->project_id : null,
+            'project_wialon_group_id' => $equipment->project_wialon_group_id ? (int) $equipment->project_wialon_group_id : null,
+            'wialon_group_id' => $equipment->wialon_group_id ?: null,
             'wialon_unit_id' => (string) $equipment->wialon_unit_id,
             'unit_name' => (string) $equipment->name,
             'registration_number' => $equipment->registration_number ?: null,
