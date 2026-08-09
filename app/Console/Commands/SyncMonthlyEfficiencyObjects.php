@@ -80,6 +80,7 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         $ok = 0;
         $failed = 0;
+        $skipped = 0;
         $deleted = 0;
         $written = 0;
         $unitChunk = max(1, min(100, (int) $this->option('unit-chunk')));
@@ -87,7 +88,7 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         $equipmentQuery
             ->orderBy('equipments.id')
-            ->chunkById($unitChunk, function ($equipment) use ($wialon, $template, $from, $to, $flushRows, &$ok, &$failed, &$deleted, &$written): void {
+            ->chunkById($unitChunk, function ($equipment) use ($wialon, $template, $from, $to, $flushRows, &$ok, &$failed, &$skipped, &$deleted, &$written): void {
                 foreach ($equipment as $item) {
                     try {
                         $result = $this->syncOneUnit($wialon, $template, $item, $from, $to, $flushRows);
@@ -103,6 +104,13 @@ class SyncMonthlyEfficiencyObjects extends Command
                             $result['unknown_hours'],
                             $result['deleted_rows'],
                             $result['written_rows'],
+                        ));
+                    } catch (MissingMonthlyObjectReportTable $exception) {
+                        $skipped++;
+                        $this->warn(sprintf(
+                            '%s skipped: %s',
+                            (string) ($item->registration_number ?: $item->name),
+                            $exception->getMessage(),
                         ));
                     } catch (Throwable $exception) {
                         $failed++;
@@ -121,6 +129,7 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         $this->table(['Metric', 'Value'], [
             ['Processed units', $ok],
+            ['Skipped units', $skipped],
             ['Failed units', $failed],
             ['Deleted fact rows', $deleted],
             ['Written fact rows', $written],
@@ -295,7 +304,7 @@ class SyncMonthlyEfficiencyObjects extends Command
             $geofenceTable = $this->findTable($tables, 'geofence');
 
             if ($engineTable === null || $geofenceTable === null) {
-                throw new RuntimeException('Required Engine hours or Geofence table is missing in report result.');
+                throw new MissingMonthlyObjectReportTable('Required Engine hours or Geofence table is missing in report result.');
             }
 
             $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table']);
@@ -688,4 +697,8 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         return trim((string) $cell);
     }
+}
+
+class MissingMonthlyObjectReportTable extends RuntimeException
+{
 }

@@ -589,6 +589,55 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(3, DB::table('monthly_efficiency_unit_geofence_facts')->where('wialon_unit_id', '10-AF-065')->count());
     }
 
+    public function test_object_sync_skips_units_when_wialon_report_has_no_required_tables(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
+
+        $project = Project::query()->create(['name' => 'Object source', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $this->seedEquipment($project, $dumpTruck, '10-MISSING-REPORT', Equipment::OWNERSHIP_NWC);
+
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 91,
+            'name' => 'Monthly Unit Report',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit',
+            'is_active' => true,
+        ]);
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('getSessionId')->once()->andReturn('sid-test');
+        $wialon->shouldReceive('cleanupReportResult')->twice();
+        $wialon->shouldReceive('executeReport')->once()->andReturn([
+            'reportResult' => [
+                'tables' => [
+                    [
+                        'name' => 'Engine hours',
+                        'header' => ['Grouping', 'Engine hours', 'Mileage', 'Beginning', 'End'],
+                        'header_type' => ['grouping', 'duration', 'mileage', 'time_begin', 'time_end'],
+                        'rows' => 1,
+                    ],
+                ],
+            ],
+        ]);
+        $wialon->shouldReceive('getReportResultRows')->never();
+        $wialon->shouldReceive('getReportResultSubrows')->never();
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('monthly-efficiency:sync-objects', [
+            '--from' => '2026-07-01',
+            '--to' => '2026-07-01',
+            '--unit' => '10-MISSING-REPORT',
+            '--force' => true,
+            '--unit-chunk' => 1,
+            '--flush-rows' => 2,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '10-MISSING-REPORT',
+        ]);
+    }
+
     private function seedMonthlyUnit(Project $project, EquipmentType $type, string $unitId, float $hours, string $ownership): void
     {
         Equipment::query()->create([
