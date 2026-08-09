@@ -113,6 +113,17 @@ class SyncMonthlyEfficiencyObjects extends Command
                             $exception->getMessage(),
                         ));
                     } catch (Throwable $exception) {
+                        if ($this->isSkippableUnitReportFailure($exception)) {
+                            $skipped++;
+                            $this->warn(sprintf(
+                                '%s skipped: %s',
+                                (string) ($item->registration_number ?: $item->name),
+                                $exception->getMessage(),
+                            ));
+
+                            continue;
+                        }
+
                         $failed++;
                         $this->error(sprintf(
                             '%s failed: %s',
@@ -140,7 +151,7 @@ class SyncMonthlyEfficiencyObjects extends Command
             ['Source report', (string) $template['name']],
         ]);
 
-        return $failed > 0 ? self::FAILURE : self::SUCCESS;
+        return $failed > 0 || ($ok === 0 && $skipped > 0) ? self::FAILURE : self::SUCCESS;
     }
 
     /** @return array{resource_id:int, template_id:int, name:string} */
@@ -270,6 +281,23 @@ class SyncMonthlyEfficiencyObjects extends Command
         }
 
         return $groupName;
+    }
+
+    private function isSkippableUnitReportFailure(Throwable $exception): bool
+    {
+        if ($exception instanceof MissingMonthlyObjectReportTable) {
+            return true;
+        }
+
+        if (! $exception instanceof RuntimeException) {
+            return false;
+        }
+
+        $message = $exception->getMessage();
+
+        return str_contains($message, 'Wialon API error')
+            || str_contains($message, 'report result')
+            || str_contains($message, 'Report result');
     }
 
     /** @return array<int, string> */

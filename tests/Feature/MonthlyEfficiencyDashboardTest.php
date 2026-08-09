@@ -648,6 +648,70 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         ]);
     }
 
+    public function test_object_sync_skips_single_wialon_report_error_and_completes_day_when_other_units_succeed(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
+
+        $project = Project::query()->create(['name' => 'Object source', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $this->seedEquipment($project, $dumpTruck, '10-WIALON-SKIP', Equipment::OWNERSHIP_NWC);
+        $this->seedEquipment($project, $dumpTruck, '10-WIALON-OK', Equipment::OWNERSHIP_NWC);
+
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 91,
+            'name' => 'Monthly Unit Report',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit',
+            'is_active' => true,
+        ]);
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('getSessionId')->twice()->andReturn('sid-test');
+        $wialon->shouldReceive('cleanupReportResult')->times(4);
+        $wialon->shouldReceive('executeReport')
+            ->once()
+            ->ordered()
+            ->andThrow(new \RuntimeException('Wialon API error 4 for report/exec_report.'));
+        $wialon->shouldReceive('executeReport')
+            ->once()
+            ->ordered()
+            ->andReturn([
+                'reportResult' => [
+                    'tables' => [
+                        [
+                            'name' => 'Engine hours',
+                            'header' => ['Grouping', 'Engine hours', 'Mileage', 'Beginning', 'End'],
+                            'header_type' => ['grouping', 'duration', 'mileage', 'time_begin', 'time_end'],
+                            'rows' => 1,
+                        ],
+                    ],
+                ],
+            ]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(0, 0, 0, 'sid-test')
+            ->andReturn([['c' => ['2026-07-01', '6:30:00', '9 km', '08:00:00', '14:30:00']]]);
+        $wialon->shouldReceive('getReportResultSubrows')->never();
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('monthly-efficiency:sync-objects', [
+            '--from' => '2026-07-01',
+            '--to' => '2026-07-01',
+            '--force' => true,
+            '--unit-chunk' => 1,
+            '--flush-rows' => 2,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '10-WIALON-SKIP',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '10-WIALON-OK',
+            'segment_type' => 'unknown',
+            'engine_hours_decimal' => 6.5,
+        ]);
+    }
+
     private function seedMonthlyUnit(Project $project, EquipmentType $type, string $unitId, float $hours, string $ownership): void
     {
         Equipment::query()->create([
