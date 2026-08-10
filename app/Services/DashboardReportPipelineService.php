@@ -418,7 +418,7 @@ class DashboardReportPipelineService
         }
 
         if ($run instanceof HistoricalRecalculation && ! $run->isTerminal()) {
-            return (string) config('historical_recalculation.queue', 'historical-recalculations');
+            return $this->queueForRun($run);
         }
 
         return '-';
@@ -473,11 +473,11 @@ class DashboardReportPipelineService
             return [];
         }
 
-        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $queues = $this->historicalQueues();
         $jobsByRun = [];
 
         DB::table('jobs')
-            ->where('queue', $queue)
+            ->whereIn('queue', $queues)
             ->orderBy('id')
             ->get()
             ->each(function (object $queuedJob) use (&$jobsByRun): void {
@@ -500,6 +500,27 @@ class DashboardReportPipelineService
             });
 
         return $jobsByRun;
+    }
+
+    private function queueForRun(HistoricalRecalculation $run): string
+    {
+        $definition = app(HistoricalRecalculationModuleRegistry::class)
+            ->definition((string) $run->dashboard_section);
+
+        return (string) ($definition['queue'] ?? config('historical_recalculation.queue', 'historical-recalculations'));
+    }
+
+    /** @return array<int, string> */
+    private function historicalQueues(): array
+    {
+        return collect(app(HistoricalRecalculationModuleRegistry::class)->definitions())
+            ->pluck('queue')
+            ->push((string) config('historical_recalculation.queue', 'historical-recalculations'))
+            ->map(fn (mixed $queue): string => trim((string) $queue))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function queueReferenceRunId(?array $reference): int

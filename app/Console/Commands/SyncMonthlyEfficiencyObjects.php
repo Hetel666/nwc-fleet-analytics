@@ -30,7 +30,8 @@ class SyncMonthlyEfficiencyObjects extends Command
         {--unit= : Optional Wialon unit id, registration number or unit name}
         {--force : Replace existing object-geofence facts for the selected period}
         {--unit-chunk=25 : Number of units loaded from database at once}
-        {--flush-rows=250 : Number of fact rows written per database batch}';
+        {--flush-rows=250 : Number of fact rows written per database batch}
+        {--historical-task-id= : Optional historical recalculation task id for live progress heartbeats}';
 
     protected $description = 'Sync Aylıq effektivlik object/geofence facts from the individual Wialon report.';
 
@@ -85,10 +86,12 @@ class SyncMonthlyEfficiencyObjects extends Command
         $written = 0;
         $unitChunk = max(1, min(100, (int) $this->option('unit-chunk')));
         $flushRows = max(1, min(1000, (int) $this->option('flush-rows')));
+        $progressTaskId = max(0, (int) $this->option('historical-task-id'));
+        $processedUnits = 0;
 
         $equipmentQuery
             ->orderBy('equipments.id')
-            ->chunkById($unitChunk, function ($equipment) use ($wialon, $template, $from, $to, $flushRows, &$ok, &$failed, &$skipped, &$deleted, &$written): void {
+            ->chunkById($unitChunk, function ($equipment) use ($wialon, $template, $from, $to, $flushRows, $progressTaskId, &$processedUnits, &$ok, &$failed, &$skipped, &$deleted, &$written): void {
                 foreach ($equipment as $item) {
                     try {
                         $result = $this->syncOneUnit($wialon, $template, $item, $from, $to, $flushRows);
@@ -131,6 +134,9 @@ class SyncMonthlyEfficiencyObjects extends Command
                             $exception->getMessage(),
                         ));
                     } finally {
+                        $processedUnits++;
+                        $this->heartbeatHistoricalTask($progressTaskId, $processedUnits);
+
                         if (function_exists('gc_collect_cycles')) {
                             gc_collect_cycles();
                         }
@@ -152,6 +158,22 @@ class SyncMonthlyEfficiencyObjects extends Command
         ]);
 
         return $failed > 0 || ($ok === 0 && $skipped > 0) ? self::FAILURE : self::SUCCESS;
+    }
+
+    private function heartbeatHistoricalTask(int $taskId, int $processedUnits): void
+    {
+        if ($taskId <= 0) {
+            return;
+        }
+
+        DB::table('historical_recalculation_tasks')
+            ->where('id', $taskId)
+            ->where('status', 'running')
+            ->update([
+                'equipment_count' => $processedUnits,
+                'last_heartbeat_at' => now(config('app.timezone')),
+                'updated_at' => now(config('app.timezone')),
+            ]);
     }
 
     /** @return array{resource_id:int, template_id:int, name:string} */

@@ -5,6 +5,12 @@ return [
     'max_range_days' => (int) env('HISTORICAL_RECALCULATION_MAX_RANGE_DAYS', 365),
     'connection' => env('HISTORICAL_RECALCULATION_CONNECTION', 'database'),
     'queue' => env('HISTORICAL_RECALCULATION_QUEUE', 'historical-recalculations'),
+    'module_queues' => [
+        'monthly_efficiency' => env(
+            'HISTORICAL_RECALCULATION_MONTHLY_EFFICIENCY_QUEUE',
+            env('HISTORICAL_RECALCULATION_QUEUE', 'historical-recalculations')
+        ),
+    ],
     'tries' => (int) env('HISTORICAL_RECALCULATION_TRIES', 8),
     'timeout' => (int) env('HISTORICAL_RECALCULATION_TIMEOUT', 900),
     'lock_seconds' => (int) env('HISTORICAL_RECALCULATION_LOCK_SECONDS', 7200),

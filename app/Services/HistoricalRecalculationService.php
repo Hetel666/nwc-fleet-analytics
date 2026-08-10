@@ -128,7 +128,7 @@ class HistoricalRecalculationService
 
     public function dispatchNextPendingFetchTask(HistoricalRecalculation $run): void
     {
-        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $queue = $this->queueForRun($run);
         $connection = (string) config('historical_recalculation.connection', 'database');
         $lock = Cache::lock(
             'historical-recalculation-dispatch:'.$run->id,
@@ -194,9 +194,11 @@ class HistoricalRecalculationService
 
     public function cleanupStuckQueue(?HistoricalRecalculation $run = null): array
     {
-        $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $queues = $run instanceof HistoricalRecalculation
+            ? [$this->queueForRun($run)]
+            : $this->historicalQueues();
         $summary = [
-            'queue' => $queue,
+            'queue' => implode(',', $queues),
             'deleted_jobs' => 0,
             'kept_jobs' => 0,
             'unknown_jobs' => 0,
@@ -225,9 +227,9 @@ class HistoricalRecalculationService
 
         if (Schema::hasTable('jobs')) {
             DB::table('jobs')
-                ->where('queue', $queue)
+                ->whereIn('queue', $queues)
                 ->orderBy('id')
-                ->chunkById(100, function ($jobs) use (&$summary, $queue): void {
+                ->chunkById(100, function ($jobs) use (&$summary): void {
                     foreach ($jobs as $queuedJob) {
                         $reference = $this->historicalQueueJobReference((string) $queuedJob->payload);
 
@@ -261,7 +263,7 @@ class HistoricalRecalculationService
 
                             Log::warning('Deleted obsolete historical recalculation queue job.', [
                                 'job_id' => (int) $queuedJob->id,
-                                'queue' => $queue,
+                                'queue' => (string) $queuedJob->queue,
                                 'reason' => $reason,
                                 'reference' => $reference,
                             ]);
@@ -277,7 +279,7 @@ class HistoricalRecalculationService
                 continue;
             }
 
-            if ($this->historicalQueueHasActiveJobForRun($activeRun, $queue)) {
+            if ($this->historicalQueueHasActiveJobForRun($activeRun, $this->queueForRun($activeRun))) {
                 $summary['active_runs_with_queue_job']++;
 
                 continue;
@@ -850,6 +852,31 @@ class HistoricalRecalculationService
     private function staleRunningTaskSeconds(): int
     {
         return max(0, (int) config('historical_recalculation.stale_running_task_seconds', 2400));
+    }
+
+    public function queueForRun(HistoricalRecalculation $run): string
+    {
+        return $this->queueForSection((string) $run->dashboard_section);
+    }
+
+    public function queueForSection(string $section): string
+    {
+        $definition = $this->modules->definition($section);
+
+        return (string) ($definition['queue'] ?? config('historical_recalculation.queue', 'historical-recalculations'));
+    }
+
+    /** @return array<int, string> */
+    public function historicalQueues(): array
+    {
+        return collect($this->modules->definitions())
+            ->pluck('queue')
+            ->push((string) config('historical_recalculation.queue', 'historical-recalculations'))
+            ->map(fn (mixed $queue): string => trim((string) $queue))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function releaseHistoricalQueueUniqueLock(array $reference): void

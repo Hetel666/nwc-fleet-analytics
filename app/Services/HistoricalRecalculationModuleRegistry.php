@@ -26,6 +26,8 @@ class HistoricalRecalculationModuleRegistry
     public function definitions(): array
     {
         $queue = (string) config('historical_recalculation.queue', 'historical-recalculations');
+        $moduleQueues = (array) config('historical_recalculation.module_queues', []);
+        $monthlyQueue = (string) ($moduleQueues[HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY] ?? $queue);
 
         return [
             HistoricalRecalculation::SECTION_DAILY_AVERAGES => [
@@ -59,7 +61,7 @@ class HistoricalRecalculationModuleRegistry
                 'handler' => 'executeMonthlyEfficiency',
                 'service' => 'App\\Console\\Commands\\SyncMonthlyEfficiencyObjects',
                 'job' => RunHistoricalRecalculationTaskJob::class,
-                'queue' => $queue,
+                'queue' => $monthlyQueue,
                 'result_tables' => ['monthly_efficiency_unit_geofence_facts'],
                 'aliases' => [],
             ],
@@ -204,6 +206,7 @@ class HistoricalRecalculationModuleRegistry
             '--force' => (bool) $run->force,
             '--unit-chunk' => 10,
             '--flush-rows' => 100,
+            '--historical-task-id' => $task->id,
         ], $this->hasValue(...)));
 
         return DB::table('monthly_efficiency_unit_geofence_facts')

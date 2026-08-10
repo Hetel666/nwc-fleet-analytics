@@ -27,6 +27,7 @@ class SettingsController extends Controller
             'latestHistoricalRun' => $this->latestHistoricalRun(),
             'cleanupHistoricalRun' => $this->cleanupHistoricalRun(),
             'historicalQueueSize' => $this->historicalQueueSize(),
+            'historicalQueues' => app(HistoricalRecalculationService::class)->historicalQueues(),
         ]);
     }
 
@@ -172,7 +173,7 @@ class SettingsController extends Controller
         }
 
         return DB::table('jobs')
-            ->where('queue', (string) config('historical_recalculation.queue', 'historical-recalculations'))
+            ->whereIn('queue', app(HistoricalRecalculationService::class)->historicalQueues())
             ->count();
     }
 }

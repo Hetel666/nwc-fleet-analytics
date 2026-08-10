@@ -113,7 +113,7 @@
 
                 <dl class="row small mb-3">
                     <dt class="col-6 text-secondary">Queue</dt>
-                    <dd class="col-6 text-end">{{ config('historical_recalculation.queue', 'historical-recalculations') }}</dd>
+                    <dd class="col-6 text-end">{{ implode(', ', $historicalQueues ?? [config('historical_recalculation.queue', 'historical-recalculations')]) }}</dd>
                     <dt class="col-6 text-secondary">Queue jobs</dt>
                     <dd class="col-6 text-end">{{ $historicalQueueSize ?? '-' }}</dd>
                     <dt class="col-6 text-secondary">Son run</dt>

@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\DashboardExport;
 use App\Models\Equipment;
 use App\Models\EquipmentType;
+use App\Models\HistoricalRecalculation;
+use App\Models\HistoricalRecalculationTask;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
@@ -532,6 +534,25 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => 'f6085a83-2f25-41e1-8ecb-00ff6ab77254',
+            'signature' => 'monthly-command-progress',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+            'timezone' => 'Asia/Baku',
+            'force' => true,
+            'project_ids' => [],
+        ]);
+        $task = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-01',
+        ]);
 
         $wialon = Mockery::mock(WialonService::class);
         $wialon->shouldReceive('getSessionId')->once()->andReturn('sid-test');
@@ -589,6 +610,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             '--force' => true,
             '--unit-chunk' => 1,
             '--flush-rows' => 2,
+            '--historical-task-id' => $task->id,
         ])->assertExitCode(0);
 
         $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
@@ -616,6 +638,8 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'ended_at' => '2026-07-01 15:00:00',
         ]);
         $this->assertSame(3, DB::table('monthly_efficiency_unit_geofence_facts')->where('wialon_unit_id', '10-AF-065')->count());
+        $this->assertSame(1, (int) $task->refresh()->equipment_count);
+        $this->assertNotNull($task->last_heartbeat_at);
     }
 
     public function test_object_sync_records_unknown_hours_when_wialon_report_has_no_geofence_table(): void

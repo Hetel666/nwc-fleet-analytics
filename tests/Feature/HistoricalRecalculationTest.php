@@ -270,6 +270,7 @@ class HistoricalRecalculationTest extends TestCase
     public function test_monthly_efficiency_history_creates_daily_fetch_tasks(): void
     {
         Queue::fake();
+        config()->set('historical_recalculation.module_queues.monthly_efficiency', 'historical-monthly-efficiency');
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
 
         $run = app(HistoricalRecalculationService::class)->createRun([
@@ -291,7 +292,10 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame('2026-07-01', $task->stat_date->toDateString());
         $this->assertNull($task->project_id);
         $this->assertNull($task->ownership_type);
-        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, function ($job): bool {
+            return $job->connection === 'database'
+                && $job->queue === 'historical-monthly-efficiency';
+        });
         Queue::assertNotPushed(FinalizeHistoricalRecalculationJob::class);
     }
 
@@ -887,6 +891,40 @@ class HistoricalRecalculationTest extends TestCase
         }
         $this->assertStringContainsString('value="daytime_efficiency"', $view);
         $this->assertStringContainsString('value="night_day_efficiency"', $view);
+    }
+
+    public function test_monthly_efficiency_can_use_dedicated_historical_queue(): void
+    {
+        Queue::fake();
+        config()->set('historical_recalculation.module_queues.monthly_efficiency', 'historical-monthly-efficiency');
+
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => 'd8e51db3-e084-4747-94c9-c9c8b2ef0fa0',
+            'signature' => 'monthly-dedicated-queue-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => false,
+            'project_ids' => [],
+        ]);
+
+        HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+        ]);
+
+        app(HistoricalRecalculationService::class)->dispatchNextPendingFetchTask($run);
+
+        Queue::assertPushed(FinalizeHistoricalRecalculationJob::class, function ($job): bool {
+            return $job->connection === 'database'
+                && $job->queue === 'historical-monthly-efficiency';
+        });
     }
 
     public function test_historical_page_exposes_pipeline_queue_snapshot(): void

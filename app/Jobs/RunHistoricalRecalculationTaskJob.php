@@ -115,7 +115,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
                 $delay = $this->retryDelaySeconds((int) $task->attempts);
                 $service->markTaskRetryPending($task->refresh(), $exception->getMessage(), $delay);
                 $releasedForRetry = true;
-                $this->releaseOrRedispatch($delay);
+                $this->releaseOrRedispatch($task->refresh(), $service, $delay);
 
                 return;
             }
@@ -176,7 +176,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
         return $backoff[max(0, min(count($backoff) - 1, $attempts - 1))];
     }
 
-    private function releaseOrRedispatch(int $delay): void
+    private function releaseOrRedispatch(HistoricalRecalculationTask $task, HistoricalRecalculationService $service, int $delay): void
     {
         if ($this->job) {
             $this->release($delay);
@@ -186,7 +186,7 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
 
         RunHistoricalRecalculationTaskJob::dispatch($this->taskId)
             ->onConnection((string) config('historical_recalculation.connection', 'database'))
-            ->onQueue((string) config('historical_recalculation.queue', 'historical-recalculations'))
+            ->onQueue($service->queueForRun($task->run))
             ->delay(now(config('app.timezone'))->addSeconds($delay));
     }
 }
