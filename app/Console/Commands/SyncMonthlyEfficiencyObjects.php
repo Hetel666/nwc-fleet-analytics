@@ -642,6 +642,12 @@ class SyncMonthlyEfficiencyObjects extends Command
 
     private function dateTimeText(mixed $cell, string $date): ?string
     {
+        if (is_array($cell) && is_numeric($cell['v'] ?? null)) {
+            return CarbonImmutable::createFromTimestamp((int) $cell['v'], 'UTC')
+                ->timezone(config('app.timezone'))
+                ->toDateTimeString();
+        }
+
         $text = $this->cellText($cell);
 
         if ($text === '' || in_array($text, ['-', '-----'], true)) {

@@ -12,6 +12,7 @@ use App\Models\WialonReportTemplate;
 use App\Services\MonthlyEfficiencyDashboardService;
 use App\Services\WialonService;
 use App\Support\MonthlyEfficiencyStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -556,7 +557,13 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $wialon->shouldReceive('getReportResultRows')
             ->once()
             ->with(0, 0, 0, 'sid-test')
-            ->andReturn([['c' => ['2026-07-01', '8:00:00', '10 km', '08:00:00', '16:00:00']]]);
+            ->andReturn([['c' => [
+                '2026-07-01',
+                '8:00:00',
+                '10 km',
+                ['t' => '04:00:00', 'v' => CarbonImmutable::parse('2026-07-01 08:00:00', 'Asia/Baku')->timestamp],
+                ['t' => '12:00:00', 'v' => CarbonImmutable::parse('2026-07-01 16:00:00', 'Asia/Baku')->timestamp],
+            ]]]);
         $wialon->shouldReceive('getReportResultRows')
             ->once()
             ->with(1, 0, 0, 'sid-test')
@@ -564,7 +571,15 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $wialon->shouldReceive('getReportResultSubrows')
             ->once()
             ->with(1, 0, 'sid-test')
-            ->andReturn([['c' => ['', 'Object source', '08:00:00', '15:00:00', '7:00:00', '8 km', '1']]]);
+            ->andReturn([['c' => [
+                '',
+                'Object source',
+                ['t' => '04:00:00', 'v' => CarbonImmutable::parse('2026-07-01 08:00:00', 'Asia/Baku')->timestamp],
+                ['t' => '11:00:00', 'v' => CarbonImmutable::parse('2026-07-01 15:00:00', 'Asia/Baku')->timestamp],
+                '7:00:00',
+                '8 km',
+                '1',
+            ]]]);
         $this->app->instance(WialonService::class, $wialon);
 
         $this->artisan('monthly-efficiency:sync-objects', [
@@ -585,6 +600,20 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'wialon_unit_id' => '10-AF-065',
             'segment_type' => 'total',
             'source_report_name' => 'Monthly Unit Report',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-01',
+            'wialon_unit_id' => '10-AF-065',
+            'segment_type' => 'total',
+            'started_at' => '2026-07-01 08:00:00',
+            'ended_at' => '2026-07-01 16:00:00',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-01',
+            'wialon_unit_id' => '10-AF-065',
+            'segment_type' => 'geofence',
+            'started_at' => '2026-07-01 08:00:00',
+            'ended_at' => '2026-07-01 15:00:00',
         ]);
         $this->assertSame(3, DB::table('monthly_efficiency_unit_geofence_facts')->where('wialon_unit_id', '10-AF-065')->count());
     }
