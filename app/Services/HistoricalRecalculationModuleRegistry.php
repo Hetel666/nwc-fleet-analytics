@@ -153,10 +153,34 @@ class HistoricalRecalculationModuleRegistry
 
     public function execute(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
+        $this->assertSelectedProjectTaskScope($run, $task);
+
         $definition = $this->definition((string) $run->dashboard_section);
         $handler = $definition['handler'];
 
         return $this->{$handler}($run, $task);
+    }
+
+    private function assertSelectedProjectTaskScope(
+        HistoricalRecalculation $run,
+        HistoricalRecalculationTask $task
+    ): void {
+        if ($run->scope !== HistoricalRecalculation::SCOPE_SELECTED_PROJECTS) {
+            return;
+        }
+
+        $projectIds = collect($run->project_ids ?? [])
+            ->map(fn (mixed $projectId): int => (int) $projectId)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($task->project_id === null || ! $projectIds->contains((int) $task->project_id)) {
+            throw new RuntimeException(sprintf(
+                'Selected-project historical task %d has an invalid project scope.',
+                (int) $task->id
+            ));
+        }
     }
 
     private function executeDailyAverages(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int

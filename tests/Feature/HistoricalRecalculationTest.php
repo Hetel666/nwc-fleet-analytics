@@ -430,6 +430,38 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame(1, $count);
     }
 
+    public function test_selected_project_monthly_task_cannot_execute_without_project_scope(): void
+    {
+        $project = Project::query()->create(['name' => 'Monthly scope guard project', 'active' => true]);
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '0ec58fd8-095a-4d33-a9e9-33e86f7424b1',
+            'signature' => 'monthly-selected-scope-guard-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => true,
+            'project_ids' => [$project->id],
+        ]);
+        $task = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+            'project_id' => null,
+        ]);
+
+        Artisan::shouldReceive('call')->never();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("Selected-project historical task {$task->id} has an invalid project scope.");
+
+        app(HistoricalRecalculationModuleRegistry::class)->execute($run, $task);
+    }
+
     public function test_preview_for_top20_section_has_no_aggregate_tasks(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
