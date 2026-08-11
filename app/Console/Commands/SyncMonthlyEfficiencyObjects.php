@@ -34,7 +34,7 @@ class SyncMonthlyEfficiencyObjects extends Command
         {--flush-rows=250 : Number of fact rows written per database batch}
         {--historical-task-id= : Optional historical recalculation task id for live progress heartbeats}';
 
-    protected $description = 'Sync Aylıq effektivlik object/geofence facts from the individual Wialon report.';
+    protected $description = 'Sync Aylıq effektivlik object/geofence facts from Report for Aylıq effektivlik.';
 
     public function handle(WialonService $wialon): int
     {
@@ -62,7 +62,7 @@ class SyncMonthlyEfficiencyObjects extends Command
             return self::FAILURE;
         }
 
-        $template = $this->resolveUnitReportTemplate($wialon);
+        $template = $this->resolveReportTemplate($wialon);
         $equipmentQuery = $this->equipmentQuery()
             ->when($projectId !== null, fn (Builder $query): Builder => $this->applyProjectFilter($query, $projectId))
             ->when($this->option('unit'), function (Builder $query, string $unit): void {
@@ -98,6 +98,18 @@ class SyncMonthlyEfficiencyObjects extends Command
         $flushRows = max(1, min(1000, (int) $this->option('flush-rows')));
         $progressTaskId = max(0, (int) $this->option('historical-task-id'));
         $processedUnits = 0;
+
+        if (($template['report_type'] ?? null) === 'avl_unit_group') {
+            return $this->syncGroupReportEquipment(
+                $wialon,
+                $template,
+                $equipmentQuery,
+                $from,
+                $to,
+                $flushRows,
+                $progressTaskId,
+            );
+        }
 
         $equipmentQuery
             ->orderBy('equipments.id')
@@ -186,10 +198,28 @@ class SyncMonthlyEfficiencyObjects extends Command
             ]);
     }
 
-    /** @return array{resource_id:int, template_id:int, name:string} */
-    private function resolveUnitReportTemplate(WialonService $wialon): array
+    /** @return array{resource_id:int, template_id:int, name:string, report_type:string} */
+    private function resolveReportTemplate(WialonService $wialon): array
     {
         $name = trim((string) config('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for Aylıq effektivlik'));
+
+        $groupTemplate = WialonReportTemplate::query()
+            ->where('name', $name)
+            ->where('report_type', 'avl_unit_group')
+            ->where(function (Builder $query): void {
+                $query->where('is_active', true)->orWhereNull('is_active');
+            })
+            ->first();
+
+        if ($groupTemplate) {
+            return [
+                'resource_id' => (int) $groupTemplate->resource_id,
+                'template_id' => (int) $groupTemplate->wialon_template_id,
+                'name' => (string) $groupTemplate->name,
+                'report_type' => 'avl_unit_group',
+            ];
+        }
+
         $candidates = collect([$name, $name.' (unit)'])->filter()->unique()->values();
 
         foreach ($candidates as $candidate) {
@@ -206,8 +236,20 @@ class SyncMonthlyEfficiencyObjects extends Command
                     'resource_id' => (int) $local->resource_id,
                     'template_id' => (int) $local->wialon_template_id,
                     'name' => (string) $local->name,
+                    'report_type' => 'avl_unit',
                 ];
             }
+        }
+
+        $liveGroupTemplate = $wialon->findReportTemplateByName(null, $name);
+
+        if (is_array($liveGroupTemplate) && ($liveGroupTemplate['type'] ?? null) === 'avl_unit_group') {
+            return [
+                'resource_id' => (int) ($liveGroupTemplate['resource_id'] ?? config('fleet.wialon.efficiency_report_resource_id')),
+                'template_id' => (int) ($liveGroupTemplate['id'] ?? 0),
+                'name' => (string) ($liveGroupTemplate['name'] ?? $name),
+                'report_type' => 'avl_unit_group',
+            ];
         }
 
         foreach ($candidates as $candidate) {
@@ -225,6 +267,7 @@ class SyncMonthlyEfficiencyObjects extends Command
                 'resource_id' => (int) ($live['resource_id'] ?? config('fleet.wialon.efficiency_report_resource_id')),
                 'template_id' => (int) ($live['id'] ?? 0),
                 'name' => (string) ($live['name'] ?? $candidate),
+                'report_type' => 'avl_unit',
             ];
         }
 
@@ -364,6 +407,289 @@ class SyncMonthlyEfficiencyObjects extends Command
         return collect(FleetVehicleType::MONTHLY_OBJECT_EFFICIENCY_TYPES)
             ->map(fn (string $type): string => FleetVehicleType::label($type))
             ->all();
+    }
+
+    private function syncGroupReportEquipment(
+        WialonService $wialon,
+        array $template,
+        Builder $equipmentQuery,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        int $flushRows,
+        int $progressTaskId
+    ): int {
+        $equipment = $equipmentQuery->orderBy('equipments.id')->get();
+        $processed = 0;
+        $failed = 0;
+        $deleted = 0;
+        $written = 0;
+
+        foreach ($equipment->groupBy(fn (object $item): string => (string) $item->wialon_group_id) as $groupId => $items) {
+            try {
+                $reportData = $this->loadGroupReportData($wialon, $template, $groupId, $from, $to);
+
+                foreach ($items as $item) {
+                    $unitId = (string) $item->wialon_unit_id;
+                    $result = $this->persistGroupUnitFacts(
+                        $template,
+                        $item,
+                        $from,
+                        $to,
+                        $flushRows,
+                        $reportData['totals'][$unitId] ?? [],
+                        $reportData['geofences'][$unitId] ?? [],
+                    );
+                    $deleted += $result['deleted_rows'];
+                    $written += $result['written_rows'];
+                    $processed++;
+                    $this->heartbeatHistoricalTask($progressTaskId, $processed);
+                }
+            } catch (Throwable $exception) {
+                $failed += $items->count();
+                $processed += $items->count();
+                $this->heartbeatHistoricalTask($progressTaskId, $processed);
+                $this->error("Wialon group {$groupId} failed: {$exception->getMessage()}");
+            }
+        }
+
+        $this->table(['Metric', 'Value'], [
+            ['Processed units', $processed - $failed],
+            ['Failed units', $failed],
+            ['Deleted fact rows', $deleted],
+            ['Written fact rows', $written],
+            ['Source report', (string) $template['name']],
+        ]);
+
+        return $failed > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    /** @return array{totals:array<string, array>,geofences:array<string, array>} */
+    private function loadGroupReportData(
+        WialonService $wialon,
+        array $template,
+        string $groupId,
+        CarbonImmutable $from,
+        CarbonImmutable $to
+    ): array {
+        $sid = $wialon->loginByToken(false);
+
+        try {
+            $wialon->cleanupReportResult($sid);
+            $result = $wialon->executeReport(
+                $template['resource_id'],
+                $template['template_id'],
+                $groupId,
+                $from->timestamp,
+                $to->timestamp,
+                (int) config('fleet.wialon.engine_hours_report_interval_flags', 0),
+                $sid,
+                false,
+                max(30, (int) config('fleet.wialon.efficiency_report_timeout', 90)),
+            );
+            $tables = $result['reportResult']['tables'] ?? [];
+            $engineTable = $this->findTable($tables, 'engine');
+            $geofenceTable = $this->findTable($tables, 'geofence');
+
+            if ($engineTable === null) {
+                throw new MissingMonthlyObjectReportTable('Required Engine hours table is missing in group report result.');
+            }
+
+            return [
+                'totals' => $this->groupEngineRowsByUnit(
+                    $this->selectedGroupRows($wialon, $sid, $engineTable['index'], $engineTable['table']),
+                    $engineTable['table']
+                ),
+                'geofences' => $geofenceTable === null ? [] : $this->groupGeofenceRowsByUnit(
+                    $this->selectedGroupRows($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']),
+                    $geofenceTable['table']
+                ),
+            ];
+        } finally {
+            try {
+                $wialon->cleanupReportResult($sid);
+            } catch (Throwable) {
+            }
+
+            try {
+                $wialon->logoutSession($sid);
+            } catch (Throwable) {
+            }
+        }
+    }
+
+    private function selectedGroupRows(WialonService $wialon, string $sid, int $tableIndex, array $table): array
+    {
+        $rowCount = (int) ($table['rows'] ?? 0);
+
+        if ($rowCount === 0) {
+            return [];
+        }
+
+        return $wialon->selectReportResultRows($tableIndex, [
+            'type' => 'range',
+            'data' => [
+                'from' => 0,
+                'to' => $rowCount - 1,
+                'level' => max(1, (int) ($table['level'] ?? 1) - 1),
+                'unitInfo' => 1,
+            ],
+        ], $sid);
+    }
+
+    private function groupEngineRowsByUnit(array $rows, array $table): array
+    {
+        $hoursIndex = $this->columnIndex($table, ['engine hours'], ['duration'], 3);
+        $mileageIndex = $this->columnIndex($table, ['mileage'], ['mileage', 'correct_mileage'], 7);
+        $beginIndex = $this->columnIndex($table, ['beginning', 'start'], ['time_begin'], 8);
+        $endIndex = $this->columnIndex($table, ['end'], ['time_end'], 9);
+        $result = [];
+
+        foreach ($rows as $unitRow) {
+            $unitId = $this->unitIdFromRow($unitRow);
+
+            if ($unitId === null) {
+                continue;
+            }
+
+            foreach (($unitRow['r'] ?? []) as $dayRow) {
+                $cells = $dayRow['c'] ?? [];
+                $date = $this->dateFromCell($cells[0] ?? null);
+
+                if ($date === null) {
+                    continue;
+                }
+
+                $seconds = $this->durationSeconds($cells[$hoursIndex] ?? null);
+                $result[$unitId][$date] = [
+                    'hours' => round($seconds / 3600, 2),
+                    'seconds' => $seconds,
+                    'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
+                    'visits' => 0,
+                    'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
+                    'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
+                    'raw' => $dayRow,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    private function groupGeofenceRowsByUnit(array $rows, array $table): array
+    {
+        $nameIndex = $this->columnIndex($table, ['name', 'geofence'], ['zone_name'], 1);
+        $beginIndex = $this->columnIndex($table, ['entry time', 'beginning'], ['time_begin'], 2);
+        $endIndex = $this->columnIndex($table, ['exit time', 'end'], ['time_end'], 3);
+        $hoursIndex = $this->columnIndex($table, ['engine hours'], ['duration_in'], 4);
+        $mileageIndex = $this->columnIndex($table, ['mileage'], ['mileage'], 5);
+        $visitsIndex = $this->columnIndex($table, ['visits'], ['visits_count'], 6);
+        $result = [];
+
+        foreach ($rows as $unitRow) {
+            $unitId = $this->unitIdFromRow($unitRow);
+
+            if ($unitId === null) {
+                continue;
+            }
+
+            foreach (($unitRow['r'] ?? []) as $dayRow) {
+                $date = $this->dateFromCell(($dayRow['c'] ?? [])[0] ?? null);
+
+                if ($date === null) {
+                    continue;
+                }
+
+                foreach (($dayRow['r'] ?? []) as $zoneRow) {
+                    $cells = $zoneRow['c'] ?? [];
+                    $name = $this->cellText($cells[$nameIndex] ?? null);
+
+                    if ($name === '') {
+                        $name = $this->cellText($cells[0] ?? null);
+                    }
+
+                    if ($name === '') {
+                        continue;
+                    }
+
+                    $seconds = $this->durationSeconds($cells[$hoursIndex] ?? null);
+                    $result[$unitId][$date][] = [
+                        'geofence' => $name,
+                        'hours' => round($seconds / 3600, 2),
+                        'seconds' => $seconds,
+                        'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
+                        'visits' => (int) round($this->numberValue($cells[$visitsIndex] ?? 0)),
+                        'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
+                        'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
+                        'raw' => $zoneRow,
+                    ];
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    private function unitIdFromRow(array $row): ?string
+    {
+        if (filled($row['uid'] ?? null)) {
+            return (string) $row['uid'];
+        }
+
+        foreach (($row['c'] ?? []) as $cell) {
+            if (is_array($cell) && filled($cell['u'] ?? null)) {
+                return (string) $cell['u'];
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array{deleted_rows:int,written_rows:int} */
+    private function persistGroupUnitFacts(
+        array $template,
+        object $equipment,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        int $flushRows,
+        array $totals,
+        array $geofences
+    ): array {
+        $unknownLabel = (string) config('fleet.wialon.monthly_efficiency_unknown_label', 'Naməlum');
+        $rowsToWrite = [];
+
+        foreach ($totals as $date => $total) {
+            $known = $this->normalizeKnownSegments($geofences[$date] ?? [], (float) $total['hours']);
+            $knownHours = round((float) $known->sum('hours'), 2);
+            $knownMileage = round((float) $known->sum('mileage'), 2);
+            $rowsToWrite[] = $this->factRow($equipment, $template, $date, self::SEGMENT_TOTAL, 'Total', $total);
+
+            foreach ($known as $item) {
+                $rowsToWrite[] = $this->factRow($equipment, $template, $date, self::SEGMENT_GEOFENCE, (string) $item['geofence'], $item);
+            }
+
+            $unknownHours = max(0.0, round((float) $total['hours'] - $knownHours, 2));
+            $rowsToWrite[] = $this->factRow($equipment, $template, $date, self::SEGMENT_UNKNOWN, $unknownLabel, [
+                'hours' => $unknownHours,
+                'seconds' => (int) round($unknownHours * 3600),
+                'mileage' => max(0.0, round((float) $total['mileage'] - $knownMileage, 2)),
+                'visits' => 0,
+                'started_at' => null,
+                'ended_at' => null,
+                'raw' => ['calculated' => true, 'total_hours' => $total['hours'], 'geofence_hours' => $knownHours],
+            ]);
+        }
+
+        $deletedRows = 0;
+        $writtenRows = 0;
+        DB::transaction(function () use ($equipment, $template, $from, $to, $flushRows, $rowsToWrite, &$deletedRows, &$writtenRows): void {
+            $deletedRows = $this->option('force') ? $this->purgeExistingFacts($equipment, $template, $from, $to) : 0;
+
+            foreach (array_chunk($rowsToWrite, $flushRows) as $rows) {
+                $writtenRows += $this->upsertFacts($rows);
+            }
+        });
+
+        return ['deleted_rows' => $deletedRows, 'written_rows' => $writtenRows];
     }
 
     /** @return array{days:int,total_hours:float,geofence_hours:float,unknown_hours:float,deleted_rows:int,written_rows:int} */
