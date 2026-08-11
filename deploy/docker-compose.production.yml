@@ -137,6 +137,7 @@ services:
       - ALL
     networks:
       - default
+      - coolify
 
   historical-monthly-worker:
     build:
@@ -158,6 +159,7 @@ services:
       - ALL
     networks:
       - default
+      - coolify
 
   backfill-worker:
     build:
