@@ -27,6 +27,7 @@ class SyncMonthlyEfficiencyObjects extends Command
     protected $signature = 'monthly-efficiency:sync-objects
         {--from= : Start date}
         {--to= : End date}
+        {--project= : Optional local project id}
         {--unit= : Optional Wialon unit id, registration number or unit name}
         {--force : Replace existing object-geofence facts for the selected period}
         {--unit-chunk=25 : Number of units loaded from database at once}
@@ -53,8 +54,17 @@ class SyncMonthlyEfficiencyObjects extends Command
             return self::FAILURE;
         }
 
+        $projectId = $this->projectOption();
+
+        if ($projectId === false) {
+            $this->error('The --project option must be a positive integer.');
+
+            return self::FAILURE;
+        }
+
         $template = $this->resolveUnitReportTemplate($wialon);
         $equipmentQuery = $this->equipmentQuery()
+            ->when($projectId !== null, fn (Builder $query): Builder => $this->applyProjectFilter($query, $projectId))
             ->when($this->option('unit'), function (Builder $query, string $unit): void {
                 $query->where(function (Builder $query) use ($unit): void {
                     $query->where('equipments.wialon_unit_id', $unit)
@@ -287,6 +297,32 @@ class SyncMonthlyEfficiencyObjects extends Command
         if (Schema::hasColumn('project_wialon_groups', 'is_active')) {
             $query->where($alias.'.is_active', true);
         }
+    }
+
+    private function projectOption(): int|false|null
+    {
+        $project = trim((string) $this->option('project'));
+
+        if ($project === '') {
+            return null;
+        }
+
+        if (! ctype_digit($project) || (int) $project <= 0) {
+            return false;
+        }
+
+        return (int) $project;
+    }
+
+    private function applyProjectFilter(Builder $query, int $projectId): Builder
+    {
+        return $query->where(function (Builder $query) use ($projectId): void {
+            $query->where('direct_project_groups.project_id', $projectId)
+                ->orWhere(function (Builder $query) use ($projectId): void {
+                    $query->whereNull('equipments.project_wialon_group_id')
+                        ->where('matched_project_groups.project_id', $projectId);
+                });
+        });
     }
 
     private function allowedWialonUnitGroupLabel(): string

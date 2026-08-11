@@ -299,10 +299,17 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertNotPushed(FinalizeHistoricalRecalculationJob::class);
     }
 
-    public function test_monthly_efficiency_rejects_selected_projects_scope(): void
+    public function test_monthly_efficiency_allows_selected_projects_scope(): void
     {
+        Queue::fake();
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
         $project = Project::query()->create(['name' => 'Monthly selected project', 'active' => true]);
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '231',
+            'name' => 'Monthly selected project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
 
         $this->actingAs($admin)
             ->postJson(route('admin.historical-recalculations.preview'), [
@@ -315,8 +322,102 @@ class HistoricalRecalculationTest extends TestCase
                 'project_ids' => [$project->id],
                 'force' => true,
             ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('scope');
+            ->assertOk()
+            ->assertJson([
+                'days' => 31,
+                'project_groups' => 1,
+                'fetch_tasks' => 31,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 31,
+            ]);
+
+        $run = app(HistoricalRecalculationService::class)->createRun([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-31',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => true,
+        ], $admin);
+
+        $this->assertSame(31, $run->tasks()->count());
+        $this->assertTrue($run->tasks()->get()->every(
+            fn (HistoricalRecalculationTask $task): bool => (int) $task->project_id === (int) $project->id
+        ));
+    }
+
+    public function test_monthly_efficiency_history_uses_project_scoped_command(): void
+    {
+        $project = Project::query()->create(['name' => 'Monthly command project', 'active' => true]);
+        $otherProject = Project::query()->create(['name' => 'Other monthly command project', 'active' => true]);
+        $run = HistoricalRecalculation::query()->create([
+            'uuid' => '7194341d-532c-4f14-991a-ff07a64a5c6c',
+            'signature' => 'monthly-selected-command-test',
+            'status' => HistoricalRecalculation::STATUS_RUNNING,
+            'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'date_from' => '2026-07-29',
+            'date_to' => '2026-07-29',
+            'timezone' => 'Asia/Baku',
+            'force' => true,
+            'project_ids' => [$project->id],
+        ]);
+        $task = HistoricalRecalculationTask::query()->create([
+            'historical_recalculation_id' => $run->id,
+            'status' => HistoricalRecalculationTask::STATUS_RUNNING,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH,
+            'stat_date' => '2026-07-29',
+            'project_id' => $project->id,
+        ]);
+        DB::table('monthly_efficiency_unit_geofence_facts')->insert([
+            [
+                'stat_date' => '2026-07-29',
+                'project_id' => $project->id,
+                'wialon_unit_id' => 'monthly-1',
+                'unit_name' => 'Monthly 1',
+                'vehicle_type' => 'Excavator',
+                'segment_type' => 'total',
+                'geofence_name' => 'Total',
+                'engine_hours_decimal' => 1,
+                'engine_seconds' => 3600,
+                'mileage_km' => 1,
+                'visits_count' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'stat_date' => '2026-07-29',
+                'project_id' => $otherProject->id,
+                'wialon_unit_id' => 'monthly-2',
+                'unit_name' => 'Monthly 2',
+                'vehicle_type' => 'Excavator',
+                'segment_type' => 'total',
+                'geofence_name' => 'Total',
+                'engine_hours_decimal' => 1,
+                'engine_seconds' => 3600,
+                'mileage_km' => 1,
+                'visits_count' => 0,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('monthly-efficiency:sync-objects', \Mockery::on(
+                fn (array $parameters): bool => $parameters['--project'] === $project->id
+                    && $parameters['--from'] === '2026-07-29'
+                    && $parameters['--to'] === '2026-07-29'
+                    && $parameters['--force'] === true
+            ))
+            ->andReturn(0);
+
+        $count = app(HistoricalRecalculationModuleRegistry::class)->execute($run, $task);
+
+        $this->assertSame(1, $count);
     }
 
     public function test_preview_for_top20_section_has_no_aggregate_tasks(): void
@@ -654,10 +755,18 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
     }
 
-    public function test_all_dashboards_requires_all_projects_scope(): void
+    public function test_all_dashboards_allows_selected_projects_scope(): void
     {
+        Queue::fake();
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
         $project = Project::query()->create(['name' => 'Selected all dashboard project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '803',
+            'name' => 'Selected all dashboard project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '80301');
 
         $this->actingAs($admin)
             ->from(route('admin.historical-recalculations.index'))
@@ -671,8 +780,22 @@ class HistoricalRecalculationTest extends TestCase
                 'project_ids' => [$project->id],
                 'force' => true,
             ])
-            ->assertRedirect(route('admin.historical-recalculations.index'))
-            ->assertSessionHasErrors('scope');
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+
+        $this->assertCount(1, $pipelines);
+        $this->assertCount(9, $pipelines[0]['plans']);
+        $this->assertTrue(collect($pipelines[0]['plans'])->every(
+            fn (array $plan): bool => $plan['scope'] === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS
+                && $plan['project_ids'] === [$project->id]
+        ));
+        $this->assertDatabaseHas('historical_recalculations', [
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+        ]);
     }
 
     public function test_selected_layihesiz_project_is_rejected_for_geofence_modules(): void

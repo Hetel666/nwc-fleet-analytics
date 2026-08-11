@@ -203,15 +203,22 @@ class HistoricalRecalculationModuleRegistry
         $this->runArtisanOrFail('monthly-efficiency:sync-objects', array_filter([
             '--from' => $date,
             '--to' => $date,
+            '--project' => $task->project_id,
             '--force' => (bool) $run->force,
             '--unit-chunk' => 10,
             '--flush-rows' => 100,
             '--historical-task-id' => $task->id,
         ], $this->hasValue(...)));
 
-        return DB::table('monthly_efficiency_unit_geofence_facts')
+        $query = DB::table('monthly_efficiency_unit_geofence_facts')
             ->where('stat_date', $date)
-            ->where('segment_type', 'total')
+            ->where('segment_type', 'total');
+
+        if ($task->project_id) {
+            $query->where('project_id', $task->project_id);
+        }
+
+        return $query
             ->distinct('wialon_unit_id')
             ->count('wialon_unit_id');
     }

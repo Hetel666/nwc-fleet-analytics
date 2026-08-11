@@ -702,10 +702,24 @@ class HistoricalRecalculationService
         $projectIds = $this->selectedProjectIds($payload);
 
         if (($payload['dashboard_section'] ?? null) === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY) {
-            return collect([(object) [
-                'project_id' => null,
-                'ownership_type' => null,
-            ]]);
+            if ($projectIds->isEmpty()) {
+                return collect([(object) [
+                    'project_id' => null,
+                    'ownership_type' => null,
+                ]]);
+            }
+
+            return Project::query()
+                ->where('active', true)
+                ->whereIn('id', $projectIds)
+                ->whereHas('wialonGroups', fn ($query) => $query
+                    ->whereIn('ownership_type', [Equipment::OWNERSHIP_NWC, Equipment::OWNERSHIP_ICARE]))
+                ->get(['id'])
+                ->map(fn (Project $project): object => (object) [
+                    'project_id' => $project->id,
+                    'ownership_type' => null,
+                ])
+                ->values();
         }
 
         if (in_array(($payload['dashboard_section'] ?? null), [
