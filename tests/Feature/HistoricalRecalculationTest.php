@@ -808,6 +808,51 @@ class HistoricalRecalculationTest extends TestCase
         ]);
     }
 
+    public function test_selected_project_all_dashboards_can_queue_a_full_month_pipeline(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Selected full month project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '804',
+            'name' => 'Selected full month project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '80401');
+
+        $this->actingAs($admin)
+            ->from(route('admin.historical-recalculations.index'))
+            ->post(route('admin.historical-recalculations.store'), [
+                'date_from' => '2026-07-01',
+                'date_to' => '2026-07-31',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $stored = (string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value');
+        $pipelines = json_decode($stored, true);
+
+        $this->assertGreaterThan(65535, strlen($stored));
+        $this->assertCount(1, $pipelines);
+        $this->assertCount(31 * 9, $pipelines[0]['plans']);
+        $this->assertTrue(collect($pipelines[0]['plans'])->every(
+            fn (array $plan): bool => $plan['scope'] === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS
+                && $plan['project_ids'] === [$project->id]
+                && $plan['force'] === true
+        ));
+        $this->assertDatabaseCount('historical_recalculations', 1);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+    }
+
     public function test_selected_layihesiz_project_is_rejected_for_geofence_modules(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
