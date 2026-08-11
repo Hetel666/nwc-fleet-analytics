@@ -127,7 +127,7 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    entrypoint: ["php", "artisan", "queue:work", "--queue=historical-recalculations", "--sleep=3", "--tries=6", "--timeout=900", "--max-time=3600"]
+    entrypoint: ["php", "artisan", "queue:work", "database", "--queue=historical-recalculations", "--sleep=3", "--tries=6", "--timeout=900", "--max-time=3600"]
     healthcheck:
       disable: true
     user: www-data
@@ -149,7 +149,7 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    entrypoint: ["php", "artisan", "queue:work", "--queue=historical-monthly-efficiency", "--sleep=3", "--tries=6", "--timeout=900", "--max-time=3600"]
+    entrypoint: ["php", "artisan", "queue:work", "database", "--queue=historical-monthly-efficiency", "--sleep=3", "--tries=6", "--timeout=900", "--max-time=3600"]
     healthcheck:
       disable: true
     user: www-data
