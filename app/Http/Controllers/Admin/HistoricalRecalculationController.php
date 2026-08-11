@@ -10,6 +10,9 @@ use App\Models\Project;
 use App\Services\DashboardModuleRegistry;
 use App\Services\DashboardReportPipelineService;
 use App\Services\HistoricalRecalculationService;
+use Carbon\Carbon;
+use Carbon\CarbonPeriod;
+use Illuminate\Support\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,6 +21,19 @@ use Illuminate\View\View;
 
 class HistoricalRecalculationController extends Controller
 {
+    /** @var array<int, string> */
+    private const ALL_DASHBOARD_SECTIONS = [
+        HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+        HistoricalRecalculation::SECTION_EFFICIENCY,
+        HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+        HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+        HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+        HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
+        HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+        HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+        HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+    ];
+
     public function index(
         Request $request,
         DashboardReportPipelineService $pipelines,
@@ -71,7 +87,13 @@ class HistoricalRecalculationController extends Controller
 
     public function preview(StoreHistoricalRecalculationRequest $request, HistoricalRecalculationService $service): JsonResponse
     {
-        return response()->json($service->preview($request->validated()));
+        $payload = $request->validated();
+
+        if (($payload['dashboard_section'] ?? null) !== HistoricalRecalculation::SECTION_ALL_DASHBOARDS) {
+            return response()->json($service->preview($payload));
+        }
+
+        return response()->json($this->previewAllDashboards($payload, $service));
     }
 
     public function store(
@@ -81,7 +103,8 @@ class HistoricalRecalculationController extends Controller
     ): RedirectResponse
     {
         $payload = $request->validated();
-        $preview = $service->preview($payload);
+        $plans = $this->pipelinePlans($payload, $service);
+        $preview = $plans['preview'];
 
         if ((int) ($preview['total_tasks'] ?? 0) === 0) {
             throw ValidationException::withMessages([
@@ -90,7 +113,7 @@ class HistoricalRecalculationController extends Controller
         }
 
         $result = $pipelines->queue(
-            [$payload],
+            $plans['payloads'],
             'manual',
             $pipelines->priorityForSource('manual'),
             false,
@@ -109,6 +132,120 @@ class HistoricalRecalculationController extends Controller
         return redirect()
             ->route('admin.historical-recalculations.show', $run)
             ->with('status', 'Tarixi məlumatların yenilənməsi pipeline növbəsinə əlavə edildi.');
+    }
+
+    /**
+     * @return array{payloads: array<int, array<string, mixed>>, preview: array<string, mixed>}
+     */
+    private function pipelinePlans(array $payload, HistoricalRecalculationService $service): array
+    {
+        if (($payload['dashboard_section'] ?? null) !== HistoricalRecalculation::SECTION_ALL_DASHBOARDS) {
+            return [
+                'payloads' => [$payload],
+                'preview' => $service->preview($payload),
+            ];
+        }
+
+        $preview = $this->previewAllDashboards($payload, $service);
+
+        return [
+            'payloads' => collect($preview['modules'] ?? [])
+                ->map(fn (array $module): array => $module['payload'])
+                ->values()
+                ->all(),
+            'preview' => $preview,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function previewAllDashboards(array $payload, HistoricalRecalculationService $service): array
+    {
+        $modules = $this->dates($payload)
+            ->flatMap(fn (string $date): Collection => $this->sectionPayloads($payload, $date))
+            ->map(function (array $modulePayload) use ($service): ?array {
+                $preview = $service->preview($modulePayload);
+
+                if ((int) ($preview['total_tasks'] ?? 0) <= 0) {
+                    return null;
+                }
+
+                return [
+                    'section' => $modulePayload['dashboard_section'],
+                    'date_from' => $modulePayload['date_from'],
+                    'date_to' => $modulePayload['date_to'],
+                    'payload' => $modulePayload,
+                    'preview' => $preview,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $tables = $modules
+            ->flatMap(fn (array $module): array => $module['preview']['dry_run']['tables'] ?? [])
+            ->unique(fn (array $table): string => (string) ($table['table'] ?? '').'|'.json_encode($table['filters'] ?? []))
+            ->values()
+            ->all();
+        $warnings = $modules
+            ->flatMap(fn (array $module): array => $module['preview']['dry_run']['warnings'] ?? [])
+            ->unique()
+            ->values()
+            ->all();
+
+        return [
+            'mode' => HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+            'days' => $this->dates($payload)->count(),
+            'project_groups' => (int) $modules->sum(fn (array $module): int => (int) ($module['preview']['project_groups'] ?? 0)),
+            'fetch_tasks' => (int) $modules->sum(fn (array $module): int => (int) ($module['preview']['fetch_tasks'] ?? 0)),
+            'aggregate_tasks' => (int) $modules->sum(fn (array $module): int => (int) ($module['preview']['aggregate_tasks'] ?? 0)),
+            'total_tasks' => (int) $modules->sum(fn (array $module): int => (int) ($module['preview']['total_tasks'] ?? 0)),
+            'pipeline_steps' => $modules->count(),
+            'modules' => $modules
+                ->map(fn (array $module): array => [
+                    'section' => $module['section'],
+                    'date_from' => $module['date_from'],
+                    'date_to' => $module['date_to'],
+                    'total_tasks' => (int) ($module['preview']['total_tasks'] ?? 0),
+                    'payload' => $module['payload'],
+                ])
+                ->all(),
+            'dry_run' => [
+                'dashboard_code' => HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+                'source_report' => 'All registered dashboard reports',
+                'manual_command' => 'dashboard-reports pipeline',
+                'writes_shared_tables' => true,
+                'isolation' => 'sequential pipeline',
+                'force' => (bool) ($payload['force'] ?? false),
+                'tables' => $tables,
+                'warnings' => array_values(array_unique([
+                    ...$warnings,
+                    'All dashboards mode queues one module per day. The next module starts only after the current run is terminal.',
+                ])),
+            ],
+        ];
+    }
+
+    /** @return Collection<int, array<string, mixed>> */
+    private function sectionPayloads(array $payload, string $date): Collection
+    {
+        return collect(self::ALL_DASHBOARD_SECTIONS)->map(function (string $section) use ($payload, $date): array {
+            $modulePayload = $payload;
+            $modulePayload['dashboard_section'] = $section;
+            $modulePayload['date_from'] = $date;
+            $modulePayload['date_to'] = $date;
+
+            return $modulePayload;
+        });
+    }
+
+    /** @return Collection<int, string> */
+    private function dates(array $payload): Collection
+    {
+        $timezone = (string) ($payload['timezone'] ?? config('historical_recalculation.timezone', 'Asia/Baku'));
+
+        return collect(CarbonPeriod::create(
+            Carbon::parse((string) $payload['date_from'], $timezone)->startOfDay(),
+            Carbon::parse((string) $payload['date_to'], $timezone)->startOfDay()
+        ))->map(fn (Carbon $date): string => $date->toDateString())->values();
     }
 
     public function show(HistoricalRecalculation $historicalRecalculation): View

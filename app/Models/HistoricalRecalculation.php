@@ -44,6 +44,8 @@ class HistoricalRecalculation extends Model
 
     public const SECTION_GEOFENCE_VIOLATIONS = 'geofence_violations';
 
+    public const SECTION_ALL_DASHBOARDS = 'all_dashboards';
+
     public const SCOPE_ALL_PROJECTS = 'all_projects';
 
     public const SCOPE_SELECTED_PROJECTS = 'selected_projects';

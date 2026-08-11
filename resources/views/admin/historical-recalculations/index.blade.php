@@ -124,6 +124,9 @@
                         <div class="col-12">
                             <label class="form-label">Bölmə</label>
                             <div class="d-grid gap-2">
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-all-dashboards" value="all_dashboards" autocomplete="off" @checked(old('dashboard_section') === 'all_dashboards')>
+                                <label class="btn btn-outline-primary text-start" for="section-all-dashboards">Butun dashboardlar</label>
+
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-daily-averages" value="daily_averages" autocomplete="off" @checked(old('dashboard_section', 'daily_averages') === 'daily_averages')>
                                 <label class="btn btn-outline-primary text-start" for="section-daily-averages">Orta motosaat göstəricisi / Orta yürüş göstəricisi</label>
 
@@ -304,6 +307,26 @@
         }
 
         function refreshSectionSourceInfo() {
+            if (selectedSection() === 'all_dashboards') {
+                const writeMode = sectionSourceInfo.querySelector('[data-source-field="write-mode"]');
+
+                setSourceField('title', 'Butun dashboardlar');
+                setSourceField('code', 'all_dashboards');
+                setSourceField('isolation', 'sequential pipeline');
+                setSourceField('source-report', 'All registered dashboard reports');
+                setSourceField('manual-command', 'dashboard-reports pipeline');
+                setSourceField('auto-schedule', 'manual');
+                setSourceField('result-tables', 'all registered dashboard result tables');
+                setSourceField('risk', 'One module per day is queued. The next step starts after the current run is finished.');
+
+                if (writeMode) {
+                    writeMode.textContent = 'sequential';
+                    writeMode.className = 'badge text-bg-primary';
+                }
+
+                return;
+            }
+
             const contract = moduleContracts[selectedSection()] || {};
             const safeScope = contract.safe_resync_scope || {};
             const resultTables = Array.isArray(contract.result_tables) ? contract.result_tables : [];
@@ -374,6 +397,7 @@
             const dryRun = data.dry_run || {};
             const tables = Array.isArray(dryRun.tables) ? dryRun.tables : [];
             const warnings = Array.isArray(dryRun.warnings) ? dryRun.warnings : [];
+            const modules = Array.isArray(data.modules) ? data.modules : [];
             const rows = tables.map((table) => `
                 <tr>
                     <td class="text-nowrap">${escapeHtml(table.table)}</td>
@@ -386,12 +410,38 @@
             const warningHtml = warnings.length > 0
                 ? `<div class="alert alert-warning py-2 mt-2 mb-0">${warnings.map((warning) => `<div>${escapeHtml(warning)}</div>`).join('')}</div>`
                 : '<div class="text-success mt-2">Critical warning yoxdur.</div>';
+            const moduleHtml = modules.length > 0
+                ? `<div class="table-responsive mt-2">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                        <tr>
+                            <th>Step</th>
+                            <th>Module</th>
+                            <th>Date</th>
+                            <th class="text-end">Tasks</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                            ${modules.map((module, index) => `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td class="text-nowrap">${escapeHtml(module.section)}</td>
+                                    <td class="text-nowrap">${escapeHtml(module.date_from)}${module.date_from === module.date_to ? '' : ` - ${escapeHtml(module.date_to)}`}</td>
+                                    <td class="text-end">${escapeHtml(module.total_tasks)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>`
+                : '';
 
             return `
                 <div class="fw-semibold mb-2">
                     ${escapeHtml(data.days)} gün, ${escapeHtml(data.project_groups)} obyekt, ${escapeHtml(data.fetch_tasks)} yükləmə tapşırığı,
                     ${escapeHtml(data.aggregate_tasks)} hesablama tapşırığı. Cəmi: ${escapeHtml(data.total_tasks)}.
                 </div>
+                ${data.pipeline_steps ? `<div class="mb-2"><span class="fw-semibold">Pipeline steps:</span> ${escapeHtml(data.pipeline_steps)}</div>` : ''}
+                ${moduleHtml}
                 <div class="d-flex flex-wrap gap-2 mb-2">
                     <span class="badge text-bg-primary">${escapeHtml(dryRun.dashboard_code || '-')}</span>
                     <span class="badge ${dryRun.writes_shared_tables ? 'text-bg-warning' : 'text-bg-success'}">

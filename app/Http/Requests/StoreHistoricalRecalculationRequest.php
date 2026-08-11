@@ -29,9 +29,10 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date', 'after_or_equal:date_from'],
             'timezone' => ['required', 'timezone'],
-            'dashboard_section' => ['required', Rule::in(array_keys(
-                app(HistoricalRecalculationModuleRegistry::class)->definitions()
-            ))],
+            'dashboard_section' => ['required', Rule::in([
+                ...array_keys(app(HistoricalRecalculationModuleRegistry::class)->definitions()),
+                HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+            ])],
             'operation' => ['required', Rule::in([
                 HistoricalRecalculation::OPERATION_FETCH,
                 HistoricalRecalculation::OPERATION_RECALCULATE,
@@ -60,6 +61,11 @@ class StoreHistoricalRecalculationRequest extends FormRequest
             if ($this->input('dashboard_section') === HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY
                 && $this->input('scope') === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS) {
                 $validator->errors()->add('scope', 'Aylıq effektivlik yalnız Bütün layihələr rejimində yenilənə bilər.');
+            }
+
+            if ($this->input('dashboard_section') === HistoricalRecalculation::SECTION_ALL_DASHBOARDS
+                && $this->input('scope') === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS) {
+                $validator->errors()->add('scope', 'Butun dashboardlar rejimi yalniz Butun layiheler ucun icra olunur.');
             }
 
             if (! $this->filled(['date_from', 'date_to'])) {

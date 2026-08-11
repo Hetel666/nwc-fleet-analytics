@@ -559,6 +559,122 @@ class HistoricalRecalculationTest extends TestCase
             ]);
     }
 
+    public function test_preview_for_all_dashboards_expands_to_daily_module_pipeline_steps(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'All dashboards preview', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '801',
+            'name' => 'All dashboards preview - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '80101');
+
+        $response = $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-30',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJsonPath('mode', HistoricalRecalculation::SECTION_ALL_DASHBOARDS)
+            ->assertJsonPath('days', 2)
+            ->assertJsonPath('pipeline_steps', 18);
+
+        $modules = collect($response->json('modules'));
+
+        $this->assertSame(
+            [
+                HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+                HistoricalRecalculation::SECTION_EFFICIENCY,
+                HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+                HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+                HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            ],
+            $modules->take(5)->pluck('section')->all()
+        );
+        $this->assertTrue($modules->take(9)->every(fn (array $module): bool => $module['date_from'] === '2026-07-29'));
+        $this->assertTrue($modules->slice(9, 9)->every(fn (array $module): bool => $module['date_from'] === '2026-07-30'));
+    }
+
+    public function test_store_all_dashboards_queues_one_manual_pipeline_with_per_day_module_steps(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'All dashboards queue', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '802',
+            'name' => 'All dashboards queue - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '80201');
+
+        $this->actingAs($admin)
+            ->from(route('admin.historical-recalculations.index'))
+            ->post(route('admin.historical-recalculations.store'), [
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-29',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
+                'force' => true,
+            ])
+            ->assertRedirect();
+
+        $pipelines = json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true);
+
+        $this->assertCount(1, $pipelines);
+        $this->assertSame('manual', $pipelines[0]['source']);
+        $this->assertCount(9, $pipelines[0]['plans']);
+        $this->assertSame(HistoricalRecalculation::SECTION_DAILY_AVERAGES, $pipelines[0]['plans'][0]['section']);
+        $this->assertSame(HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE, $pipelines[0]['plans'][8]['section']);
+        $this->assertTrue(collect($pipelines[0]['plans'])->every(
+            fn (array $plan): bool => $plan['date_from'] === '2026-07-29'
+                && $plan['date_to'] === '2026-07-29'
+                && $plan['operation'] === HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE
+                && $plan['force'] === true
+        ));
+
+        $this->assertDatabaseCount('historical_recalculations', 1);
+        $this->assertDatabaseHas('historical_recalculations', [
+            'dashboard_section' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
+            'date_from' => '2026-07-29 00:00:00',
+            'date_to' => '2026-07-29 00:00:00',
+            'force' => 1,
+        ]);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+    }
+
+    public function test_all_dashboards_requires_all_projects_scope(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Selected all dashboard project', 'active' => true]);
+
+        $this->actingAs($admin)
+            ->from(route('admin.historical-recalculations.index'))
+            ->post(route('admin.historical-recalculations.store'), [
+                'date_from' => '2026-07-29',
+                'date_to' => '2026-07-29',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_ALL_DASHBOARDS,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+                'project_ids' => [$project->id],
+                'force' => true,
+            ])
+            ->assertRedirect(route('admin.historical-recalculations.index'))
+            ->assertSessionHasErrors('scope');
+    }
+
     public function test_selected_layihesiz_project_is_rejected_for_geofence_modules(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
