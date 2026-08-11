@@ -50,6 +50,11 @@
             <div class="small text-secondary">{{ $subtitle }}</div>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2 flex-shrink-0">
+            @if (! empty($exportUrl))
+                <a href="{{ $exportUrl }}" class="btn btn-sm dashboard-export-button" title="Excel" aria-label="Excel">
+                    <i class="bi bi-download"></i>
+                </a>
+            @endif
             <button type="button" class="btn btn-sm dashboard-personal-hide-toggle" title="Hide" aria-label="Hide">
                 <i class="bi bi-eye-slash"></i>
             </button>

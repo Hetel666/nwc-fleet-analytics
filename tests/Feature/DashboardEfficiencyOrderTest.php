@@ -134,6 +134,8 @@ class DashboardEfficiencyOrderTest extends TestCase
             '/api/dashboard/nighttime-efficiency/export',
             '/api/dashboard/night-day-efficiency/export',
             'id="dashboardDrilldownSearch"',
+            'block=average-engine-hours',
+            'block=average-mileage',
             'block=least-working',
             'block=most-working',
         ] as $marker) {
