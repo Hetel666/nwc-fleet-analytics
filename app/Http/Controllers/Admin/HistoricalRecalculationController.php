@@ -61,7 +61,7 @@ class HistoricalRecalculationController extends Controller
         return view('admin.historical-recalculations.index', [
             'projects' => Project::query()
                 ->where('active', true)
-                ->excludeFromOperationalDashboard()
+                ->whereNotIn('name', Project::dashboardOperationalExcludedNames())
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'historicalModuleContracts' => $historicalModuleContracts,
