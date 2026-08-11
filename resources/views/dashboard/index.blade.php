@@ -3261,6 +3261,9 @@
                             </div>
                         </div>
                         <div class="foreign-geofence-actions">
+                            <a href="{{ $exportUrl('geofence-violations-report') }}" class="btn btn-sm dashboard-export-button foreign-geofence-action" title="Excel" aria-label="Excel">
+                                <i class="bi bi-download"></i>
+                            </a>
                             <button type="button" class="btn btn-sm dashboard-personal-hide-toggle foreign-geofence-action" title="Hide" aria-label="Hide">
                                 <i class="bi bi-eye-slash"></i>
                             </button>

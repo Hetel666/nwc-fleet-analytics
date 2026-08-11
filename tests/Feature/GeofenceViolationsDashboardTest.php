@@ -365,6 +365,25 @@ class GeofenceViolationsDashboardTest extends TestCase
             ->assertSee('PK', false);
     }
 
+    public function test_geofence_violations_report_widget_has_own_excel_export_link(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        [$project, $type] = $this->fleet();
+
+        $this->reportRow($project, $type, 'Report violation', 14_400);
+
+        $this->actingAs($user)->get(route('dashboard', [
+            'tab' => 'geozones',
+            'date_from' => '2026-07-27',
+            'date_to' => '2026-07-27',
+            'project_id' => $project->id,
+            'equipment_type_id' => $type->id,
+        ]))
+            ->assertOk()
+            ->assertSee('data-widget-key="geofence-violations-report"', false)
+            ->assertSee('block=geofence-violations-report', false);
+    }
+
     /**
      * @return array{Project, EquipmentType}
      */
