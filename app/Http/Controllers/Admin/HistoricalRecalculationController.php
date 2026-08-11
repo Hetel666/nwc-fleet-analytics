@@ -59,7 +59,11 @@ class HistoricalRecalculationController extends Controller
             ]);
 
         return view('admin.historical-recalculations.index', [
-            'projects' => Project::query()->where('active', true)->orderBy('name')->get(['id', 'name']),
+            'projects' => Project::query()
+                ->where('active', true)
+                ->excludeFromOperationalDashboard()
+                ->orderBy('name')
+                ->get(['id', 'name']),
             'historicalModuleContracts' => $historicalModuleContracts,
             'pipelineQueue' => $pipelines->queueSnapshot(),
             'runs' => HistoricalRecalculation::query()

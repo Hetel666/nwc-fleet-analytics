@@ -31,6 +31,25 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($admin)->get('/equipment')->assertOk();
     }
 
+    public function test_report_dashboard_project_filter_hides_layihesiz_and_repair_projects(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        Project::query()->create(['name' => 'Operational Project', 'active' => true]);
+        Project::query()->create(['name' => 'Layihəsiz', 'active' => true]);
+        Project::query()->create(['name' => 'Təmir', 'active' => true]);
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertViewHas('projects', function ($projects): bool {
+                $names = collect($projects)->pluck('name')->all();
+
+                return in_array('Operational Project', $names, true)
+                    && ! in_array('Layihəsiz', $names, true)
+                    && ! in_array('Təmir', $names, true);
+            });
+    }
+
     public function test_equipment_drilldown_shows_data_without_unused_tabs(): void
     {
         $this->seed(DemoSeeder::class);

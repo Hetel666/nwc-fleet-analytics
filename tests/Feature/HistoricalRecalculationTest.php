@@ -65,6 +65,9 @@ class HistoricalRecalculationTest extends TestCase
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
 
+        Project::query()->create(['name' => 'Historical Operational Project', 'active' => true]);
+        Project::query()->create(['name' => 'Layihəsiz', 'active' => true]);
+        Project::query()->create(['name' => 'Təmir', 'active' => true]);
         $this->actingAs($admin)
             ->get(route('admin.historical-recalculations.index'))
             ->assertOk()
@@ -74,7 +77,14 @@ class HistoricalRecalculationTest extends TestCase
             ->assertSee('Qrup date report Engine hours (api)')
             ->assertSee('day report Engine hours (api)')
             ->assertSee('night report Engine hours (api)')
-            ->assertSee('night day report Engine hours (api)');
+            ->assertSee('night day report Engine hours (api)')
+            ->assertViewHas('projects', function ($projects): bool {
+                $names = collect($projects)->pluck('name')->all();
+
+                return in_array('Historical Operational Project', $names, true)
+                    && ! in_array('Layihəsiz', $names, true)
+                    && ! in_array('Təmir', $names, true);
+            });
     }
 
     public function test_viewer_cannot_open_historical_recalculation_page(): void

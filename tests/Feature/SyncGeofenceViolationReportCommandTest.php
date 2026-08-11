@@ -482,7 +482,7 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         ]);
     }
 
-    public function test_command_prunes_legacy_rows_and_preserves_layihesiz_rows(): void
+    public function test_command_prunes_legacy_rows_and_excluded_project_rows(): void
     {
         $project = Project::create(['name' => 'Cleanup project', 'active' => true]);
         $excluded = Project::create(['name' => Project::DASHBOARD_UNASSIGNED_NAMES[0], 'active' => true]);
@@ -558,8 +558,8 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         ])->assertSuccessful();
 
         $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'legacy-row']);
-        $this->assertDatabaseHas('geofence_violation_report_rows', ['period_key' => 'excluded-row']);
-        $this->assertDatabaseHas('geofence_violation_sync_items', ['checkpoint_key' => sha1('excluded-checkpoint')]);
+        $this->assertDatabaseMissing('geofence_violation_report_rows', ['period_key' => 'excluded-row']);
+        $this->assertDatabaseMissing('geofence_violation_sync_items', ['checkpoint_key' => sha1('excluded-checkpoint')]);
     }
 
     /**

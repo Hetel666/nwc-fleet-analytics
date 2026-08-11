@@ -15,6 +15,13 @@ class Project extends Model
         '-Layihesiz-',
     ];
 
+    public const DASHBOARD_REPAIR_NAMES = [
+        'Təmir',
+        'Temir',
+        '-Təmir-',
+        '-Temir-',
+    ];
+
     public const DASHBOARD_SHARE_ONLY_NAMES = [];
 
     protected $fillable = [
@@ -71,6 +78,10 @@ class Project extends Model
      */
     public static function dashboardOperationalExcludedNames(): array
     {
-        return self::DASHBOARD_SHARE_ONLY_NAMES;
+        return array_values(array_unique([
+            ...self::DASHBOARD_UNASSIGNED_NAMES,
+            ...self::DASHBOARD_REPAIR_NAMES,
+            ...self::DASHBOARD_SHARE_ONLY_NAMES,
+        ]));
     }
 }

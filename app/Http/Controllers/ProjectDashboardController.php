@@ -54,7 +54,11 @@ class ProjectDashboardController extends Controller
         return view('dashboard.index', [
             'data' => $data,
             'filters' => $filters,
-            'projects' => Project::query()->where('active', true)->orderBy('name')->get(),
+            'projects' => Project::query()
+                ->where('active', true)
+                ->excludeFromOperationalDashboard()
+                ->orderBy('name')
+                ->get(),
             'equipmentTypeOptions' => EquipmentType::query()->orderBy('name')->get(),
             'selectedProject' => $project,
             'dashboardLayout' => $layout->getResolvedLayout(),
