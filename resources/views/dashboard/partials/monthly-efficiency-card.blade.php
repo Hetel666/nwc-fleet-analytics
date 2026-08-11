@@ -7,7 +7,6 @@
     $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
     $month = (string) ($summary['month'] ?? \Illuminate\Support\Carbon::parse($filters['from'])->format('Y-m'));
     $period = $summary['period'] ?? ['from' => $filters['from'], 'to' => $filters['to']];
-    $completeness = $summary['completeness'] ?? ['is_complete' => true, 'message' => null];
     $parkEfficiencyPercent = (float) ($summary['efficiency_percent'] ?? 0);
     $statusPercentages = [];
     $remainingPercent = 100.0;
@@ -44,12 +43,6 @@
             <i class="bi bi-download"></i>
         </a>
     </div>
-
-    @if (! ($completeness['is_complete'] ?? true))
-        <div class="alert alert-warning py-2 px-3 small mb-3">
-            {{ $completeness['message'] ?? 'Seçilmiş ay üzrə məlumatlar tam sinxronlaşdırılmayıb.' }}
-        </div>
-    @endif
 
     @if ($total > 0)
         <div class="dashboard-monthly-layout flex-grow-1">
