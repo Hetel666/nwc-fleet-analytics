@@ -5559,11 +5559,6 @@ const initializeDashboardCharts = () => {
         colors: monthlyEfficiencyColorValues,
         drilldownItems: monthlyEfficiencyIcareDrilldownItems,
     });
-    });
-    });
-    });
-    });
-    });
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
     if (document.getElementById('utilizationLine') && utilizationTrend.has_data) {
