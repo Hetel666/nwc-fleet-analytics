@@ -358,7 +358,7 @@ class MonthlyEfficiencyDashboardService
             ])
             ->all();
         $filterRows = [
-            ['Dövr', $filters['from'].' - '.$filters['to']],
+            ['Dövr', $filters['object_from'].' - '.$filters['object_to']],
             ['Ay', $filters['month']],
             ['Ownership', $filters['ownership_type'] ? $this->ownershipLabel($filters['ownership_type']) : 'Hamısı'],
             ['Hesablama vahidi', 'Unikal texnika'],
@@ -752,7 +752,7 @@ class MonthlyEfficiencyDashboardService
             ->join('projects', 'projects.id', '=', 'efficiency_daily_facts.project_id')
             ->leftJoin('project_wialon_groups', 'project_wialon_groups.wialon_group_id', '=', 'efficiency_daily_facts.wialon_group_id')
             ->leftJoin('equipments', 'equipments.wialon_unit_id', '=', 'efficiency_daily_facts.wialon_unit_id')
-            ->whereBetween('efficiency_daily_facts.business_date', [$filters['from'], $filters['to']])
+            ->whereBetween('efficiency_daily_facts.business_date', [$filters['object_from'], $filters['object_to']])
             ->when(
                 $filters['ownership_type'],
                 fn (Builder $query, string $owner): Builder => $query->whereRaw(
@@ -804,7 +804,7 @@ class MonthlyEfficiencyDashboardService
             ->leftJoin('projects', 'projects.id', '=', 'equipment_daily_stats.project_id')
             ->leftJoin('equipment_types', 'equipment_types.id', '=', 'equipments.equipment_type_id')
             ->leftJoin('project_wialon_groups', 'project_wialon_groups.id', '=', 'equipments.project_wialon_group_id')
-            ->whereBetween('equipment_daily_stats.stat_date', [$filters['from'], $filters['to']])
+            ->whereBetween('equipment_daily_stats.stat_date', [$filters['object_from'], $filters['object_to']])
             ->when(
                 $filters['ownership_type'],
                 fn (Builder $query, string $owner): Builder => $query->whereRaw(
@@ -843,8 +843,8 @@ class MonthlyEfficiencyDashboardService
     private function dailyFactRowsCacheKey(array $filters): string
     {
         return 'monthly_efficiency:daily_fact_rows:'.sha1(json_encode([
-            'from' => $filters['from'],
-            'to' => $filters['to'],
+            'from' => $filters['object_from'],
+            'to' => $filters['object_to'],
             'ownership_type' => $filters['ownership_type'],
             'vehicle_types' => $filters['vehicle_types'],
             'source_mode' => $this->sourceMode(),
@@ -995,7 +995,7 @@ class MonthlyEfficiencyDashboardService
     /** @return array<string, mixed> */
     private function objectCompleteness(array $filters): array
     {
-        $expected = collect(CarbonPeriod::create($filters['from'], $filters['to']))
+        $expected = collect(CarbonPeriod::create($filters['object_from'], $filters['object_to']))
             ->map(fn ($date): string => $date->toDateString())
             ->values();
         $completed = $this->objectSegmentBaseQuery($filters)
