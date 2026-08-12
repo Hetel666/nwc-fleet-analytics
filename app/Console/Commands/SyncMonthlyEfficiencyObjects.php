@@ -267,25 +267,6 @@ class SyncMonthlyEfficiencyObjects extends Command
             ];
         }
 
-        foreach ($candidates as $candidate) {
-            $live = $wialon->findReportTemplateByName(null, $candidate);
-
-            if (! is_array($live)) {
-                continue;
-            }
-
-            if (($live['type'] ?? null) !== 'avl_unit') {
-                continue;
-            }
-
-            return [
-                'resource_id' => (int) ($live['resource_id'] ?? config('fleet.wialon.efficiency_report_resource_id')),
-                'template_id' => (int) ($live['id'] ?? 0),
-                'name' => (string) ($live['name'] ?? $candidate),
-                'report_type' => 'avl_unit',
-            ];
-        }
-
         throw new RuntimeException('Individual Wialon report template for Aylıq effektivlik was not found. Expected avl_unit report.');
     }
 
@@ -477,11 +458,17 @@ class SyncMonthlyEfficiencyObjects extends Command
             return [
                 'totals' => $this->groupEngineRowsByUnit(
                     $this->selectedGroupRows($wialon, $sid, $engineTable['index'], $engineTable['table']),
-                    $engineTable['table']
+                    $engineTable['table'],
+                    config('app.timezone', 'Asia/Baku'),
+                    $from,
+                    $to,
                 ),
                 'geofences' => $geofenceTable === null ? [] : $this->groupGeofenceRowsByUnit(
                     $this->selectedGroupRows($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']),
-                    $geofenceTable['table']
+                    $geofenceTable['table'],
+                    config('app.timezone', 'Asia/Baku'),
+                    $from,
+                    $to,
                 ),
             ];
         } finally {
@@ -516,7 +503,7 @@ class SyncMonthlyEfficiencyObjects extends Command
         ], $sid);
     }
 
-    private function groupEngineRowsByUnit(array $rows, array $table): array
+    private function groupEngineRowsByUnit(array $rows, array $table, string $timezone, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $hoursIndex = $this->columnIndex($table, ['engine hours'], ['duration'], 3);
         $mileageIndex = $this->columnIndex($table, ['mileage'], ['mileage', 'correct_mileage'], 7);
@@ -533,14 +520,14 @@ class SyncMonthlyEfficiencyObjects extends Command
 
             foreach (($unitRow['r'] ?? []) as $dayRow) {
                 $cells = $dayRow['c'] ?? [];
-                $date = $this->dateFromCell($cells[0] ?? null);
+                $date = $this->localDateFromReportRow($dayRow, $cells[0] ?? null, $timezone);
 
-                if ($date === null) {
+                if ($date === null || ! $this->dateWithinPeriod($date, $from, $to)) {
                     continue;
                 }
 
                 $seconds = $this->durationSeconds($cells[$hoursIndex] ?? null);
-                $result[$unitId][$date] = [
+                $this->mergeTotalRow($result[$unitId][$date], [
                     'hours' => round($seconds / 3600, 2),
                     'seconds' => $seconds,
                     'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
@@ -548,14 +535,14 @@ class SyncMonthlyEfficiencyObjects extends Command
                     'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
                     'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
                     'raw' => $dayRow,
-                ];
+                ]);
             }
         }
 
         return $result;
     }
 
-    private function groupGeofenceRowsByUnit(array $rows, array $table): array
+    private function groupGeofenceRowsByUnit(array $rows, array $table, string $timezone, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $nameIndex = $this->columnIndex($table, ['name', 'geofence'], ['zone_name'], 1);
         $beginIndex = $this->columnIndex($table, ['entry time', 'beginning'], ['time_begin'], 2);
@@ -573,9 +560,9 @@ class SyncMonthlyEfficiencyObjects extends Command
             }
 
             foreach (($unitRow['r'] ?? []) as $dayRow) {
-                $date = $this->dateFromCell(($dayRow['c'] ?? [])[0] ?? null);
+                $date = $this->localDateFromReportRow($dayRow, ($dayRow['c'] ?? [])[0] ?? null, $timezone);
 
-                if ($date === null) {
+                if ($date === null || ! $this->dateWithinPeriod($date, $from, $to)) {
                     continue;
                 }
 
@@ -592,7 +579,7 @@ class SyncMonthlyEfficiencyObjects extends Command
                     }
 
                     $seconds = $this->durationSeconds($cells[$hoursIndex] ?? null);
-                    $result[$unitId][$date][] = [
+                    $this->mergeGeofenceRow($result[$unitId][$date], [
                         'geofence' => $name,
                         'hours' => round($seconds / 3600, 2),
                         'seconds' => $seconds,
@@ -601,7 +588,7 @@ class SyncMonthlyEfficiencyObjects extends Command
                         'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
                         'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
                         'raw' => $zoneRow,
-                    ];
+                    ]);
                 }
             }
         }
@@ -699,10 +686,10 @@ class SyncMonthlyEfficiencyObjects extends Command
                 throw new MissingMonthlyObjectReportTable('Required Engine hours table is missing in report result.');
             }
 
-            $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table']);
+            $totals = $this->engineRowsByDate($wialon, $sid, $engineTable['index'], $engineTable['table'], $from, $to);
             $geofences = $geofenceTable === null
                 ? []
-                : $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table']);
+                : $this->geofenceRowsByDate($wialon, $sid, $geofenceTable['index'], $geofenceTable['table'], $from, $to);
             $unknownLabel = (string) config('fleet.wialon.monthly_efficiency_unknown_label', 'Naməlum');
             $rowsToWrite = [];
             $writtenRows = 0;
@@ -830,9 +817,10 @@ class SyncMonthlyEfficiencyObjects extends Command
     }
 
     /** @return array<string, array<string, mixed>> */
-    private function engineRowsByDate(WialonService $wialon, string $sid, int $tableIndex, array $table): array
+    private function engineRowsByDate(WialonService $wialon, string $sid, int $tableIndex, array $table, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $rows = $wialon->getReportResultRows($tableIndex, 0, max(0, (int) ($table['rows'] ?? 0) - 1), $sid);
+        $timezone = config('app.timezone', 'Asia/Baku');
         $hoursIndex = $this->columnIndex($table, ['engine hours'], ['duration'], 3);
         $mileageIndex = $this->columnIndex($table, ['mileage'], ['mileage', 'correct_mileage'], 7);
         $beginIndex = $this->columnIndex($table, ['beginning', 'start'], ['time_begin'], 8);
@@ -841,14 +829,14 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         foreach ($rows as $row) {
             $cells = $row['c'] ?? [];
-            $date = $this->dateFromCell($cells[0] ?? null);
+            $date = $this->localDateFromReportRow($row, $cells[0] ?? null, $timezone);
 
-            if ($date === null) {
+            if ($date === null || ! $this->dateWithinPeriod($date, $from, $to)) {
                 continue;
             }
 
             $seconds = $this->durationSeconds($cells[$hoursIndex] ?? null);
-            $result[$date] = [
+            $this->mergeTotalRow($result[$date], [
                 'hours' => round($seconds / 3600, 2),
                 'seconds' => $seconds,
                 'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
@@ -856,16 +844,17 @@ class SyncMonthlyEfficiencyObjects extends Command
                 'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
                 'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
                 'raw' => $row,
-            ];
+            ]);
         }
 
         return $result;
     }
 
     /** @return array<string, array<int, array<string, mixed>>> */
-    private function geofenceRowsByDate(WialonService $wialon, string $sid, int $tableIndex, array $table): array
+    private function geofenceRowsByDate(WialonService $wialon, string $sid, int $tableIndex, array $table, CarbonImmutable $from, CarbonImmutable $to): array
     {
         $parentRows = $wialon->getReportResultRows($tableIndex, 0, max(0, (int) ($table['rows'] ?? 0) - 1), $sid);
+        $timezone = config('app.timezone', 'Asia/Baku');
         $nameIndex = $this->columnIndex($table, ['name'], ['zone_name'], 1);
         $hoursIndex = $this->columnIndex($table, ['engine hours'], ['duration_in', 'duration'], 4);
         $mileageIndex = $this->columnIndex($table, ['mileage'], ['mileage'], 5);
@@ -875,9 +864,9 @@ class SyncMonthlyEfficiencyObjects extends Command
         $result = [];
 
         foreach ($parentRows as $rowIndex => $parentRow) {
-            $date = $this->dateFromCell(($parentRow['c'] ?? [])[0] ?? null);
+            $date = $this->localDateFromReportRow($parentRow, ($parentRow['c'] ?? [])[0] ?? null, $timezone);
 
-            if ($date === null) {
+            if ($date === null || ! $this->dateWithinPeriod($date, $from, $to)) {
                 continue;
             }
 
@@ -894,7 +883,7 @@ class SyncMonthlyEfficiencyObjects extends Command
                 }
 
                 $seconds = $this->durationSeconds($cells[$hoursIndex] ?? null);
-                $result[$date][] = [
+                $this->mergeGeofenceRow($result[$date], [
                     'geofence' => $name,
                     'hours' => round($seconds / 3600, 2),
                     'seconds' => $seconds,
@@ -903,11 +892,122 @@ class SyncMonthlyEfficiencyObjects extends Command
                     'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
                     'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
                     'raw' => $subrow,
-                ];
+                ]);
             }
         }
 
         return $result;
+    }
+
+    private function localDateFromReportRow(array $row, mixed $fallbackCell, string $timezone): ?string
+    {
+        foreach (['t1', 't2'] as $key) {
+            if (is_numeric($row[$key] ?? null) && (int) $row[$key] > 0) {
+                return CarbonImmutable::createFromTimestamp((int) $row[$key], 'UTC')
+                    ->timezone($timezone)
+                    ->toDateString();
+            }
+        }
+
+        foreach (($row['c'] ?? []) as $cell) {
+            if (is_array($cell) && is_numeric($cell['v'] ?? null) && (int) $cell['v'] > 0) {
+                return CarbonImmutable::createFromTimestamp((int) $cell['v'], 'UTC')
+                    ->timezone($timezone)
+                    ->toDateString();
+            }
+        }
+
+        return $this->dateFromCell($fallbackCell);
+    }
+
+    private function dateWithinPeriod(string $date, CarbonImmutable $from, CarbonImmutable $to): bool
+    {
+        return $date >= $from->toDateString() && $date <= $to->toDateString();
+    }
+
+    private function mergeTotalRow(?array &$target, array $row): void
+    {
+        $target = $this->mergedMetricRow($target ?? null, $row);
+    }
+
+    private function mergeGeofenceRow(?array &$target, array $row): void
+    {
+        $name = trim((string) ($row['geofence'] ?? ''));
+
+        if ($name === '') {
+            return;
+        }
+
+        $target ??= [];
+        $merged = $this->mergedMetricRow($target[$name] ?? null, $row);
+        $merged['geofence'] = $name;
+        $target[$name] = $merged;
+    }
+
+    private function mergedMetricRow(?array $existing, array $row): array
+    {
+        if ($existing === null) {
+            return $row;
+        }
+
+        $seconds = (int) ($existing['seconds'] ?? 0) + (int) ($row['seconds'] ?? 0);
+
+        return [
+            ...$row,
+            'hours' => round($seconds / 3600, 2),
+            'seconds' => $seconds,
+            'mileage' => round((float) ($existing['mileage'] ?? 0) + (float) ($row['mileage'] ?? 0), 2),
+            'visits' => (int) ($existing['visits'] ?? 0) + (int) ($row['visits'] ?? 0),
+            'started_at' => $this->earliestDateTime($existing['started_at'] ?? null, $row['started_at'] ?? null),
+            'ended_at' => $this->latestDateTime($existing['ended_at'] ?? null, $row['ended_at'] ?? null),
+            'raw' => [
+                'merged' => true,
+                'rows' => array_merge(
+                    $this->rawRows($existing['raw'] ?? null),
+                    $this->rawRows($row['raw'] ?? null),
+                ),
+            ],
+        ];
+    }
+
+    private function earliestDateTime(?string $first, ?string $second): ?string
+    {
+        if ($first === null || $first === '') {
+            return $second;
+        }
+
+        if ($second === null || $second === '') {
+            return $first;
+        }
+
+        return strcmp($first, $second) <= 0 ? $first : $second;
+    }
+
+    private function latestDateTime(?string $first, ?string $second): ?string
+    {
+        if ($first === null || $first === '') {
+            return $second;
+        }
+
+        if ($second === null || $second === '') {
+            return $first;
+        }
+
+        return strcmp($first, $second) >= 0 ? $first : $second;
+    }
+
+    /** @return array<int, mixed> */
+    private function rawRows(mixed $raw): array
+    {
+        if (! is_array($raw)) {
+            return $raw === null ? [] : [$raw];
+        }
+
+        if (($raw['merged'] ?? false) === true && is_array($raw['rows'] ?? null)) {
+            return $raw['rows'];
+        }
+
+        return [$raw];
     }
 
     /** @param array<int, array<string, mixed>> $segments */
@@ -944,7 +1044,15 @@ class SyncMonthlyEfficiencyObjects extends Command
         foreach (($table['header'] ?? []) as $index => $header) {
             $text = mb_strtolower(trim((string) $header));
 
-            if (collect($headers)->contains(fn (string $needle): bool => $text === $needle || str_contains($text, $needle))) {
+            if (in_array($text, $headers, true)) {
+                return (int) $index;
+            }
+        }
+
+        foreach (($table['header'] ?? []) as $index => $header) {
+            $text = mb_strtolower(trim((string) $header));
+
+            if (collect($headers)->contains(fn (string $needle): bool => mb_strlen($needle) >= 4 && str_contains($text, $needle))) {
                 return (int) $index;
             }
         }

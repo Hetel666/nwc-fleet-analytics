@@ -708,6 +708,129 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         ]);
     }
 
+    public function test_object_sync_merges_wialon_utc_split_rows_into_local_day(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Unit Monthly Report');
+
+        $project = Project::query()->create(['name' => 'Timezone project', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $this->seedEquipment($project, $dumpTruck, '600709593', Equipment::OWNERSHIP_NWC);
+
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 25,
+            'name' => 'Unit Monthly Report',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit',
+            'is_active' => true,
+        ]);
+
+        $firstStart = CarbonImmutable::parse('2026-08-01 00:00:00', 'Asia/Baku')->timestamp;
+        $firstEnd = CarbonImmutable::parse('2026-08-01 04:30:24', 'Asia/Baku')->timestamp;
+        $secondStart = CarbonImmutable::parse('2026-08-01 04:30:29', 'Asia/Baku')->timestamp;
+        $secondEnd = CarbonImmutable::parse('2026-08-01 23:59:58', 'Asia/Baku')->timestamp;
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('getSessionId')->once()->andReturn('unit-sid');
+        $wialon->shouldReceive('cleanupReportResult')->twice()->with('unit-sid');
+        $wialon->shouldReceive('executeReport')
+            ->once()
+            ->withArgs(fn ($resource, $template, $unit): bool => $resource === 601701680
+                && $template === 25
+                && (string) $unit === '600709593')
+            ->andReturn(['reportResult' => ['tables' => [
+                [
+                    'name' => 'unit_engine_hours',
+                    'label' => 'Engine hours',
+                    'header' => ['Grouping', 'Custom column', 'Custom column', 'Engine hours', 'Equipment Type', 'Vendor', 'Year', 'Mileage (adjusted)', 'Beginning', 'End'],
+                    'header_type' => ['', 'user_column', 'user_column', 'duration', 'user_column', 'user_column', 'user_column', 'correct_mileage', 'time_begin', 'time_end'],
+                    'rows' => 2,
+                ],
+                [
+                    'name' => 'unit_zones_visit',
+                    'label' => 'Geofence',
+                    'header' => ['Grouping', 'Name', 'Entry time', 'Exit time', 'Engine hours', 'Mileage', 'Visits'],
+                    'header_type' => ['', 'zone_name', 'time_begin', 'time_end', 'duration_in', 'mileage', 'visits_count'],
+                    'rows' => 2,
+                ],
+            ]]]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(0, 0, 1, 'unit-sid')
+            ->andReturn([
+                [
+                    't1' => $firstStart,
+                    't2' => $firstEnd,
+                    'c' => ['2026-07-31', '-----', '-----', '3.32', '-----', '-----', '-----', '67.77 km', ['v' => $firstStart], ['v' => $firstEnd]],
+                ],
+                [
+                    't1' => $secondStart,
+                    't2' => $secondEnd,
+                    'c' => ['2026-08-01', '-----', '-----', '19.49', '-----', '-----', '-----', '240.30 km', ['v' => $secondStart], ['v' => $secondEnd]],
+                ],
+            ]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(1, 0, 1, 'unit-sid')
+            ->andReturn([
+                ['t1' => $firstStart, 't2' => $firstEnd, 'c' => ['2026-07-31']],
+                ['t1' => $secondStart, 't2' => $secondEnd, 'c' => ['2026-08-01']],
+            ]);
+        $wialon->shouldReceive('getReportResultSubrows')
+            ->once()
+            ->with(1, 0, 'unit-sid')
+            ->andReturn([[
+                't1' => $firstStart,
+                't2' => $firstEnd,
+                'c' => ['LOT-3 Umumi', '', ['v' => $firstStart], ['v' => $firstEnd], '3.32', '67.77 km', '2'],
+            ]]);
+        $wialon->shouldReceive('getReportResultSubrows')
+            ->once()
+            ->with(1, 1, 'unit-sid')
+            ->andReturn([[
+                't1' => $secondStart,
+                't2' => $secondEnd,
+                'c' => ['LOT-3 Umumi', '', ['v' => $secondStart], ['v' => $secondEnd], '19.49', '240.30 km', '1'],
+            ]]);
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('monthly-efficiency:sync-objects', [
+            '--from' => '2026-08-01',
+            '--to' => '2026-08-01',
+            '--unit' => '600709593',
+            '--force' => true,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-31',
+            'wialon_unit_id' => '600709593',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-08-01',
+            'wialon_unit_id' => '600709593',
+            'segment_type' => 'total',
+            'engine_hours_decimal' => 22.81,
+            'mileage_km' => 308.07,
+            'started_at' => '2026-08-01 00:00:00',
+            'ended_at' => '2026-08-01 23:59:58',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-08-01',
+            'wialon_unit_id' => '600709593',
+            'segment_type' => 'geofence',
+            'geofence_name' => 'LOT-3 Umumi',
+            'engine_hours_decimal' => 22.81,
+            'mileage_km' => 308.07,
+            'visits_count' => 3,
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-08-01',
+            'wialon_unit_id' => '600709593',
+            'segment_type' => 'unknown',
+            'engine_hours_decimal' => 0.0,
+            'mileage_km' => 0.0,
+        ]);
+    }
+
     public function test_forced_object_sync_purges_full_unit_period_when_new_report_has_missing_days(): void
     {
         config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
