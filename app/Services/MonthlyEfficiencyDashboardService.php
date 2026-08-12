@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Equipment;
 use App\Models\EquipmentType;
+use App\Models\Project;
 use App\Support\DashboardDateRangePolicy;
 use App\Support\FleetVehicleType;
 use App\Support\MonthlyEfficiencyStatus;
@@ -32,17 +33,6 @@ class MonthlyEfficiencyDashboardService
     private const SEGMENT_GEOFENCE = 'geofence';
 
     private const SEGMENT_UNKNOWN = 'unknown';
-
-    private const EXCLUDED_PROJECT_NAMES = [
-        'Layihəsiz',
-        'Təmir',
-        'Layihəsiz',
-        '-Layihəsiz-',
-        'Layihesiz',
-        '-Layihesiz-',
-        'Təmir',
-        'Temir',
-    ];
 
     public function __construct(
         private DashboardDateRangePolicy $dateRangePolicy,
@@ -526,7 +516,7 @@ class MonthlyEfficiencyDashboardService
             $row->actual_project = $projectNames->get((string) $row->wialon_unit_id, '-');
 
             return $row;
-        });
+        })->reject(fn (object $row): bool => $this->isExcludedProjectName((string) $row->actual_project));
 
         if ($filters['search'] !== '') {
             $needle = mb_strtolower($filters['search']);
@@ -558,7 +548,9 @@ class MonthlyEfficiencyDashboardService
             ->groupBy('wialon_unit_id')
             ->map(fn (Collection $rows): string => $rows
                 ->pluck('actual_project')
-                ->filter(fn (?string $project): bool => filled($project) && $project !== '-')
+                ->filter(fn (?string $project): bool => filled($project)
+                    && $project !== '-'
+                    && ! $this->isExcludedProjectName($project))
                 ->unique()
                 ->sort()
                 ->implode(', ') ?: '-');
@@ -602,7 +594,9 @@ class MonthlyEfficiencyDashboardService
                 DB::raw("CASE WHEN segment_type = '".self::SEGMENT_UNKNOWN."' THEN 2 ELSE 1 END as sort_weight"),
             ])
             ->groupBy('wialon_unit_id', 'segment_type', 'geofence_name', 'project_id')
-            ->get();
+            ->get()
+            ->reject(fn (object $row): bool => $this->isExcludedProjectName((string) $row->actual_project))
+            ->values();
     }
 
     private function objectGeofenceDayRows(array $filters, string $unitId, string $geofenceName): Collection
@@ -624,7 +618,9 @@ class MonthlyEfficiencyDashboardService
                 'started_at',
                 'ended_at',
             ])
-            ->get();
+            ->get()
+            ->reject(fn (object $row): bool => $this->isExcludedProjectName((string) $row->actual_project))
+            ->values();
     }
 
     private function objectSegmentBaseQuery(array $filters): Builder
@@ -643,6 +639,16 @@ class MonthlyEfficiencyDashboardService
             ->when($filters['project_ids'], fn (Builder $query, array $projectIds): Builder => $query->whereIn('project_id', $projectIds))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership_type', $owner))
             ->whereIn('vehicle_type', $vehicleTypes)
+            ->where(function (Builder $query): void {
+                $query->whereNull('project_id')
+                    ->orWhereExists(function (Builder $query): void {
+                        $query->selectRaw('1')
+                            ->from('projects')
+                            ->whereColumn('projects.id', 'monthly_efficiency_unit_geofence_facts.project_id')
+                            ->where('projects.active', true)
+                            ->whereNotIn('projects.name', Project::dashboardOperationalExcludedNames());
+                    });
+            })
             ->whereIn('source_report_name', $this->objectSourceReportNames());
     }
 
@@ -738,7 +744,7 @@ class MonthlyEfficiencyDashboardService
             return $this->resolvedDailyStatsRows($filters);
         }
 
-        $excludedProjects = collect(self::EXCLUDED_PROJECT_NAMES)
+        $excludedProjects = collect(Project::dashboardOperationalExcludedNames())
             ->map(fn (string $name): string => $this->normalName($name))
             ->all();
 
@@ -789,7 +795,7 @@ class MonthlyEfficiencyDashboardService
 
     private function resolvedDailyStatsRows(array $filters): Collection
     {
-        $excludedProjects = collect(self::EXCLUDED_PROJECT_NAMES)
+        $excludedProjects = collect(Project::dashboardOperationalExcludedNames())
             ->map(fn (string $name): string => $this->normalName($name))
             ->all();
 
@@ -1123,6 +1129,23 @@ class MonthlyEfficiencyDashboardService
         $name = mb_strtolower(trim($name));
 
         return preg_replace('/\s+/u', ' ', $name) ?: '';
+    }
+
+    private function isExcludedProjectName(?string $name): bool
+    {
+        $normalized = $this->normalName((string) $name);
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        return in_array(
+            $normalized,
+            collect(Project::dashboardOperationalExcludedNames())
+                ->map(fn (string $projectName): string => $this->normalName($projectName))
+                ->all(),
+            true,
+        );
     }
 
     /** @return array<string, mixed> */

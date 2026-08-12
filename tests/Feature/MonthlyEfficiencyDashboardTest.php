@@ -387,6 +387,8 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 
         $user = User::factory()->create(['active' => true]);
         $project = Project::query()->create(['name' => 'Object source', 'active' => true]);
+        $unassignedProject = Project::query()->create(['name' => 'Layihəsiz', 'active' => true]);
+        $repairProject = Project::query()->create(['name' => 'Təmir', 'active' => true]);
         $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
         $excavator = EquipmentType::query()->create(['name' => 'Excavator']);
         $bulldozer = EquipmentType::query()->create(['name' => 'Bulldozer']);
@@ -396,6 +398,8 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $excavatorUnit = $this->seedEquipment($project, $excavator, '10-EX-100', Equipment::OWNERSHIP_NWC);
         $bulldozerUnit = $this->seedEquipment($project, $bulldozer, '10-BD-100', Equipment::OWNERSHIP_NWC);
         $loaderUnit = $this->seedEquipment($project, $loader, '10-LD-100', Equipment::OWNERSHIP_NWC);
+        $unassignedUnit = $this->seedEquipment($unassignedProject, $loader, '10-LY-100', Equipment::OWNERSHIP_NWC);
+        $repairUnit = $this->seedEquipment($repairProject, $dumpTruck, '10-RP-100', Equipment::OWNERSHIP_NWC);
 
         DB::table('wialon_geofences')->insert([
             'wialon_geofence_id' => 'zone-object-source',
@@ -413,16 +417,18 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->seedObjectFact($excavatorUnit, '2026-07-01', 'total', 'Total', 12.0, 30.0);
         $this->seedObjectFact($bulldozerUnit, '2026-07-01', 'total', 'Total', 16.0, 40.0);
         $this->seedObjectFact($loaderUnit, '2026-07-01', 'total', 'Total', 24.0, 50.0);
+        $this->seedObjectFact($unassignedUnit, '2026-07-01', 'total', 'Total', 24.0, 50.0);
+        $this->seedObjectFact($repairUnit, '2026-07-01', 'total', 'Total', 24.0, 50.0);
 
         $summary = app(MonthlyEfficiencyDashboardService::class)->summaryForOwnership([
             'date_from' => '2026-07-01',
             'date_to' => '2026-07-02',
         ], Equipment::OWNERSHIP_NWC);
 
-        $this->assertSame(3, $summary['total']);
+        $this->assertSame(4, $summary['total']);
         $this->assertSame(1, $summary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
         $this->assertSame(1, $summary[MonthlyEfficiencyStatus::LOW]);
-        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(2, $summary[MonthlyEfficiencyStatus::NORMAL]);
 
         $objects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.objects', [
             'date_from' => '2026-07-01',
@@ -438,6 +444,20 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('7.00', $objects[0]['known_hours']);
         $this->assertSame('1.00', $objects[0]['unknown_hours']);
         $this->assertSame('Object source', $objects[0]['actual_project']);
+
+        $normalObjects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.objects', [
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+            'ownership' => 'nwc',
+            'status' => 'normal',
+        ]))->assertOk()->json('data');
+
+        $this->assertEqualsCanonicalizing(
+            ['Bulldozer', 'Loader'],
+            collect($normalObjects)->pluck('vehicle_type')->all(),
+        );
+        $this->assertNotContains('10-LY-100', collect($normalObjects)->pluck('registration_number')->all());
+        $this->assertNotContains('10-RP-100', collect($normalObjects)->pluck('registration_number')->all());
 
         $geofences = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofences', [
             'date_from' => '2026-07-01',
@@ -891,7 +911,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         DB::table('wialon_unit_groups')->updateOrInsert(
             ['wialon_group_id' => $allowedGroupId],
             [
-                'name' => 'Bulldozer, Excavator, Dump Truck',
+                'name' => 'Bulldozer, Excavator, Loader, Backhoe Loader, Road Grader, Road Roller, Dump Truck',
                 'units_count' => 1,
                 'is_active' => true,
                 'last_seen_at' => now(),

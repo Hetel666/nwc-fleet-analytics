@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Equipment;
+use App\Models\Project;
 use App\Models\WialonReportTemplate;
-use App\Models\WialonUnitGroup;
 use App\Services\WialonService;
 use App\Support\FleetVehicleType;
 use Carbon\CarbonImmutable;
@@ -75,7 +75,7 @@ class SyncMonthlyEfficiencyObjects extends Command
         $totalUnits = (clone $equipmentQuery)->count('equipments.id');
 
         if ($totalUnits === 0) {
-            $this->warn('No matching Bulldozer, Excavator or Dump Truck units were found.');
+            $this->warn('No matching monthly efficiency units were found.');
 
             return self::SUCCESS;
         }
@@ -175,7 +175,7 @@ class SyncMonthlyEfficiencyObjects extends Command
             ['Unit chunk size', $unitChunk],
             ['Write batch size', $flushRows],
             ['Allowed types', implode(', ', $this->allowedTypeLabels())],
-            ['Allowed Wialon group', $this->allowedWialonUnitGroupLabel()],
+            ['Project source', 'Active project Wialon groups'],
             ['Source report', (string) $template['name']],
         ]);
 
@@ -304,26 +304,6 @@ class SyncMonthlyEfficiencyObjects extends Command
                     $this->applyActiveProjectGroup($query, 'matched_project_groups');
                 });
             })
-            ->whereExists(function ($query): void {
-                $query->selectRaw('1')
-                    ->from('wialon_unit_group_members')
-                    ->join('wialon_unit_groups', 'wialon_unit_groups.id', '=', 'wialon_unit_group_members.wialon_unit_group_id')
-                    ->whereColumn('wialon_unit_group_members.wialon_unit_item_id', 'equipments.wialon_unit_id')
-                    ->where('wialon_unit_groups.is_active', true)
-                    ->where(function ($query): void {
-                        $groupId = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_id', ''));
-                        $groupName = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_name', 'Bulldozer, Excavator, Dump Truck'));
-
-                        if ($groupId !== '') {
-                            $query->where('wialon_unit_groups.wialon_group_id', $groupId);
-                        }
-
-                        if ($groupName !== '') {
-                            $method = $groupId !== '' ? 'orWhereRaw' : 'whereRaw';
-                            $query->{$method}('LOWER(wialon_unit_groups.name) = ?', [mb_strtolower($groupName)]);
-                        }
-                    });
-            })
             ->visibleInDashboard();
     }
 
@@ -334,7 +314,8 @@ class SyncMonthlyEfficiencyObjects extends Command
                 $query->selectRaw('1')
                     ->from('projects')
                     ->whereColumn('projects.id', $alias.'.project_id')
-                    ->where('projects.active', true);
+                    ->where('projects.active', true)
+                    ->whereNotIn('projects.name', Project::dashboardOperationalExcludedNames());
             });
 
         if (Schema::hasColumn('project_wialon_groups', 'is_active')) {
@@ -368,22 +349,6 @@ class SyncMonthlyEfficiencyObjects extends Command
         });
     }
 
-    private function allowedWialonUnitGroupLabel(): string
-    {
-        $groupId = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_id', ''));
-        $groupName = trim((string) config('fleet.wialon.monthly_efficiency_unit_group_name', 'Bulldozer, Excavator, Dump Truck'));
-
-        if ($groupId !== '') {
-            $catalogName = WialonUnitGroup::query()
-                ->where('wialon_group_id', $groupId)
-                ->value('name');
-
-            return $catalogName ? $catalogName.' / '.$groupId : $groupId;
-        }
-
-        return $groupName;
-    }
-
     private function isSkippableUnitReportFailure(Throwable $exception): bool
     {
         if ($exception instanceof MissingMonthlyObjectReportTable) {
@@ -404,7 +369,7 @@ class SyncMonthlyEfficiencyObjects extends Command
     /** @return array<int, string> */
     private function allowedTypeLabels(): array
     {
-        return collect(FleetVehicleType::MONTHLY_OBJECT_EFFICIENCY_TYPES)
+        return collect(FleetVehicleType::EFFICIENCY_TYPES)
             ->map(fn (string $type): string => FleetVehicleType::label($type))
             ->all();
     }
