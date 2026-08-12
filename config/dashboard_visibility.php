@@ -67,42 +67,6 @@ return [
             'layout_widget' => 'project-work-categories-icare',
             'export_blocks' => ['actual-work-hours-icare'],
         ],
-        'efficiency_daytime_nwc' => [
-            'title_az' => 'Effektivlik gunduz: NWC',
-            'section' => 'efficiency',
-            'default_order' => 210,
-            'layout_widget' => null,
-        ],
-        'efficiency_daytime_rental' => [
-            'title_az' => 'Effektivlik gunduz: Icare',
-            'section' => 'efficiency',
-            'default_order' => 211,
-            'layout_widget' => null,
-        ],
-        'efficiency_nighttime_nwc' => [
-            'title_az' => 'Effektivlik gece: NWC',
-            'section' => 'efficiency',
-            'default_order' => 310,
-            'layout_widget' => null,
-        ],
-        'efficiency_nighttime_rental' => [
-            'title_az' => 'Effektivlik gece: Icare',
-            'section' => 'efficiency',
-            'default_order' => 311,
-            'layout_widget' => null,
-        ],
-        'night_day_efficiency_nwc' => [
-            'title_az' => 'Gun daxilinde gece effektivliyi: NWC',
-            'section' => 'efficiency',
-            'default_order' => 320,
-            'layout_widget' => null,
-        ],
-        'night_day_efficiency_rental' => [
-            'title_az' => 'Gun daxilinde gece effektivliyi: Icare',
-            'section' => 'efficiency',
-            'default_order' => 321,
-            'layout_widget' => null,
-        ],
         'average_engine_hours' => [
             'title_az' => 'Orta Engine hours',
             'section' => 'efficiency',
@@ -116,20 +80,6 @@ return [
             'default_order' => 411,
             'layout_widget' => 'average-mileage',
             'export_blocks' => ['average-mileage'],
-        ],
-        'top_20_low' => [
-            'title_az' => 'Top 20 az isleyen',
-            'section' => 'efficiency',
-            'default_order' => 510,
-            'layout_widget' => 'least-working',
-            'export_blocks' => ['least-working'],
-        ],
-        'top_20_high' => [
-            'title_az' => 'Top 20 cox isleyen',
-            'section' => 'efficiency',
-            'default_order' => 511,
-            'layout_widget' => 'most-working',
-            'export_blocks' => ['most-working'],
         ],
         'geofence_violations' => [
             'title_az' => 'Geofence pozuntulari',
@@ -153,15 +103,6 @@ return [
         ],
         'monthly_efficiency' => [
             'title_az' => 'Ayliq effektivlik',
-        ],
-        'daytime_efficiency' => [
-            'title_az' => 'Gunduz effektivliyi',
-        ],
-        'nighttime_efficiency' => [
-            'title_az' => 'Gece effektivliyi',
-        ],
-        'night_day_efficiency' => [
-            'title_az' => 'Gun daxilinde gece effektivliyi',
         ],
     ],
 

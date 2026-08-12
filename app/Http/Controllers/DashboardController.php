@@ -7,11 +7,8 @@ use App\Models\Project;
 use App\Services\DashboardDisplayConfigurationService;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
-use App\Services\DaytimeEfficiencyDashboardService;
 use App\Services\GeofenceViolationsDashboardService;
 use App\Services\MonthlyEfficiencyDashboardService;
-use App\Services\NightDayEfficiencyDashboardService;
-use App\Services\NighttimeEfficiencyDashboardService;
 use App\Support\DashboardFilterState;
 use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
@@ -24,25 +21,19 @@ class DashboardController extends Controller
     public function index(
         Request $request,
         DashboardService $dashboard,
-        DaytimeEfficiencyDashboardService $daytimeEfficiency,
-        NighttimeEfficiencyDashboardService $nighttimeEfficiency,
-        NightDayEfficiencyDashboardService $nightDayEfficiency,
         MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
         DashboardFilterState $filterState
     ): View {
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState);
+        return $this->renderDashboard($request, $dashboard, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState);
     }
 
     public function tab(
         Request $request,
         string $tab,
         DashboardService $dashboard,
-        DaytimeEfficiencyDashboardService $daytimeEfficiency,
-        NighttimeEfficiencyDashboardService $nighttimeEfficiency,
-        NightDayEfficiencyDashboardService $nightDayEfficiency,
         MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
@@ -52,15 +43,12 @@ class DashboardController extends Controller
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $daytimeEfficiency, $nighttimeEfficiency, $nightDayEfficiency, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
     }
 
     private function renderDashboard(
         Request $request,
         DashboardService $dashboard,
-        DaytimeEfficiencyDashboardService $daytimeEfficiency,
-        NighttimeEfficiencyDashboardService $nighttimeEfficiency,
-        NightDayEfficiencyDashboardService $nightDayEfficiency,
         MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
@@ -87,30 +75,6 @@ class DashboardController extends Controller
         $data = $dashboard->getDashboardTab($filters, $selectedTab);
 
         if ($selectedTab === 'efficiency') {
-            $daytimeFilters = [
-                ...$filters,
-                'search' => '',
-            ];
-            $data['daytimeEfficiencyByOwnership'] = [
-                'NWC' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'NWC'),
-                'ICARE' => $daytimeEfficiency->summaryForOwnership($daytimeFilters, 'ICARE'),
-            ];
-            $nighttimeFilters = [
-                ...$filters,
-                'search' => '',
-            ];
-            $data['nighttimeEfficiencyByOwnership'] = [
-                'NWC' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'NWC'),
-                'ICARE' => $nighttimeEfficiency->summaryForOwnership($nighttimeFilters, 'ICARE'),
-            ];
-            $nightDayFilters = [
-                ...$filters,
-                'search' => '',
-            ];
-            $data['nightDayEfficiencyByOwnership'] = [
-                'NWC' => $nightDayEfficiency->summaryForOwnership($nightDayFilters, 'NWC'),
-                'ICARE' => $nightDayEfficiency->summaryForOwnership($nightDayFilters, 'ICARE'),
-            ];
             $monthlyFilters = [
                 ...$filters,
                 'search' => '',

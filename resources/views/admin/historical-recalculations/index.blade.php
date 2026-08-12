@@ -136,18 +136,6 @@
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-efficiency" value="efficiency" autocomplete="off" @checked(old('dashboard_section') === 'efficiency')>
                                 <label class="btn btn-outline-primary text-start" for="section-efficiency">Effektivlik</label>
 
-                                <input type="radio" class="btn-check" name="dashboard_section" id="section-daytime-efficiency" value="daytime_efficiency" autocomplete="off" @checked(old('dashboard_section') === 'daytime_efficiency')>
-                                <label class="btn btn-outline-primary text-start" for="section-daytime-efficiency">Effektivlik gündüz</label>
-
-                                <input type="radio" class="btn-check" name="dashboard_section" id="section-nighttime-efficiency" value="nighttime_efficiency" autocomplete="off" @checked(old('dashboard_section') === 'nighttime_efficiency')>
-                                <label class="btn btn-outline-primary text-start" for="section-nighttime-efficiency">Effektivlik gecə</label>
-
-                                <input type="radio" class="btn-check" name="dashboard_section" id="section-night-day-efficiency" value="night_day_efficiency" autocomplete="off" @checked(old('dashboard_section') === 'night_day_efficiency')>
-                                <label class="btn btn-outline-primary text-start" for="section-night-day-efficiency">Gün daxilində gecə effektivliyi</label>
-
-                                <input type="radio" class="btn-check" name="dashboard_section" id="section-top-working-units" value="top_working_units" autocomplete="off" @checked(old('dashboard_section') === 'top_working_units')>
-                                <label class="btn btn-outline-primary text-start" for="section-top-working-units">Top 20 az işləyənlər / Top 20 çox işləyənlər</label>
-
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-outside" value="geofence_outside" autocomplete="off" @checked(old('dashboard_section') === 'geofence_outside')>
                                 <label class="btn btn-outline-primary text-start" for="section-geofence-outside">Geofence Transferləri</label>
 
@@ -247,11 +235,7 @@
                                 <td>{{ [
                                     'daily_averages' => 'Orta göstəricilər',
                                     'efficiency' => 'Effektivlik',
-                                    'daytime_efficiency' => 'Effektivlik gündüz',
-                                    'nighttime_efficiency' => 'Effektivlik gecə',
-                                    'night_day_efficiency' => 'Gün daxilində gecə effektivliyi',
                                     'monthly_efficiency' => 'Aylıq effektivlik',
-                                    'top_working_units' => 'Top 20',
                                     'geofence_outside' => 'Geofence Transferləri',
                                     'geofence_violations' => 'Geofence Pozuntuları',
                                 ][$run->dashboard_section] ?? $run->dashboard_section }}</td>

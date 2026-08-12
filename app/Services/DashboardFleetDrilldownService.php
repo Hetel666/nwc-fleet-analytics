@@ -28,7 +28,6 @@ class DashboardFleetDrilldownService
     public function __construct(
         private EfficiencyDashboardService $efficiency,
         private DashboardDailyAverageService $dailyAverages,
-        private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
         private DashboardDateRangePolicy $dateRangePolicy,
     ) {}
@@ -64,11 +63,6 @@ class DashboardFleetDrilldownService
             'vehicle_types' => $this->vehicleTypes($input['vehicle_types'] ?? []),
             'metric' => $this->metric($input['metric'] ?? null),
             'group_by' => $this->groupBy($input['group_by'] ?? null),
-            'top_working_equipment_id' => filled($input['top_working_equipment_id'] ?? null) ? (int) $input['top_working_equipment_id'] : null,
-            'top_working_stat_date' => filled($input['top_working_stat_date'] ?? null)
-                ? Carbon::parse($input['top_working_stat_date'])->toDateString()
-                : null,
-            'top_working_ranking' => in_array($input['top_working_ranking'] ?? null, ['least', 'most'], true) ? $input['top_working_ranking'] : null,
             'work_category' => $workCategory,
             'day_status' => $dayStatus,
             'data_status' => $this->dataStatus($input['data_status'] ?? null),
@@ -107,10 +101,6 @@ class DashboardFleetDrilldownService
 
         if ($filters['view'] === 'equipment_types') {
             return $this->equipmentTypePaginator($filters);
-        }
-
-        if ($filters['top_working_ranking'] || ($filters['top_working_equipment_id'] && $filters['top_working_stat_date'])) {
-            return $this->topWorkingUnits->paginateDetail($filters);
         }
 
         if ($filters['geofence_violation']) {
@@ -195,8 +185,6 @@ class DashboardFleetDrilldownService
             ];
         } elseif ($filters['geofence_violation']) {
             $rows = $this->geofenceViolations->exportRows($filters);
-        } elseif ($filters['top_working_ranking'] || ($filters['top_working_equipment_id'] && $filters['top_working_stat_date'])) {
-            $rows = $this->topWorkingUnits->paginateDetail($filters)->items();
         } elseif ($filters['work_category'] || $filters['day_status']) {
             $rows = $this->efficiency->exportRows($this->efficiencyFilters($filters));
         } else {
@@ -331,10 +319,6 @@ class DashboardFleetDrilldownService
                 'icare_count' => 'İCARƏ',
                 'count' => 'Say',
             ];
-        }
-
-        if ($filters['top_working_ranking'] || ($filters['top_working_equipment_id'] && $filters['top_working_stat_date'])) {
-            return $this->topWorkingUnits->detailColumns();
         }
 
         if ($filters['geofence_violation']) {
@@ -753,7 +737,6 @@ class DashboardFleetDrilldownService
             ...config('fleet_efficiency.efficiency_vehicle_types', []),
             ...config('fleet_efficiency.average_engine_hours_vehicle_types', []),
             ...config('fleet_efficiency.average_mileage_vehicle_types', []),
-            ...config('fleet_efficiency.top_working_vehicle_types', []),
             ...config('fleet.foreign_geofence.allowed_vehicle_types', []),
         ])
             ->map(fn (string $type): string => FleetVehicleType::slug($type))

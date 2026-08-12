@@ -84,20 +84,6 @@ return [
             'column_class' => 'col-12 col-xl-6',
             'active' => true,
         ],
-        'least-working' => [
-            'label_key' => 'app.least_working',
-            'default_order' => 90,
-            'default_width' => 6,
-            'column_class' => 'col-12 col-xl-6',
-            'active' => true,
-        ],
-        'most-working' => [
-            'label_key' => 'app.most_working',
-            'default_order' => 100,
-            'default_width' => 6,
-            'column_class' => 'col-12 col-xl-6',
-            'active' => true,
-        ],
         'geofence-analysis' => [
             'label_key' => 'app.geofence_analysis',
             'default_order' => 110,

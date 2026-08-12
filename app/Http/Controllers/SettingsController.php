@@ -141,7 +141,6 @@ class SettingsController extends Controller
             ['label' => 'Texnikalar', 'key' => 'units'],
             ['label' => 'Geofence', 'key' => 'geofences'],
             ['label' => 'Gundelik statistika', 'key' => 'daily'],
-            ['label' => 'Top 20 motosaat', 'key' => 'top20'],
             ['label' => 'Geozonadan cixma', 'key' => 'geozon'],
             ['label' => 'Geofence Pozuntuları', 'key' => 'geofence_violations'],
             ['label' => 'Effektivlik Engine hours', 'key' => 'efficiency'],

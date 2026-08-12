@@ -29,8 +29,6 @@ class QueueDashboardReportsSync extends Command
     /** @var array<int, string> */
     private const DAILY_MODULES = [
         HistoricalRecalculation::SECTION_EFFICIENCY,
-        HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
-        HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
     ];
@@ -38,10 +36,6 @@ class QueueDashboardReportsSync extends Command
     private const RANGE_MODULES = [
         HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         HistoricalRecalculation::SECTION_EFFICIENCY,
-        HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
-        HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
-        HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
-        HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
     ];
@@ -52,12 +46,6 @@ class QueueDashboardReportsSync extends Command
         'average_mileage' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         'daily_averages' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         'efficiency' => HistoricalRecalculation::SECTION_EFFICIENCY,
-        'daytime_efficiency' => HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
-        'night_day_efficiency' => HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
-        'nighttime_efficiency' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
-        'top_20' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
-        'top20' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
-        'top_working_units' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
         'geofence_violations' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         'geofence_transfers' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
         'geofence_outside' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
@@ -145,12 +133,11 @@ class QueueDashboardReportsSync extends Command
                 (string) ($this->option('date') ?: now($timezone)->subDay()->toDateString()),
                 $timezone
             )->toDateString();
-            $lastNightShiftDate = $this->lastCompletedNightShiftDate(now($timezone));
 
             return $sections->map(fn (string $section): array => $this->plan(
                 $section,
-                $section === HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY ? $lastNightShiftDate : $businessDate,
-                $section === HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY ? $lastNightShiftDate : $businessDate
+                $businessDate,
+                $businessDate
             ));
         }
 
@@ -171,19 +158,8 @@ class QueueDashboardReportsSync extends Command
         }
 
         return $this->dateChunks($from, $to, $timezone)
-            ->flatMap(function (array $chunk) use ($sections, $timezone): array {
-                return $sections->flatMap(function (string $section) use ($chunk, $timezone): array {
-                    if ($section === HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY) {
-                        $lastCompletedShiftDate = $this->lastCompletedNightShiftDate(now($timezone));
-                        $nightTo = min($chunk['to'], $lastCompletedShiftDate);
-
-                        if ($chunk['from'] > $nightTo) {
-                            return [];
-                        }
-
-                        return [$this->plan($section, $chunk['from'], $nightTo)];
-                    }
-
+            ->flatMap(function (array $chunk) use ($sections): array {
+                return $sections->flatMap(function (string $section) use ($chunk): array {
                     return [$this->plan($section, $chunk['from'], $chunk['to'])];
                 })->all();
         })->values();

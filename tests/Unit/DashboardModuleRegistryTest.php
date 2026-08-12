@@ -23,7 +23,7 @@ class DashboardModuleRegistryTest extends TestCase
     {
         $registry = app(DashboardModuleRegistry::class);
 
-        $this->assertTrue(
+        $this->assertFalse(
             $registry->forHistoricalSection(HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY)
                 ->has('daytime_efficiency')
         );

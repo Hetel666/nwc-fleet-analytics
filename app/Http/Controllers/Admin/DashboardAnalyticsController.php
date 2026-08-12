@@ -30,13 +30,9 @@ class DashboardAnalyticsController extends Controller
     {
         return match ($key) {
             'average-engine-hours', 'average-mileage', 'utilization-trend' => 'daily_averages',
-            'least-working', 'most-working' => 'top_working_units',
             'geofence-analysis' => 'geofence_outside',
             'geofence-violations-report' => 'geofence_violations',
             'project-work-categories-nwc', 'project-work-categories-icare' => 'efficiency',
-            'daytime-efficiency-nwc', 'daytime-efficiency-icare' => 'daytime_efficiency',
-            'nighttime-efficiency-nwc', 'nighttime-efficiency-icare' => 'nighttime_efficiency',
-            'night-day-efficiency-nwc', 'night-day-efficiency-icare' => 'night_day_efficiency',
             default => 'static_fleet',
         };
     }

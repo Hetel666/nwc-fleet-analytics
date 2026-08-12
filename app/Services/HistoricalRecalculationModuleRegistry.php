@@ -17,9 +17,6 @@ class HistoricalRecalculationModuleRegistry
     public function __construct(
         private WialonReportStatsSyncService $dailyStats,
         private EfficiencyRecalculationHandler $efficiency,
-        private DaytimeEfficiencyRecalculationHandler $daytimeEfficiency,
-        private NighttimeEfficiencyRecalculationHandler $nighttimeEfficiency,
-        private NightDayEfficiencyRecalculationHandler $nightDayEfficiency,
     ) {}
 
     /** @return array<string, array<string, mixed>> */
@@ -65,54 +62,6 @@ class HistoricalRecalculationModuleRegistry
                 'result_tables' => ['monthly_efficiency_unit_geofence_facts'],
                 'aliases' => [],
             ],
-            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => [
-                'label' => 'Effektivlik gündüz',
-                'handler' => 'executeDaytimeEfficiency',
-                'service' => DaytimeEfficiencyRecalculationHandler::class,
-                'job' => RunHistoricalRecalculationTaskJob::class,
-                'queue' => $queue,
-                'result_tables' => [
-                    'daytime_efficiency_daily_facts',
-                    'daytime_efficiency_sync_runs',
-                    'daytime_efficiency_sync_tasks',
-                ],
-                'aliases' => [],
-            ],
-            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY => [
-                'label' => 'Effektivlik gecə',
-                'handler' => 'executeNighttimeEfficiency',
-                'service' => NighttimeEfficiencyRecalculationHandler::class,
-                'job' => RunHistoricalRecalculationTaskJob::class,
-                'queue' => $queue,
-                'result_tables' => [
-                    'nighttime_efficiency_daily_facts',
-                    'nighttime_efficiency_sync_runs',
-                    'nighttime_efficiency_sync_tasks',
-                ],
-                'aliases' => [],
-            ],
-            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY => [
-                'label' => 'Gün daxilində gecə effektivliyi',
-                'handler' => 'executeNightDayEfficiency',
-                'service' => NightDayEfficiencyRecalculationHandler::class,
-                'job' => RunHistoricalRecalculationTaskJob::class,
-                'queue' => $queue,
-                'result_tables' => [
-                    'night_day_efficiency_daily_facts',
-                    'night_day_efficiency_sync_runs',
-                    'night_day_efficiency_sync_tasks',
-                ],
-                'aliases' => [],
-            ],
-            HistoricalRecalculation::SECTION_TOP_WORKING_UNITS => [
-                'label' => 'Top 20',
-                'handler' => 'executeTopWorkingUnits',
-                'service' => EngineHoursTop20SyncService::class,
-                'job' => RunHistoricalRecalculationTaskJob::class,
-                'queue' => $queue,
-                'result_tables' => ['engine_hours_report_unit_days', 'wialon_report_sync_items'],
-                'aliases' => ['top_20', 'top20'],
-            ],
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE => [
                 'label' => 'Geofence Transferləri',
                 'handler' => 'executeGeofenceOutside',
@@ -142,13 +91,19 @@ class HistoricalRecalculationModuleRegistry
             }
         }
 
+        if ($this->isDisabledLegacySection($section)) {
+            return $section;
+        }
+
         throw new InvalidArgumentException("Unsupported historical recalculation module: {$section}");
     }
 
     /** @return array<string, mixed> */
     public function definition(string $section): array
     {
-        return $this->definitions()[$this->canonicalSection($section)];
+        $section = $this->canonicalSection($section);
+
+        return $this->definitions()[$section] ?? $this->disabledLegacyDefinition($section);
     }
 
     public function execute(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
@@ -195,29 +150,9 @@ class HistoricalRecalculationModuleRegistry
         return (int) ($result['equipment_count'] ?? 0);
     }
 
-    private function executeTopWorkingUnits(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
-    {
-        $date = $task->stat_date->toDateString();
-
-        $this->runArtisanOrFail('fleet:sync-engine-hours-report', array_filter([
-            '--date' => $date,
-            '--project' => $task->project_id,
-            '--ownership' => $task->ownership_type,
-            '--force' => (bool) $run->force,
-            '--limit' => 50,
-        ], $this->hasValue(...)));
-
-        return 0;
-    }
-
     private function executeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
         return $this->efficiency->execute($run, $task);
-    }
-
-    private function executeDaytimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
-    {
-        return $this->daytimeEfficiency->execute($run, $task);
     }
 
     private function executeMonthlyEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
@@ -245,16 +180,6 @@ class HistoricalRecalculationModuleRegistry
         return $query
             ->distinct('wialon_unit_id')
             ->count('wialon_unit_id');
-    }
-
-    private function executeNighttimeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
-    {
-        return $this->nighttimeEfficiency->execute($run, $task);
-    }
-
-    private function executeNightDayEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
-    {
-        return $this->nightDayEfficiency->execute($run, $task);
     }
 
     private function executeGeofenceOutside(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
@@ -289,6 +214,43 @@ class HistoricalRecalculationModuleRegistry
             ->where('report_period_to', Carbon::parse($to, $run->timezone))
             ->where('status', GeofenceViolationSyncItem::STATUS_COMPLETED)
             ->sum('imported_rows');
+    }
+
+    private function executeDisabledLegacyModule(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
+    {
+        throw new RuntimeException(sprintf(
+            'Dashboard module %s has been removed and cannot be recalculated.',
+            (string) $run->dashboard_section
+        ));
+    }
+
+    /** @return array<string, mixed> */
+    private function disabledLegacyDefinition(string $section): array
+    {
+        if (! $this->isDisabledLegacySection($section)) {
+            throw new InvalidArgumentException("Unsupported historical recalculation module: {$section}");
+        }
+
+        return [
+            'label' => $section,
+            'handler' => 'executeDisabledLegacyModule',
+            'service' => null,
+            'job' => RunHistoricalRecalculationTaskJob::class,
+            'queue' => (string) config('historical_recalculation.queue', 'historical-recalculations'),
+            'result_tables' => [],
+            'aliases' => [],
+            'disabled' => true,
+        ];
+    }
+
+    private function isDisabledLegacySection(string $section): bool
+    {
+        return in_array($section, [
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
+            HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+        ], true);
     }
 
     private function runArtisanOrFail(string $command, array $parameters): void

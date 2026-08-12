@@ -90,15 +90,6 @@
     };
     $projectWorkCategorySummaryNwc = $projectWorkCategorySummaryFor($projectWorkCategoryRowsNwc);
     $projectWorkCategorySummaryIcare = $projectWorkCategorySummaryFor($projectWorkCategoryRowsIcare);
-    $daytimeEfficiencyGroups = $data['daytimeEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
-    $daytimeEfficiencySummaryNwc = collect($daytimeEfficiencyGroups[$nwc] ?? [])->merge(['total' => (int) ($daytimeEfficiencyGroups[$nwc]['total'] ?? 0)]);
-    $daytimeEfficiencySummaryIcare = collect($daytimeEfficiencyGroups[$icare] ?? [])->merge(['total' => (int) ($daytimeEfficiencyGroups[$icare]['total'] ?? 0)]);
-    $nighttimeEfficiencyGroups = $data['nighttimeEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
-    $nighttimeEfficiencySummaryNwc = collect($nighttimeEfficiencyGroups[$nwc] ?? [])->merge(['total' => (int) ($nighttimeEfficiencyGroups[$nwc]['total'] ?? 0)]);
-    $nighttimeEfficiencySummaryIcare = collect($nighttimeEfficiencyGroups[$icare] ?? [])->merge(['total' => (int) ($nighttimeEfficiencyGroups[$icare]['total'] ?? 0)]);
-    $nightDayEfficiencyGroups = $data['nightDayEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
-    $nightDayEfficiencySummaryNwc = collect($nightDayEfficiencyGroups[$nwc] ?? [])->merge(['total' => (int) ($nightDayEfficiencyGroups[$nwc]['total'] ?? 0)]);
-    $nightDayEfficiencySummaryIcare = collect($nightDayEfficiencyGroups[$icare] ?? [])->merge(['total' => (int) ($nightDayEfficiencyGroups[$icare]['total'] ?? 0)]);
     $monthlyEfficiencyLabels = collect(\App\Support\MonthlyEfficiencyStatus::labels());
     $monthlyEfficiencyColors = collect(\App\Support\MonthlyEfficiencyStatus::colors());
     $monthlyEfficiencyGroups = $data['monthlyEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
@@ -220,7 +211,7 @@
     $dashboardDisplayConfiguration = is_array($dashboardDisplayConfiguration ?? null) ? $dashboardDisplayConfiguration : [];
     $dashboardDisplayRows = collect($dashboardDisplayConfiguration['dashboards'] ?? [])->keyBy('code');
     $dashboardStatusRows = collect($dashboardDisplayConfiguration['statuses'] ?? []);
-    $dashboardDisplayVisibleFor = fn (string $code): bool => (bool) ($dashboardDisplayRows->get($code, [])['is_visible'] ?? true);
+    $dashboardDisplayVisibleFor = fn (string $code): bool => (bool) ($dashboardDisplayRows->get($code, [])['is_visible'] ?? false);
     $dashboardDisplayOrderFor = fn (string $code, int $default): int => (int) ($dashboardDisplayRows->get($code, [])['display_order'] ?? $default);
     $dashboardStatusKeysFor = fn (string $type): \Illuminate\Support\Collection => collect($dashboardStatusRows->get($type, []))
         ->filter(fn (array $status): bool => (bool) ($status['is_visible'] ?? true))
@@ -228,18 +219,10 @@
         ->pluck('status_code')
         ->values();
     $visibleGeneralStatusKeys = $dashboardStatusKeysFor('general_efficiency');
-    $visibleDaytimeStatusKeys = $dashboardStatusKeysFor('daytime_efficiency');
-    $visibleNighttimeStatusKeys = $dashboardStatusKeysFor('nighttime_efficiency');
-    $visibleNightDayStatusKeys = $dashboardStatusKeysFor('night_day_efficiency');
     $visibleMonthlyStatusKeys = $dashboardStatusKeysFor('monthly_efficiency');
     $showMonthlyEfficiencySection = $dashboardDisplayVisibleFor('monthly_efficiency_nwc') || $dashboardDisplayVisibleFor('monthly_efficiency_rental');
     $showGeneralEfficiencySection = $dashboardDisplayVisibleFor('efficiency_general_nwc') || $dashboardDisplayVisibleFor('efficiency_general_rental');
-    $showDaytimeEfficiencySection = $dashboardDisplayVisibleFor('efficiency_daytime_nwc') || $dashboardDisplayVisibleFor('efficiency_daytime_rental');
-    $showNighttimeEfficiencySection = $dashboardDisplayVisibleFor('efficiency_nighttime_nwc') || $dashboardDisplayVisibleFor('efficiency_nighttime_rental');
-    $showNightDayEfficiencySection = $dashboardDisplayVisibleFor('night_day_efficiency_nwc') || $dashboardDisplayVisibleFor('night_day_efficiency_rental');
     $showAveragesSection = $dashboardDisplayVisibleFor('average_engine_hours') || $dashboardDisplayVisibleFor('average_mileage');
-    $showTop20Section = $dashboardDisplayVisibleFor('top_20_low') || $dashboardDisplayVisibleFor('top_20_high');
-    $showAnyEfficiencySection = $showMonthlyEfficiencySection || $showGeneralEfficiencySection || $showDaytimeEfficiencySection || $showNighttimeEfficiencySection || $showNightDayEfficiencySection || $showAveragesSection || $showTop20Section;
     $dashboardLayoutItems = collect($dashboardLayout ?? [])->keyBy('key');
     $dashboardWidgetLayoutFor = function (string $key, string $defaultClass, int $defaultWidth) use ($dashboardLayoutItems): array {
         $item = $dashboardLayoutItems->get($key, []);
@@ -274,14 +257,6 @@
         'project-work-categories-icare' => 'Project üzrə: '.__('app.ownership_icare'),
         'average-engine-hours' => 'Orta motosaat göstəricisi',
         'average-mileage' => 'Orta yürüş göstəricisi',
-        'daytime-efficiency-nwc' => 'Effektivlik gündüz: NWC üzrə',
-        'daytime-efficiency-icare' => 'Effektivlik gündüz: İcarə üzrə',
-        'nighttime-efficiency-nwc' => 'Effektivlik gecə: NWC üzrə',
-        'nighttime-efficiency-icare' => 'Effektivlik gecə: İcarə üzrə',
-        'night-day-efficiency-nwc' => 'Gün daxilində gecə effektivliyi: NWC üzrə',
-        'night-day-efficiency-icare' => 'Gün daxilində gecə effektivliyi: İcarə üzrə',
-        'least-working' => __('app.least_working'),
-        'most-working' => __('app.most_working'),
         'geofence-analysis' => __('app.geofence_analysis'),
         'geofence-violations-report' => __('app.geofence_violations'),
         'utilization-trend' => __('app.utilization_trend'),
@@ -305,12 +280,6 @@
         'projectWorkCategoryIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyNwcCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyIcareCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
-        'daytimeEfficiencyNwcCounts' => $visibleDaytimeStatusKeys->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
-        'daytimeEfficiencyIcareCounts' => $visibleDaytimeStatusKeys->map(fn (string $key): int => (int) ($daytimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
-        'nighttimeEfficiencyNwcCounts' => $visibleNighttimeStatusKeys->map(fn (string $key): int => (int) ($nighttimeEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
-        'nighttimeEfficiencyIcareCounts' => $visibleNighttimeStatusKeys->map(fn (string $key): int => (int) ($nighttimeEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
-        'nightDayEfficiencyNwcCounts' => $visibleNightDayStatusKeys->map(fn (string $key): int => (int) ($nightDayEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
-        'nightDayEfficiencyIcareCounts' => $visibleNightDayStatusKeys->map(fn (string $key): int => (int) ($nightDayEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
         'utilizationTrend' => $utilizationTrendByOwnership,
         'projectComparisonLabels' => $projectComparisonRows->pluck('name')->values()->all(),
         'projectComparisonIds' => $projectComparisonRows->pluck('id')->values()->all(),
@@ -1996,15 +1965,9 @@
     #efficiency-general { order: 200 !important; }
     [data-widget-key="project-work-categories-nwc"] { order: 210 !important; }
     [data-widget-key="project-work-categories-icare"] { order: 211 !important; }
-    #efficiency-daytime { order: 300 !important; }
-    #efficiency-nighttime { order: 400 !important; }
-    #efficiency-night-day { order: 500 !important; }
     #efficiency-averages { order: 600 !important; }
     [data-widget-key="average-engine-hours"] { order: 610 !important; }
     [data-widget-key="average-mileage"] { order: 611 !important; }
-    #efficiency-top20 { order: 700 !important; }
-    [data-widget-key="least-working"] { order: 710 !important; }
-    [data-widget-key="most-working"] { order: 711 !important; }
 
     .dashboard-ranking-card {
         display: flex;
@@ -2031,69 +1994,6 @@
         height: auto;
         min-height: 0;
     }
-
-    .top20-table {
-        width: 100%;
-        table-layout: fixed;
-        font-size: .8125rem;
-    }
-
-    .top20-table th,
-    .top20-table td {
-        height: 38px;
-        padding: 8px 10px;
-        line-height: 1.25;
-        vertical-align: middle;
-    }
-
-    .top20-table th {
-        white-space: nowrap;
-    }
-
-    .top20-table .truncate {
-        display: block;
-        min-width: 0;
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .top20-table .top20-rank-cell {
-        color: var(--fleet-muted);
-        font-variant-numeric: tabular-nums;
-        font-weight: 700;
-    }
-
-    .top20-table .top20-hours-cell,
-    .top20-table .top20-hours-cell .truncate {
-        font-variant-numeric: tabular-nums;
-        text-align: right;
-    }
-
-    .top20-table .top20-col-rank { width: 5%; }
-    .top20-table .top20-col-equipment { width: 20%; }
-    .top20-table .top20-col-ownership { width: 15%; }
-    .top20-table .top20-col-type { width: 18%; }
-    .top20-table .top20-col-project { width: 30%; }
-    .top20-table .top20-col-hours { width: 12%; }
-    .top20-table .top20-col-date { width: 11%; }
-
-    .top20-table--with-date .top20-col-equipment { width: 19%; }
-    .top20-table--with-date .top20-col-ownership { width: 13%; }
-    .top20-table--with-date .top20-col-type { width: 16%; }
-    .top20-table--with-date .top20-col-project { width: 25%; }
-    .top20-table--with-date .top20-col-hours { width: 11%; }
-
-    @media (max-width: 767.98px) {
-        .dashboard-ranking-card .dashboard-ranking-table {
-            overflow-x: auto;
-            overflow-y: visible;
-        }
-
-        .top20-table {
-            min-width: 760px;
-        }
     }
 
     .dashboard-efficiency-pair-widget,
@@ -2938,159 +2838,6 @@
 
             @endif
 
-            @if ($showDaytimeEfficiencySection)
-            <section id="efficiency-daytime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="daytime" style="order: 200" aria-labelledby="daytime-efficiency-title">
-                <div class="mb-3">
-                    <h2 class="h4 fw-bold mb-1" id="daytime-efficiency-title">Gündüz növbəsi üzrə effektivlik</h2>
-                    <div class="dashboard-efficiency-section-meta">
-                        <span><i class="bi bi-clock"></i>08:00–17:59 intervalı üzrə Engine hours</span>
-                        <span><i class="bi bi-database"></i>Mənbə: day report Engine hours (api)</span>
-                        <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-gün</span>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    @if ($dashboardDisplayVisibleFor('efficiency_daytime_nwc'))
-                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('daytime-efficiency-nwc') }}" data-dashboard-widget="daytime-efficiency-nwc" data-widget-key="daytime-efficiency-nwc" data-efficiency-group="daytime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('daytime-efficiency-nwc') }}" draggable="false">
-                        @include('dashboard.partials.daytime-efficiency-card', [
-                            'chartId' => 'daytimeEfficiencyNwc',
-                            'ownershipCode' => $nwc,
-                            'summary' => $daytimeEfficiencySummaryNwc,
-                            'categoryLabels' => $actualWorkCategoryLabels,
-                            'categoryColors' => $actualWorkCategoryColors,
-                            'filters' => $filters,
-                            'visibleStatuses' => $visibleDaytimeStatusKeys,
-                            'title' => 'Effektivlik gündüz: NWC üzrə',
-                            'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
-                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
-                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                            ], fn ($value) => $value !== null && $value !== '')),
-                        ])
-                    </div>
-                    @endif
-                    @if ($dashboardDisplayVisibleFor('efficiency_daytime_rental'))
-                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('daytime-efficiency-icare') }}" data-dashboard-widget="daytime-efficiency-icare" data-widget-key="daytime-efficiency-icare" data-efficiency-group="daytime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('daytime-efficiency-icare') }}" draggable="false">
-                        @include('dashboard.partials.daytime-efficiency-card', [
-                            'chartId' => 'daytimeEfficiencyIcare',
-                            'ownershipCode' => $icare,
-                            'summary' => $daytimeEfficiencySummaryIcare,
-                            'categoryLabels' => $actualWorkCategoryLabels,
-                            'categoryColors' => $actualWorkCategoryColors,
-                            'filters' => $filters,
-                            'visibleStatuses' => $visibleDaytimeStatusKeys,
-                            'title' => 'Effektivlik gündüz: İcarə üzrə',
-                            'exportUrl' => route('api.dashboard.daytime-efficiency.export', array_filter([
-                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
-                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                            ], fn ($value) => $value !== null && $value !== '')),
-                        ])
-                    </div>
-                    @endif
-                </div>
-            </section>
-            @endif
-
-            @if ($showNighttimeEfficiencySection)
-            <section id="efficiency-nighttime" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="nighttime" style="order: 300" aria-labelledby="nighttime-efficiency-title">
-                <div class="mb-3">
-                    <h2 class="h4 fw-bold mb-1" id="nighttime-efficiency-title">Gecə növbəsi üzrə effektivlik</h2>
-                    <div class="dashboard-efficiency-section-meta">
-                        <span title="31.07 18:00-01.08 07:59 növbəsi 31.07 tarixinə aiddir"><i class="bi bi-moon-stars"></i>18:00–07:59 intervalı üzrə Engine hours</span>
-                        <span><i class="bi bi-database"></i>Mənbə: night report Engine hours (api)</span>
-                        <span><i class="bi bi-calculator"></i>Hesablama vahidi: Texnika-növbə</span>
-                    </div>
-                    <div class="small text-secondary mt-1">Növbə tarixi başlanğıc gününə görə hesablanır</div>
-                </div>
-                <div class="row g-3">
-                    @if ($dashboardDisplayVisibleFor('efficiency_nighttime_nwc'))
-                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('nighttime-efficiency-nwc') }}" data-dashboard-widget="nighttime-efficiency-nwc" data-widget-key="nighttime-efficiency-nwc" data-efficiency-group="nighttime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('nighttime-efficiency-nwc') }}" draggable="false">
-                        @include('dashboard.partials.nighttime-efficiency-card', [
-                            'chartId' => 'nighttimeEfficiencyNwc',
-                            'ownershipCode' => $nwc,
-                            'summary' => $nighttimeEfficiencySummaryNwc,
-                            'categoryLabels' => $actualWorkCategoryLabels,
-                            'categoryColors' => $actualWorkCategoryColors,
-                            'filters' => $filters,
-                            'visibleStatuses' => $visibleNighttimeStatusKeys,
-                            'title' => 'Effektivlik gecə: NWC üzrə',
-                            'exportUrl' => route('api.dashboard.nighttime-efficiency.export', array_filter([
-                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
-                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                            ], fn ($value) => $value !== null && $value !== '')),
-                        ])
-                    </div>
-                    @endif
-                    @if ($dashboardDisplayVisibleFor('efficiency_nighttime_rental'))
-                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('nighttime-efficiency-icare') }}" data-dashboard-widget="nighttime-efficiency-icare" data-widget-key="nighttime-efficiency-icare" data-efficiency-group="nighttime" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('nighttime-efficiency-icare') }}" draggable="false">
-                        @include('dashboard.partials.nighttime-efficiency-card', [
-                            'chartId' => 'nighttimeEfficiencyIcare',
-                            'ownershipCode' => $icare,
-                            'summary' => $nighttimeEfficiencySummaryIcare,
-                            'categoryLabels' => $actualWorkCategoryLabels,
-                            'categoryColors' => $actualWorkCategoryColors,
-                            'filters' => $filters,
-                            'visibleStatuses' => $visibleNighttimeStatusKeys,
-                            'title' => 'Effektivlik gecə: İcarə üzrə',
-                            'exportUrl' => route('api.dashboard.nighttime-efficiency.export', array_filter([
-                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
-                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                            ], fn ($value) => $value !== null && $value !== '')),
-                        ])
-                    </div>
-                    @endif
-                </div>
-            </section>
-            @endif
-
-            @if ($showNightDayEfficiencySection)
-            <section id="efficiency-night-day" class="col-12 mt-4 dashboard-efficiency-shift-section" data-efficiency-group="night-day" style="order: 320" aria-labelledby="night-day-efficiency-title">
-                <div class="mb-3">
-                    <h2 class="h4 fw-bold mb-1" id="night-day-efficiency-title">Gün daxilində gecə effektivliyi</h2>
-                    <div class="dashboard-efficiency-section-meta">
-                        <span><i class="bi bi-moon-stars"></i>00:00–07:59 və 18:00–23:59 intervalları üzrə Engine hours</span>
-                        <span><i class="bi bi-database"></i>Mənbə: night day report Engine hours (api)</span>
-                        <span><i class="bi bi-calculator"></i>Hesablama vahidi: Unikal texnika</span>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    @if ($dashboardDisplayVisibleFor('night_day_efficiency_nwc'))
-                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('night-day-efficiency-nwc') }}" data-dashboard-widget="night-day-efficiency-nwc" data-widget-key="night-day-efficiency-nwc" data-efficiency-group="night-day" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('night-day-efficiency-nwc') }}" draggable="false">
-                        @include('dashboard.partials.night-day-efficiency-card', [
-                            'chartId' => 'nightDayEfficiencyNwc',
-                            'ownershipCode' => $nwc,
-                            'summary' => $nightDayEfficiencySummaryNwc,
-                            'categoryLabels' => $actualWorkCategoryLabels,
-                            'categoryColors' => $actualWorkCategoryColors,
-                            'filters' => $filters,
-                            'visibleStatuses' => $visibleNightDayStatusKeys,
-                            'title' => 'Gün daxilində gecə effektivliyi: NWC üzrə',
-                            'exportUrl' => route('api.dashboard.night-day-efficiency.export', array_filter([
-                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc',
-                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                            ], fn ($value) => $value !== null && $value !== '')),
-                        ])
-                    </div>
-                    @endif
-                    @if ($dashboardDisplayVisibleFor('night_day_efficiency_rental'))
-                    <div class="col-12 col-md-6 d-flex dashboard-widget{{ $dashboardUserHiddenClassFor('night-day-efficiency-icare') }}" data-dashboard-widget="night-day-efficiency-icare" data-widget-key="night-day-efficiency-icare" data-efficiency-group="night-day" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('night-day-efficiency-icare') }}" draggable="false">
-                        @include('dashboard.partials.night-day-efficiency-card', [
-                            'chartId' => 'nightDayEfficiencyIcare',
-                            'ownershipCode' => $icare,
-                            'summary' => $nightDayEfficiencySummaryIcare,
-                            'categoryLabels' => $actualWorkCategoryLabels,
-                            'categoryColors' => $actualWorkCategoryColors,
-                            'filters' => $filters,
-                            'visibleStatuses' => $visibleNightDayStatusKeys,
-                            'title' => 'Gün daxilində gecə effektivliyi: İcarə üzrə',
-                            'exportUrl' => route('api.dashboard.night-day-efficiency.export', array_filter([
-                                'date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare',
-                                'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'],
-                            ], fn ($value) => $value !== null && $value !== '')),
-                        ])
-                    </div>
-                    @endif
-                </div>
-            </section>
-            @endif
 
             @if ($showAveragesSection)
             <section id="efficiency-averages" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="averages" style="order: 400" aria-labelledby="efficiency-averages-title">
@@ -3132,36 +2879,6 @@
             @endif
             @endif
 
-            @if ($showTop20Section)
-            <section id="efficiency-top20" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="top20" style="order: 500" aria-labelledby="efficiency-top20-title">
-                <h2 class="h4 fw-bold mb-1" id="efficiency-top20-title">Top göstəricilər</h2>
-            </section>
-
-            @if ($dashboardDisplayVisibleFor('top_20_low'))
-            @php
-                $widgetLayout = $dashboardWidgetLayoutFor('least-working', 'col-12 col-md-6', 6);
-            @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('least-working') }}{{ $dashboardUserHiddenClassFor('least-working') }}" data-dashboard-widget="least-working" data-widget-key="least-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('least-working') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('least-working') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
-                <section class="panel p-3 dashboard-card dashboard-ranking-card">
-                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('least-working', __('app.least_working'))" :export-url="$exportUrl('least-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['leastWorking'] ?? [], 'ranking' => 'least'])
-                </section>
-            </div>
-            @endif
-
-            @if ($dashboardDisplayVisibleFor('top_20_high'))
-            @php
-                $widgetLayout = $dashboardWidgetLayoutFor('most-working', 'col-12 col-md-6', 6);
-            @endphp
-            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-top-widget{{ $dashboardWidgetVisibilityClassFor('most-working') }}{{ $dashboardUserHiddenClassFor('most-working') }}" data-dashboard-widget="most-working" data-widget-key="most-working" data-efficiency-group="top20" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="{{ $widgetLayout['order'] }}" data-widget-visible="{{ $dashboardWidgetVisibleFor('most-working') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('most-working') }}" style="order: {{ $widgetLayout['order'] }}" draggable="false">
-                <section class="panel p-3 dashboard-card dashboard-ranking-card">
-                    <x-dashboard-card-header :title="$dashboardWidgetTitleFor('most-working', __('app.most_working'))" :export-url="$exportUrl('most-working')" />
-                    @include('dashboard.partials.ranking-table', ['rows' => $data['mostWorking'] ?? [], 'ranking' => 'most'])
-                </section>
-            </div>
-            @endif
-            @endif
-            @endif
 
             @if ($selectedDashboardTab === 'geozones')
             @if ($dashboardDisplayVisibleFor('geofence_transfers'))
@@ -3516,9 +3233,6 @@ const monthlyEfficiencyLabelMap = @json($monthlyEfficiencyLabels);
 const monthlyEfficiencyColorMap = @json($monthlyEfficiencyColors);
 const workCategoryKeys = @json($visibleGeneralStatusKeys->values());
 const monthlyEfficiencyKeys = @json($visibleMonthlyStatusKeys->values());
-const daytimeEfficiencyKeys = @json($visibleDaytimeStatusKeys->values());
-const nighttimeEfficiencyKeys = @json($visibleNighttimeStatusKeys->values());
-const nightDayEfficiencyKeys = @json($visibleNightDayStatusKeys->values());
 const workCategoryLabels = workCategoryKeys.map(key => workCategoryLabelMap[key] || key);
 const monthlyEfficiencyLabels = monthlyEfficiencyKeys.map(key => monthlyEfficiencyLabelMap[key] || key);
 const daytimeEfficiencyLabels = daytimeEfficiencyKeys.map(key => workCategoryLabelMap[key] || key);
@@ -5025,7 +4739,7 @@ const renderDrilldownRows = rows => {
             tr.title = `${row.vehicle_type || 'Texnika növü'} siyahısını aç`;
         }
 
-        if (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
+        if (['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
             tr.className = 'dashboard-project-type-row';
             tr.setAttribute('role', 'button');
             tr.tabIndex = 0;
@@ -5061,17 +4775,17 @@ const renderDrilldownRows = rows => {
             const value = key === 'number'
                 ? rowNumber
                 : (formattedDurationKey && row[formattedDurationKey] !== undefined ? row[formattedDurationKey] : row[key]);
-            const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)
+            const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
                 && ['nwc_count', 'icare_count', 'count'].includes(key);
             const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-                || (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+                || (['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
                 || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
                 || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
             td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
             td.classList.toggle('dashboard-project-type-name', isSummaryName);
             td.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
+            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
             tr.appendChild(td);
         });
 
@@ -5106,7 +4820,7 @@ const renderDrilldownColumns = columns => {
     if (drilldownColgroup) {
         drilldownColgroup.textContent = '';
 
-        if (['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)) {
+        if (['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)) {
             Object.keys(drilldownState.columns).forEach(key => {
                 const col = document.createElement('col');
                 col.classList.toggle('dashboard-project-type-name', key === 'vehicle_type' || key === 'project' || key === 'registration_number' || key === 'geofence_name');
@@ -5118,18 +4832,18 @@ const renderDrilldownColumns = columns => {
 
     Object.entries(drilldownState.columns).forEach(([key, label]) => {
         const th = document.createElement('th');
-        const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)
+        const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
             && ['nwc_count', 'icare_count', 'count'].includes(key);
         const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-            || (['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+            || (['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
             || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
             || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
         th.classList.toggle('dashboard-project-type-name', isSummaryName);
         th.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode) && key === 'count');
+        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
 
-        if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'monthly_efficiency_projects', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(drilldownState.mode)) {
+        if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode)) {
             const button = document.createElement('button');
             const isActive = drilldownState.filters.sort === key;
             const direction = drilldownState.filters.direction === 'desc' ? 'descending' : 'ascending';
@@ -5339,9 +5053,9 @@ const loadDashboardDrilldown = async () => {
 
 const configureDrilldownMode = (mode, filters = {}) => {
     const isMetricDrilldown = Boolean(filters.metric);
-    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(mode);
+    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
 
-    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'daytime_efficiency_projects', 'night_day_efficiency_projects', 'nighttime_efficiency_projects'].includes(mode));
+    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(mode));
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
     drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
 
@@ -5360,7 +5074,7 @@ const openDashboardDrilldown = (filters = {}) => {
     const exportUrl = nextFilters.export_url || '';
     const mode = nextFilters.drilldown_mode
         || (nextFilters.view === 'equipment_types' ? 'project_types' : (nextFilters.view === 'projects' ? 'efficiency_projects' : 'fleet'));
-    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days', 'daytime_efficiency_projects', 'nighttime_efficiency_projects', 'night_day_efficiency_projects'].includes(mode);
+    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
 
     delete nextFilters.endpoint_url;
     delete nextFilters.units_endpoint_url;
@@ -5425,11 +5139,8 @@ const openSummaryUnits = trigger => {
     const isMonthlyEfficiencyProjectSummary = drilldownState.mode === 'monthly_efficiency_projects' && trigger?.dataset.projectId;
     const isMonthlyEfficiencyObjectSummary = drilldownState.mode === 'monthly_efficiency_objects' && trigger?.dataset.wialonUnitId;
     const isMonthlyEfficiencyGeofenceSummary = drilldownState.mode === 'monthly_efficiency_geofences' && trigger?.dataset.geofenceName;
-    const isDaytimeEfficiencyProjectSummary = drilldownState.mode === 'daytime_efficiency_projects' && trigger?.dataset.projectId;
-    const isNighttimeEfficiencyProjectSummary = drilldownState.mode === 'nighttime_efficiency_projects' && trigger?.dataset.projectId;
-    const isNightDayEfficiencyProjectSummary = drilldownState.mode === 'night_day_efficiency_projects' && trigger?.dataset.projectId;
 
-    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary && !isDaytimeEfficiencyProjectSummary && !isNighttimeEfficiencyProjectSummary && !isNightDayEfficiencyProjectSummary) {
+    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary) {
         return;
     }
 
@@ -5451,13 +5162,13 @@ const openSummaryUnits = trigger => {
         search: drilldownState.filters.search || '',
         sort: isMonthlyEfficiencyProjectSummary
             ? 'current_hours'
-            : ((isEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary) ? 'date' : 'name'),
+            : (isEfficiencyProjectSummary ? 'date' : 'name'),
         direction: isMonthlyEfficiencyProjectSummary && drilldownState.filters.status === 'normal' ? 'desc' : 'asc',
     };
     if (isProjectTypeSummary) {
         nextFilters.equipment_type_id = trigger.dataset.equipmentTypeId;
     }
-    if (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary) {
+    if (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary) {
         nextFilters.project_id = trigger.dataset.projectId;
     }
     if (isMonthlyEfficiencyObjectSummary) {
@@ -5481,7 +5192,7 @@ const openSummaryUnits = trigger => {
     drilldownState.meta = null;
     drilldownState.columns = defaultDrilldownColumns();
     drilldownState.title = `${parent.title} - ${
-        (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary)
+        (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary)
             ? (trigger.dataset.projectName || 'Layihə')
             : (trigger.dataset.equipmentTypeName || 'Texnika növü')
     }`;
@@ -5498,12 +5209,12 @@ const openSummaryUnits = trigger => {
     } else if (isMonthlyEfficiencyGeofenceSummary) {
         drilldownState.endpointUrl = drilldownState.daysEndpointUrl;
         drilldownState.exportEnabled = false;
-    } else if (isMonthlyEfficiencyProjectSummary || isDaytimeEfficiencyProjectSummary || isNighttimeEfficiencyProjectSummary || isNightDayEfficiencyProjectSummary) {
+    } else if (isMonthlyEfficiencyProjectSummary) {
         drilldownState.endpointUrl = drilldownState.unitsEndpointUrl;
     }
-    drilldownState.mode = isNighttimeEfficiencyProjectSummary
-        ? 'nighttime_efficiency_units'
-        : (isNightDayEfficiencyProjectSummary ? 'night_day_efficiency_units' : (isMonthlyEfficiencyGeofenceSummary ? 'monthly_efficiency_geofence_days' : (isMonthlyEfficiencyObjectSummary ? 'monthly_efficiency_geofences' : (isMonthlyEfficiencyProjectSummary ? 'monthly_efficiency_units' : (isDaytimeEfficiencyProjectSummary ? 'daytime_efficiency_units' : 'fleet')))));
+    drilldownState.mode = isMonthlyEfficiencyGeofenceSummary
+        ? 'monthly_efficiency_geofence_days'
+        : (isMonthlyEfficiencyObjectSummary ? 'monthly_efficiency_geofences' : (isMonthlyEfficiencyProjectSummary ? 'monthly_efficiency_units' : 'fleet'));
     drilldownState.parent = parent;
     drilldownBack?.classList.remove('d-none');
     if (drilldownSearch) {
@@ -5614,9 +5325,6 @@ document.addEventListener('click', event => {
         metric: trigger.dataset.drilldownMetric || undefined,
         sort: trigger.dataset.drilldownSort || undefined,
         data_status: trigger.dataset.drilldownDataStatus || undefined,
-        top_working_equipment_id: trigger.dataset.drilldownTopEquipmentId || undefined,
-        top_working_stat_date: trigger.dataset.drilldownTopStatDate || undefined,
-        top_working_ranking: trigger.dataset.drilldownTopRanking || undefined,
         geofence_violation: trigger.dataset.drilldownGeofenceViolation || undefined,
         endpoint_url: trigger.dataset.drilldownEndpointUrl || undefined,
         units_endpoint_url: trigger.dataset.drilldownUnitsEndpointUrl || undefined,
@@ -5810,87 +5518,6 @@ const monthlyEfficiencyIcareDrilldownItems = monthlyEfficiencyKeys.map((key, ind
     export_url: monthlyEfficiencyEndpoints.export,
     export_enabled: false,
 }));
-const daytimeEfficiencyEndpoints = {
-    projects: @json(route('api.dashboard.daytime-efficiency.projects')),
-    units: @json(route('api.dashboard.daytime-efficiency.units')),
-    export: @json(route('api.dashboard.daytime-efficiency.export')),
-};
-const daytimeEfficiencyNwcDrilldownItems = daytimeEfficiencyKeys.map((key, index) => ({
-    title: `Effektivlik gunduz: ${labels.nwc} - ${daytimeEfficiencyLabels[index]}`,
-    ownership: 'nwc',
-    view: 'projects',
-    drilldown_mode: 'daytime_efficiency_projects',
-    status: key,
-    endpoint_url: daytimeEfficiencyEndpoints.projects,
-    units_endpoint_url: daytimeEfficiencyEndpoints.units,
-    export_url: daytimeEfficiencyEndpoints.export,
-    export_enabled: false,
-}));
-const daytimeEfficiencyIcareDrilldownItems = daytimeEfficiencyKeys.map((key, index) => ({
-    title: `Effektivlik gunduz: ${labels.icare} - ${daytimeEfficiencyLabels[index]}`,
-    ownership: 'icare',
-    view: 'projects',
-    drilldown_mode: 'daytime_efficiency_projects',
-    status: key,
-    endpoint_url: daytimeEfficiencyEndpoints.projects,
-    units_endpoint_url: daytimeEfficiencyEndpoints.units,
-    export_url: daytimeEfficiencyEndpoints.export,
-    export_enabled: false,
-}));
-const nighttimeEfficiencyEndpoints = {
-    projects: @json(route('api.dashboard.nighttime-efficiency.projects')),
-    units: @json(route('api.dashboard.nighttime-efficiency.units')),
-    export: @json(route('api.dashboard.nighttime-efficiency.export')),
-};
-const nighttimeEfficiencyNwcDrilldownItems = nighttimeEfficiencyKeys.map((key, index) => ({
-    title: `Effektivlik gece: ${labels.nwc} - ${nighttimeEfficiencyLabels[index]}`,
-    ownership: 'nwc',
-    view: 'projects',
-    drilldown_mode: 'nighttime_efficiency_projects',
-    status: key,
-    endpoint_url: nighttimeEfficiencyEndpoints.projects,
-    units_endpoint_url: nighttimeEfficiencyEndpoints.units,
-    export_url: nighttimeEfficiencyEndpoints.export,
-    export_enabled: false,
-}));
-const nighttimeEfficiencyIcareDrilldownItems = nighttimeEfficiencyKeys.map((key, index) => ({
-    title: `Effektivlik gece: ${labels.icare} - ${nighttimeEfficiencyLabels[index]}`,
-    ownership: 'icare',
-    view: 'projects',
-    drilldown_mode: 'nighttime_efficiency_projects',
-    status: key,
-    endpoint_url: nighttimeEfficiencyEndpoints.projects,
-    units_endpoint_url: nighttimeEfficiencyEndpoints.units,
-    export_url: nighttimeEfficiencyEndpoints.export,
-    export_enabled: false,
-}));
-const nightDayEfficiencyEndpoints = {
-    projects: @json(route('api.dashboard.night-day-efficiency.projects')),
-    units: @json(route('api.dashboard.night-day-efficiency.units')),
-    export: @json(route('api.dashboard.night-day-efficiency.export')),
-};
-const nightDayEfficiencyNwcDrilldownItems = nightDayEfficiencyKeys.map((key, index) => ({
-    title: `Gün daxilində gecə effektivliyi: ${labels.nwc} - ${nightDayEfficiencyLabels[index]}`,
-    ownership: 'nwc',
-    view: 'projects',
-    drilldown_mode: 'night_day_efficiency_projects',
-    status: key,
-    endpoint_url: nightDayEfficiencyEndpoints.projects,
-    units_endpoint_url: nightDayEfficiencyEndpoints.units,
-    export_url: nightDayEfficiencyEndpoints.export,
-    export_enabled: false,
-}));
-const nightDayEfficiencyIcareDrilldownItems = nightDayEfficiencyKeys.map((key, index) => ({
-    title: `Gün daxilində gecə effektivliyi: ${labels.icare} - ${nightDayEfficiencyLabels[index]}`,
-    ownership: 'icare',
-    view: 'projects',
-    drilldown_mode: 'night_day_efficiency_projects',
-    status: key,
-    endpoint_url: nightDayEfficiencyEndpoints.projects,
-    units_endpoint_url: nightDayEfficiencyEndpoints.units,
-    export_url: nightDayEfficiencyEndpoints.export,
-    export_enabled: false,
-}));
 const typeNwcDrilldownItems = () => typeNwcIds.map((id, index) => ({
     title: `${labels.nwc} - ${typeNwcLabels[index]}`,
     ownership: 'nwc',
@@ -5949,32 +5576,22 @@ const initializeDashboardCharts = () => {
         colors: monthlyEfficiencyColorValues,
         drilldownItems: monthlyEfficiencyIcareDrilldownItems,
     });
-    createProjectWorkCategoryChart('daytimeEfficiencyNwc', daytimeEfficiencyNwcCounts, {
-        labels: daytimeEfficiencyLabels,
-        colors: daytimeEfficiencyColorValues,
-        drilldownItems: daytimeEfficiencyNwcDrilldownItems,
-    });
-    createProjectWorkCategoryChart('daytimeEfficiencyIcare', daytimeEfficiencyIcareCounts, {
         labels: daytimeEfficiencyLabels,
         colors: daytimeEfficiencyColorValues,
         drilldownItems: daytimeEfficiencyIcareDrilldownItems,
     });
-    createProjectWorkCategoryChart('nighttimeEfficiencyNwc', nighttimeEfficiencyNwcCounts, {
         labels: nighttimeEfficiencyLabels,
         colors: nighttimeEfficiencyColorValues,
         drilldownItems: nighttimeEfficiencyNwcDrilldownItems,
     });
-    createProjectWorkCategoryChart('nighttimeEfficiencyIcare', nighttimeEfficiencyIcareCounts, {
         labels: nighttimeEfficiencyLabels,
         colors: nighttimeEfficiencyColorValues,
         drilldownItems: nighttimeEfficiencyIcareDrilldownItems,
     });
-    createProjectWorkCategoryChart('nightDayEfficiencyNwc', nightDayEfficiencyNwcCounts, {
         labels: nightDayEfficiencyLabels,
         colors: nightDayEfficiencyColorValues,
         drilldownItems: nightDayEfficiencyNwcDrilldownItems,
     });
-    createProjectWorkCategoryChart('nightDayEfficiencyIcare', nightDayEfficiencyIcareCounts, {
         labels: nightDayEfficiencyLabels,
         colors: nightDayEfficiencyColorValues,
         drilldownItems: nightDayEfficiencyIcareDrilldownItems,

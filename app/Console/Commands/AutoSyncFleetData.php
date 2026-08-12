@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\Setting;
-use App\Models\WialonReportSyncItem;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -101,16 +100,13 @@ class AutoSyncFleetData extends Command
     {
         $days = max(1, min(7, (int) $this->setting('auto_sync_daily_recent_days', 3)));
         $dailySuccess = true;
-        $top20Success = true;
         $efficiencySuccess = true;
         $geozonSuccess = true;
         $geofenceViolationsSuccess = true;
         $dailyMessages = [];
-        $top20Messages = [];
         $efficiencyMessages = [];
         $geozonMessages = [];
         $geofenceViolationsMessages = [];
-        $top20Limit = max(1, min(50, (int) $this->setting('auto_sync_top20_batch_limit', 10)));
         $rangeFrom = now(config('app.timezone'))->subDays($days)->startOfDay();
         $rangeTo = now(config('app.timezone'))->subDay()->endOfDay();
 
@@ -118,12 +114,6 @@ class AutoSyncFleetData extends Command
             $date = now(config('app.timezone'))->subDays($offset + 1)->toDateString();
             $reportOk = $this->runArtisanCommand('fleet:sync-report-stats', ['--date' => $date, '--force' => true]);
             $aggregateOk = $this->runArtisanCommand('fleet:aggregate-daily', ['--date' => $date]);
-            $top20Ok = $this->runBatchedReportCommand(
-                'fleet:sync-engine-hours-report',
-                ['--date' => $date, '--limit' => $top20Limit],
-                WialonReportSyncItem::TYPE_ENGINE_HOURS_TOP20,
-                $date
-            );
             $geozonOk = $this->runArtisanCommand('fleet:sync-geozon-api', [
                 '--from' => $date.' 00:00:00',
                 '--to' => $date.' 23:59:59',
@@ -135,12 +125,10 @@ class AutoSyncFleetData extends Command
                 '--force' => true,
             ]);
             $dailySuccess = $dailySuccess && $aggregateOk['ok'] && $reportOk['ok'];
-            $top20Success = $top20Success && $top20Ok['ok'];
             $geozonSuccess = $geozonSuccess && $geozonOk['ok'];
             $efficiencySuccess = $efficiencySuccess && $efficiencyOk['ok'];
 
             $dailyMessages[] = $date.': '.trim($reportOk['output'].' '.$aggregateOk['output']);
-            $top20Messages[] = $date.': '.trim($top20Ok['output']);
             $geozonMessages[] = $date.': '.trim($geozonOk['output']);
             $efficiencyMessages[] = $date.': '.trim($efficiencyOk['output']);
         }
@@ -155,7 +143,6 @@ class AutoSyncFleetData extends Command
             .': '.trim($geofenceViolationsOk['output']);
 
         $this->storeTaskResult('daily', $dailySuccess, implode(' | ', array_filter($dailyMessages)));
-        $this->storeTaskResult('top20', $top20Success, implode(' | ', array_filter($top20Messages)));
         $this->storeTaskResult('geozon', $geozonSuccess, implode(' | ', array_filter($geozonMessages)));
         $this->storeTaskResult(
             'geofence_violations',
@@ -170,70 +157,9 @@ class AutoSyncFleetData extends Command
         );
 
         return $dailySuccess
-            && $top20Success
             && $geozonSuccess
             && $geofenceViolationsSuccess
             && $efficiencySuccess;
-    }
-
-    /**
-     * Run all ready batches and only report success when no incomplete items remain.
-     *
-     * @return array{ok: bool, output: string}
-     */
-    private function runBatchedReportCommand(string $command, array $parameters, string $syncType, string $date): array
-    {
-        $outputs = [];
-        $maxBatches = max(1, (int) config('fleet.wialon.auto_sync_max_batches', 100));
-
-        for ($batch = 1; $batch <= $maxBatches; $batch++) {
-            $result = $this->runArtisanCommand($command, $parameters);
-            $outputs[] = $result['output'];
-
-            if (! $result['ok']) {
-                return ['ok' => false, 'output' => implode(' ', array_filter($outputs))];
-            }
-
-            if (! $this->hasReadyReportItems($syncType, $date)) {
-                break;
-            }
-        }
-
-        $incomplete = WialonReportSyncItem::query()
-            ->where('sync_type', $syncType)
-            ->where('report_date', $date)
-            ->whereIn('status', [
-                WialonReportSyncItem::STATUS_PENDING,
-                WialonReportSyncItem::STATUS_RUNNING,
-                WialonReportSyncItem::STATUS_RETRY,
-                WialonReportSyncItem::STATUS_FAILED,
-            ])
-            ->count();
-
-        if ($incomplete > 0) {
-            $outputs[] = "Incomplete checkpoint items: {$incomplete}.";
-        }
-
-        return [
-            'ok' => $incomplete === 0,
-            'output' => implode(' ', array_filter($outputs)),
-        ];
-    }
-
-    private function hasReadyReportItems(string $syncType, string $date): bool
-    {
-        return WialonReportSyncItem::query()
-            ->where('sync_type', $syncType)
-            ->where('report_date', $date)
-            ->whereIn('status', [
-                WialonReportSyncItem::STATUS_PENDING,
-                WialonReportSyncItem::STATUS_RETRY,
-            ])
-            ->where(function ($query): void {
-                $query->whereNull('next_retry_at')
-                    ->orWhere('next_retry_at', '<=', now(config('app.timezone')));
-            })
-            ->exists();
     }
 
     private function runTask(string $name, string $command): bool

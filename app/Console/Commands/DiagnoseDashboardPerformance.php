@@ -8,7 +8,6 @@ use App\Services\DashboardFleetDrilldownService;
 use App\Services\DashboardService;
 use App\Services\EfficiencyDashboardService;
 use App\Services\GeofenceViolationService;
-use App\Services\TopWorkingUnitsService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Collection;
@@ -38,7 +37,6 @@ class DiagnoseDashboardPerformance extends Command
         DashboardService $dashboard,
         DashboardDailyAverageService $dailyAverages,
         EfficiencyDashboardService $efficiency,
-        TopWorkingUnitsService $topWorkingUnits,
         GeofenceViolationService $geofenceViolations,
         DashboardFleetDrilldownService $drilldown,
     ): int {
@@ -64,7 +62,7 @@ class DiagnoseDashboardPerformance extends Command
         $this->line('Cache driver: '.(string) config('cache.default').'; mode: '.($this->option('no-cache') ? 'bypassed' : 'not cleared'));
         $this->newLine();
 
-        $widgets = $this->widgets($dashboard, $dailyAverages, $efficiency, $topWorkingUnits, $geofenceViolations, $drilldown, $filters);
+        $widgets = $this->widgets($dashboard, $dailyAverages, $efficiency, $geofenceViolations, $drilldown, $filters);
         $onlyWidget = $this->option('widget') ? (string) $this->option('widget') : null;
 
         if ($onlyWidget) {
@@ -143,7 +141,6 @@ class DiagnoseDashboardPerformance extends Command
         DashboardService $dashboard,
         DashboardDailyAverageService $dailyAverages,
         EfficiencyDashboardService $efficiency,
-        TopWorkingUnitsService $topWorkingUnits,
         GeofenceViolationService $geofenceViolations,
         DashboardFleetDrilldownService $drilldown,
         array $filters,
@@ -206,16 +203,6 @@ class DiagnoseDashboardPerformance extends Command
                 'key' => 'efficiency-icare-summary',
                 'cache' => $this->cacheLabel(),
                 'callback' => fn (): array => $efficiency->summaryForOwnership($filters, Equipment::OWNERSHIP_ICARE),
-            ],
-            [
-                'key' => 'top20-least-working',
-                'cache' => $this->cacheLabel(),
-                'callback' => fn (): array => $topWorkingUnits->least($filters, 20),
-            ],
-            [
-                'key' => 'top20-most-working',
-                'cache' => $this->cacheLabel(),
-                'callback' => fn (): array => $topWorkingUnits->most($filters, 20),
             ],
             [
                 'key' => 'project-distribution',

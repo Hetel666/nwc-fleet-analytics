@@ -40,7 +40,6 @@ class DashboardService
         private FleetOwnershipStatsService $ownershipStats,
         private EfficiencyDashboardService $efficiency,
         private DashboardDailyAverageService $dailyAverages,
-        private TopWorkingUnitsService $topWorkingUnits,
         private GeofenceViolationService $geofenceViolations,
         private DashboardPerformanceProfiler $performance,
         private DashboardDateRangePolicy $dateRangePolicy,
@@ -245,16 +244,6 @@ class DashboardService
             $localMileageEquipmentIds,
             'Local stats'
         );
-    }
-
-    public function getLeastWorking(array $filters, int $limit = 20): array
-    {
-        return $this->topWorkingUnits->least($this->normalizeFilters($filters), $limit);
-    }
-
-    public function getMostWorking(array $filters, int $limit = 20): array
-    {
-        return $this->topWorkingUnits->most($this->normalizeFilters($filters), $limit);
     }
 
     public function getProjectDistribution(array $filters): array
@@ -549,8 +538,6 @@ class DashboardService
                 'overview',
                 'projectActualWorkHourCategoriesByOwnership',
                 'dailyAverageDashboards',
-                'leastWorking',
-                'mostWorking',
             ],
             'geozones' => [
                 'overview',
@@ -660,8 +647,6 @@ class DashboardService
                     fn (): array => $this->dailyAverages->dashboardData($filters, 'mileage')
                 ),
             ],
-            'leastWorking' => fn (): array => $this->getLeastWorking($filters),
-            'mostWorking' => fn (): array => $this->getMostWorking($filters),
             'projects' => fn (): array => $this->getProjectDistribution($filters),
             'projectActualWorkHourCategoriesByOwnership' => fn (): array => $this->getProjectActualWorkHourCategoriesByOwnership($filters),
             'projectOwnershipComparison' => fn (): array => $this->getProjectOwnershipComparison($filters),
@@ -774,17 +759,16 @@ class DashboardService
 
     public function getDashboardExport(array $filters, string $block): array
     {
-        if (in_array($block, ['daytime_efficiency', 'daytime-efficiency'], true)) {
-            return app(DaytimeEfficiencyDashboardService::class)->export($filters);
-        }
-
-        if (in_array($block, ['nighttime_efficiency', 'nighttime-efficiency'], true)) {
-            return app(NighttimeEfficiencyDashboardService::class)->export($filters);
-        }
-
-        if (in_array($block, ['night_day_efficiency', 'night-day-efficiency'], true)) {
-            return app(NightDayEfficiencyDashboardService::class)->export($filters);
-        }
+        abort_if(in_array($block, [
+            'daytime_efficiency',
+            'daytime-efficiency',
+            'nighttime_efficiency',
+            'nighttime-efficiency',
+            'night_day_efficiency',
+            'night-day-efficiency',
+            'least-working',
+            'most-working',
+        ], true), 404);
 
         if (in_array($block, ['monthly_efficiency', 'monthly-efficiency'], true)) {
             return app(MonthlyEfficiencyDashboardService::class)->export($filters);
@@ -865,15 +849,13 @@ class DashboardService
             ],
         ];
 
-        if (! in_array($block, ['least-working', 'most-working'], true)) {
-            $sections[] = [
-                'title' => __('app.equipment_details'),
-                'columns' => $this->dashboardExportDetailColumns($block),
-                'rows' => $this->dashboardExportDetailRows($filters, $block),
-            ];
-        }
+        $sections[] = [
+            'title' => __('app.equipment_details'),
+            'columns' => $this->dashboardExportDetailColumns($block),
+            'rows' => $this->dashboardExportDetailRows($filters, $block),
+        ];
+
         $filename = match (true) {
-            in_array($block, ['least-working', 'most-working'], true) => $this->topWorkingExportFilename($block, $filters),
             $block === 'geofence-analysis' => $this->geofenceViolationsExportFilename($filters),
             default => $this->dashboardExportFilename($title, $filters),
         };
@@ -953,8 +935,6 @@ class DashboardService
             'average-engine-hours' => __('app.avg_engine_hours').': '.__('app.ownership_nwc').' vs '.__('app.ownership_icare'),
             'average-mileage' => __('app.avg_mileage').': '.__('app.ownership_nwc').' vs '.__('app.ownership_icare'),
             'project-averages' => __('app.project_averages').': '.__('app.ownership_nwc').' vs '.__('app.ownership_icare'),
-            'least-working' => __('app.least_working'),
-            'most-working' => __('app.most_working'),
             'ownership-share' => __('app.ownership_share'),
             'geofence-analysis' => __('app.geofence_analysis'),
             'utilization-trend' => __('app.utilization_trend'),
@@ -973,16 +953,6 @@ class DashboardService
         $name = trim($name, '-');
 
         return strtolower($name).'-'.$filters['from'].'-'.$filters['to'].'.xlsx';
-    }
-
-    private function topWorkingExportFilename(string $block, array $filters): string
-    {
-        $name = $block === 'most-working' ? 'top-20-cox-isleyenler' : 'top-20-az-isleyenler';
-        $period = $filters['from'] === $filters['to']
-            ? $filters['from']
-            : $filters['from'].'_'.$filters['to'];
-
-        return $name.'-'.$period.'.xlsx';
     }
 
     private function geofenceViolationsExportFilename(array $filters): string
@@ -1011,7 +981,6 @@ class DashboardService
     private function dashboardExportSummaryColumns(string $block, array $filters): array
     {
         return match ($block) {
-            'least-working', 'most-working' => $this->topWorkingUnits->exportColumns($filters),
             'equipment-types-nwc', 'equipment-types-icare' => [__('app.type'), 'Say', 'Faiz'],
             'equipment-types' => [__('app.ownership'), __('app.type'), 'Say'],
             'average-engine-hours', 'average-mileage' => ['Tarix', 'NWC', __('app.ownership_icare'), 'Orta'],
@@ -1071,8 +1040,6 @@ class DashboardService
                 ])
                 ->values()
                 ->all(),
-            'least-working' => $this->topWorkingUnits->exportRows($filters, 'least', 20),
-            'most-working' => $this->topWorkingUnits->exportRows($filters, 'most', 20),
             'ownership-share' => collect($this->getOverview($filters)['ownership_share'])
                 ->pipe(function ($rows): array {
                     $total = (int) $rows->sum('count');
@@ -1231,10 +1198,6 @@ class DashboardService
             return $this->geofenceViolations->exportRows($filters);
         }
 
-        if ($block === 'least-working' || $block === 'most-working') {
-            return [];
-        }
-
         return $this->dashboardEquipmentExportRows($filters, $block);
     }
 
@@ -1352,10 +1315,6 @@ class DashboardService
         }
 
         $rows = $this->sortDashboardEquipmentExportRows($rows, $block);
-
-        if ($block === 'least-working' || $block === 'most-working') {
-            $rows = array_slice($rows, 0, 20);
-        }
 
         return collect($rows)
             ->values()
@@ -1590,16 +1549,6 @@ class DashboardService
     private function sortDashboardEquipmentExportRows(array $rows, string $block): array
     {
         usort($rows, function (array $first, array $second) use ($block): int {
-            if ($block === 'least-working') {
-                return ($first['sort_hours'] <=> $second['sort_hours'])
-                    ?: strnatcasecmp($first['sort_name'], $second['sort_name']);
-            }
-
-            if ($block === 'most-working') {
-                return ($second['sort_hours'] <=> $first['sort_hours'])
-                    ?: strnatcasecmp($first['sort_name'], $second['sort_name']);
-            }
-
             if (in_array($block, ['equipment-types', 'equipment-types-nwc', 'equipment-types-icare'], true)) {
                 return strcmp($first['sort_ownership'], $second['sort_ownership'])
                     ?: strnatcasecmp($first['sort_type'], $second['sort_type'])
