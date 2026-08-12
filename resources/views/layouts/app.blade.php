@@ -609,6 +609,11 @@
                 );
                 $dashboardEfficiencySectionUrl = fn (string $section): string => route('dashboard', $dashboardEfficiencyQuery).'#'.$section;
                 $showDashboardEfficiencySubnav = request()->routeIs('dashboard') && $currentDashboardTab === \App\Models\User::DASHBOARD_SECTION_EFFICIENCY;
+                $historicalRecalculationUrl = route('admin.historical-recalculations.index', (request()->routeIs('dashboard') || request()->routeIs('projects.dashboard')) ? array_filter([
+                    'date_from' => $dashboardNavigationBaseQuery['date_from'] ?? null,
+                    'date_to' => $dashboardNavigationBaseQuery['date_to'] ?? null,
+                    'project_id' => $dashboardNavigationBaseQuery['project_id'] ?? null,
+                ], fn ($value) => $value !== null && $value !== '') : []);
             @endphp
 
             <nav class="sidebar-scroll">
@@ -681,7 +686,7 @@
                         <a class="nav-link {{ request()->routeIs('users.*') ? 'active' : '' }}" href="{{ route('users.index') }}">
                             <i data-lucide="users"></i><span>{{ __('app.users') }}</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('admin.historical-recalculations.*') ? 'active' : '' }}" href="{{ route('admin.historical-recalculations.index') }}">
+                        <a class="nav-link {{ request()->routeIs('admin.historical-recalculations.*') ? 'active' : '' }}" href="{{ $historicalRecalculationUrl }}">
                             <i data-lucide="history"></i><span>Tarixi məlumatların yenilənməsi</span>
                         </a>
                     </div>

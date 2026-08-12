@@ -176,6 +176,11 @@
             'ownership_type' => $filters['ownership_type'],
         ], fn ($value) => $value !== null && $value !== ''));
     };
+    $historicalRecalculationUrl = route('admin.historical-recalculations.index', array_filter([
+        'date_from' => $filters['from'],
+        'date_to' => $filters['to'],
+        'project_id' => $filters['project_id'],
+    ], fn ($value) => $value !== null && $value !== ''));
     $geofenceViolationsExportUrl = function (?int $projectId = null) use ($filters, $equipmentTypeOptions): string {
         $equipmentType = $filters['equipment_type_id']
             ? $equipmentTypeOptions->firstWhere('id', $filters['equipment_type_id'])?->name
@@ -2572,6 +2577,15 @@
 
         <div class="dashboard-layout-actions d-flex flex-wrap align-items-center justify-content-end gap-2 mb-2">
             <div class="dashboard-layout-status small me-auto" id="dashboardLayoutStatus" aria-live="polite"></div>
+            @can('manage-historical-recalculations')
+                <a
+                    href="{{ $historicalRecalculationUrl }}"
+                    class="btn btn-outline-primary btn-sm btn-icon"
+                    title="Seçilmiş dövr və layihə üzrə dashboard məlumatlarını yenilə"
+                >
+                    <i data-lucide="history"></i><span>Tarixi yenilə</span>
+                </a>
+            @endcan
             <form method="POST" action="{{ route('settings.sync-units') }}" data-dashboard-object-sync-form>
                 @csrf
                 <button

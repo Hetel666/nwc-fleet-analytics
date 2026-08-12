@@ -107,15 +107,24 @@
 
                 <form id="historical-recalculation-form" method="POST" action="{{ route('admin.historical-recalculations.store') }}">
                     @csrf
+                    @php
+                        $selectedProjectIds = collect(old('project_ids', $defaultProjectId ? [$defaultProjectId] : []))
+                            ->map(fn ($id) => (int) $id)
+                            ->filter()
+                            ->values()
+                            ->all();
+                        $selectedProjectId = old('project_id', $selectedProjectIds[0] ?? '');
+                        $selectedScope = old('scope', $selectedProjectId ? 'selected_projects' : 'all_projects');
+                    @endphp
 
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label">Başlanğıc tarixi</label>
-                            <input type="date" name="date_from" class="form-control" value="{{ old('date_from', $today) }}" required>
+                            <input type="date" name="date_from" class="form-control" value="{{ old('date_from', $defaultDateFrom ?? $today) }}" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Bitmə tarixi</label>
-                            <input type="date" name="date_to" class="form-control" value="{{ old('date_to', $today) }}" required>
+                            <input type="date" name="date_to" class="form-control" value="{{ old('date_to', $defaultDateTo ?? $today) }}" required>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Saat qurşağı</label>
@@ -165,20 +174,15 @@
                             </select>
                         </div>
                         <div class="col-12">
-                            <label class="form-label">Əhatə dairəsi</label>
-                            <select id="scope-select" name="scope" class="form-select" required>
-                                <option value="all_projects" @selected(old('scope', 'all_projects') === 'all_projects')>Bütün layihələr</option>
-                                <option value="selected_projects" @selected(old('scope') === 'selected_projects')>Seçilmiş layihələr</option>
-                            </select>
-                        </div>
-                        <div id="project-select-wrap" class="col-12">
-                            <label class="form-label">Layihələr</label>
-                            <select name="project_ids[]" class="form-select" multiple size="10">
+                            <input type="hidden" id="scope-select" name="scope" value="{{ $selectedScope }}">
+                            <label class="form-label">Layihə</label>
+                            <select id="project-select" name="project_id" class="form-select">
+                                <option value="">Bütün layihələr</option>
                                 @foreach ($projects as $project)
-                                    <option value="{{ $project->id }}" @selected(in_array($project->id, old('project_ids', [])))>{{ $project->name }}</option>
+                                    <option value="{{ $project->id }}" @selected((string) $selectedProjectId === (string) $project->id)>{{ $project->name }}</option>
                                 @endforeach
                             </select>
-                            <div class="form-text">Seçilmiş layihələr üçün Ctrl düyməsi ilə bir neçə layihə seçilə bilər.</div>
+                            <div class="form-text">Layihə seçiləndə yenilənmə yalnız həmin layihə üzrə icra olunur.</div>
                         </div>
                         <div class="col-12">
                             <div class="form-check">
@@ -267,15 +271,15 @@
 @push('scripts')
     <script>
         const scopeSelect = document.getElementById('scope-select');
-        const projectWrap = document.getElementById('project-select-wrap');
+        const projectSelect = document.getElementById('project-select');
         const previewButton = document.getElementById('preview-button');
         const previewResult = document.getElementById('preview-result');
         const form = document.getElementById('historical-recalculation-form');
         const sectionSourceInfo = document.getElementById('section-source-info');
         const moduleContracts = @json($historicalModuleContracts);
 
-        function toggleProjects() {
-            projectWrap.classList.toggle('d-none', scopeSelect.value !== 'selected_projects');
+        function syncScopeFromProject() {
+            scopeSelect.value = projectSelect?.value ? 'selected_projects' : 'all_projects';
         }
 
         function selectedSection() {
@@ -332,11 +336,11 @@
             }
         }
 
-        scopeSelect.addEventListener('change', toggleProjects);
+        projectSelect?.addEventListener('change', syncScopeFromProject);
         form.querySelectorAll('input[name="dashboard_section"]').forEach((input) => {
             input.addEventListener('change', refreshSectionSourceInfo);
         });
-        toggleProjects();
+        syncScopeFromProject();
         refreshSectionSourceInfo();
 
         previewButton.addEventListener('click', async () => {

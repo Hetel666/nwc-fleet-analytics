@@ -135,6 +135,39 @@ class HistoricalRecalculationTest extends TestCase
             ]);
     }
 
+    public function test_preview_accepts_single_project_id_from_simple_project_select(): void
+    {
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'Single select project', 'active' => true]);
+
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '102',
+            'name' => 'Single select project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '1002');
+
+        $this->actingAs($admin)
+            ->postJson(route('admin.historical-recalculations.preview'), [
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-03',
+                'timezone' => 'Asia/Baku',
+                'dashboard_section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+                'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+                'project_id' => $project->id,
+                'force' => true,
+            ])
+            ->assertOk()
+            ->assertJson([
+                'days' => 3,
+                'project_groups' => 1,
+                'fetch_tasks' => 3,
+                'aggregate_tasks' => 0,
+                'total_tasks' => 3,
+            ]);
+    }
+
     public function test_preview_includes_read_only_dry_run_impact_plan(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);

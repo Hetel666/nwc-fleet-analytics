@@ -37,6 +37,10 @@ class HistoricalRecalculationController extends Controller
     ): View
     {
         $this->authorize('manage-historical-recalculations');
+        $defaultDateFrom = $this->safeDateQuery($request->query('date_from'))
+            ?: now(config('historical_recalculation.timezone', 'Asia/Baku'))->toDateString();
+        $defaultDateTo = $this->safeDateQuery($request->query('date_to')) ?: $defaultDateFrom;
+        $defaultProjectId = $request->integer('project_id') > 0 ? $request->integer('project_id') : null;
         $historicalModuleContracts = $dashboardModules->all()
             ->filter(fn (array $module): bool => ($module['dashboard_section'] ?? null) !== null)
             ->keyBy(fn (array $module): string => (string) $module['dashboard_section'])
@@ -69,7 +73,25 @@ class HistoricalRecalculationController extends Controller
                 ->get(),
             'defaultTimezone' => config('historical_recalculation.timezone', 'Asia/Baku'),
             'today' => now(config('historical_recalculation.timezone', 'Asia/Baku'))->toDateString(),
+            'defaultDateFrom' => $defaultDateFrom,
+            'defaultDateTo' => $defaultDateTo,
+            'defaultProjectId' => $defaultProjectId,
         ]);
+    }
+
+    private function safeDateQuery(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value, config('historical_recalculation.timezone', 'Asia/Baku'))->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     public function clearClosedPipelines(DashboardReportPipelineService $pipelines): RedirectResponse

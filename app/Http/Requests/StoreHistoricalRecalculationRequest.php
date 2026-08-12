@@ -13,8 +13,23 @@ class StoreHistoricalRecalculationRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
+        $projectIds = collect((array) $this->input('project_ids', []))
+            ->map(fn (mixed $id): string => trim((string) $id))
+            ->filter()
+            ->values()
+            ->all();
+        $projectId = trim((string) $this->input('project_id', ''));
+
+        if ($projectId !== '' && $projectIds === []) {
+            $projectIds = [$projectId];
+        }
+
         $this->merge([
             'dashboard_section' => $this->input('dashboard_section', HistoricalRecalculation::SECTION_DAILY_AVERAGES),
+            'project_ids' => $projectIds,
+            'scope' => $this->input('scope') ?: ($projectIds === []
+                ? HistoricalRecalculation::SCOPE_ALL_PROJECTS
+                : HistoricalRecalculation::SCOPE_SELECTED_PROJECTS),
         ]);
     }
 
