@@ -194,6 +194,35 @@ class NewEfficiencyModuleTest extends TestCase
         ]);
     }
 
+    public function test_efficiency_dashboard_deduplicates_same_unit_project_day_across_sources(): void
+    {
+        $project = Project::query()->create(['name' => 'Duplicate source project', 'active' => true]);
+        $this->fact($project, '6001', '2026-08-01', Equipment::OWNERSHIP_NWC, 'Dump Truck', EfficiencyStatus::SEVEN_TO_TEN, 8, 'Qrup report Engine hours (api)');
+        $this->fact($project, '6001', '2026-08-01', Equipment::OWNERSHIP_NWC, 'Dump Truck', EfficiencyStatus::OVER_TEN, 11, 'Report for Effektivlik');
+        $this->fact($project, '6002', '2026-08-01', Equipment::OWNERSHIP_NWC, 'Dump Truck', EfficiencyStatus::ONE_TO_SEVEN, 4, 'Qrup report Engine hours (api)');
+
+        $filters = [
+            'from' => '2026-08-01',
+            'to' => '2026-08-01',
+            'ownership' => 'nwc',
+        ];
+        $dashboard = app(EfficiencyDashboardService::class);
+
+        $summary = $dashboard->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC);
+        $this->assertSame(0, $summary[EfficiencyStatus::SEVEN_TO_TEN]);
+        $this->assertSame(1, $summary[EfficiencyStatus::OVER_TEN]);
+        $this->assertSame(1, $summary[EfficiencyStatus::ONE_TO_SEVEN]);
+        $this->assertSame(2, $summary['total']);
+
+        $rows = $dashboard->exportRows($filters);
+        $this->assertCount(2, $rows);
+        $this->assertSame(['6001', '6002'], collect($rows)->pluck('wialon_unit_id')->sort()->values()->all());
+        $this->assertSame(11.0, collect($rows)->firstWhere('wialon_unit_id', '6001')['engine_hours_decimal']);
+
+        $export = $dashboard->export($filters);
+        $this->assertCount(2, $export['sections'][1]['rows']);
+    }
+
     public function test_sync_uses_actual_baku_interval_and_merges_split_wialon_date_rows(): void
     {
         $report = ['tables' => [[
@@ -652,7 +681,7 @@ class NewEfficiencyModuleTest extends TestCase
         ]]];
     }
 
-    private function fact(Project $project, string $unitId, string $date, string $ownership, string $type, string $status, float $hours): void
+    private function fact(Project $project, string $unitId, string $date, string $ownership, string $type, string $status, float $hours, string $sourceReportName = 'Qrup report Engine hours (api)'): void
     {
         EfficiencyDailyFact::query()->create([
             'business_date' => $date,
@@ -666,7 +695,7 @@ class NewEfficiencyModuleTest extends TestCase
             'engine_seconds' => (int) round($hours * 3600),
             'efficiency_status' => $status,
             'source_report_template_id' => 19,
-            'source_report_name' => 'Qrup report Engine hours (api)',
+            'source_report_name' => $sourceReportName,
         ]);
     }
 }

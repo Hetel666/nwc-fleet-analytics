@@ -209,7 +209,8 @@ class EfficiencyDashboardService
         };
         $status = $filters['status'] ?? $filters['work_category'] ?? $filters['day_status'] ?? null;
         $status = $this->canonicalStatus($status);
-        $hasVisibleStatusRestriction = array_key_exists('visible_statuses', $filters);
+        $hasVisibleStatusRestriction = array_key_exists('visible_statuses', $filters)
+            && $filters['visible_statuses'] !== null;
         $visibleStatuses = collect($filters['visible_statuses'] ?? [])
             ->map(fn ($visibleStatus): ?string => $this->canonicalStatus((string) $visibleStatus))
             ->filter()
@@ -247,9 +248,18 @@ class EfficiencyDashboardService
     {
         $filters = $this->normalizeFilters($filters);
 
+        $latestFactIds = DB::table('efficiency_daily_facts as latest_efficiency_daily_facts')
+            ->selectRaw('MAX(latest_efficiency_daily_facts.id)')
+            ->whereDate('latest_efficiency_daily_facts.business_date', '>=', $filters['from'])
+            ->whereDate('latest_efficiency_daily_facts.business_date', '<=', $filters['to'])
+            ->groupBy(
+                'latest_efficiency_daily_facts.business_date',
+                'latest_efficiency_daily_facts.project_id',
+                'latest_efficiency_daily_facts.wialon_unit_id',
+            );
+
         return DB::table('efficiency_daily_facts')
-            ->whereDate('business_date', '>=', $filters['from'])
-            ->whereDate('business_date', '<=', $filters['to'])
+            ->whereIn('efficiency_daily_facts.id', $latestFactIds)
             ->when($filters['project_id'], fn (Builder $query, int $id): Builder => $query->where('project_id', $id))
             ->when($filters['project_ids'], fn (Builder $query, array $ids): Builder => $query->whereIn('project_id', $ids))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership', $owner))
