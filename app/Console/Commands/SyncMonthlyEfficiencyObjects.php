@@ -72,6 +72,12 @@ class SyncMonthlyEfficiencyObjects extends Command
                         ->orWhere('equipments.name', $unit);
                 });
             });
+        $unitIds = (clone $equipmentQuery)
+            ->pluck('equipments.wialon_unit_id')
+            ->map(fn (mixed $unitId): string => (string) $unitId)
+            ->filter()
+            ->unique()
+            ->values();
         $totalUnits = (clone $equipmentQuery)->count('equipments.id');
 
         if ($totalUnits === 0) {
@@ -92,12 +98,21 @@ class SyncMonthlyEfficiencyObjects extends Command
         $ok = 0;
         $failed = 0;
         $skipped = 0;
-        $deleted = 0;
+        $deleted = (bool) $this->option('force')
+            ? $this->purgeExistingFactsForScope($unitIds, $from, $to)
+            : 0;
         $written = 0;
         $unitChunk = max(1, min(100, (int) $this->option('unit-chunk')));
         $flushRows = max(1, min(1000, (int) $this->option('flush-rows')));
         $progressTaskId = max(0, (int) $this->option('historical-task-id'));
         $processedUnits = 0;
+
+        if ((bool) $this->option('force')) {
+            $this->warn(sprintf(
+                'Force rebuild: deleted %d existing monthly efficiency fact rows for the selected period and scope before Wialon reload.',
+                $deleted,
+            ));
+        }
 
         if (($template['report_type'] ?? null) === 'avl_unit_group') {
             return $this->syncGroupReportEquipment(
@@ -108,6 +123,7 @@ class SyncMonthlyEfficiencyObjects extends Command
                 $to,
                 $flushRows,
                 $progressTaskId,
+                $deleted,
             );
         }
 
@@ -377,12 +393,13 @@ class SyncMonthlyEfficiencyObjects extends Command
         CarbonImmutable $from,
         CarbonImmutable $to,
         int $flushRows,
-        int $progressTaskId
+        int $progressTaskId,
+        int $preDeletedRows = 0
     ): int {
         $equipment = $equipmentQuery->orderBy('equipments.id')->get();
         $processed = 0;
         $failed = 0;
-        $deleted = 0;
+        $deleted = $preDeletedRows;
         $written = 0;
 
         foreach ($equipment->groupBy(fn (object $item): string => (string) $item->wialon_group_id) as $groupId => $items) {
@@ -648,9 +665,7 @@ class SyncMonthlyEfficiencyObjects extends Command
 
         $deletedRows = 0;
         $writtenRows = 0;
-        DB::transaction(function () use ($equipment, $template, $from, $to, $flushRows, $rowsToWrite, &$deletedRows, &$writtenRows): void {
-            $deletedRows = $this->option('force') ? $this->purgeExistingFacts($equipment, $template, $from, $to) : 0;
-
+        DB::transaction(function () use ($flushRows, $rowsToWrite, &$writtenRows): void {
             foreach (array_chunk($rowsToWrite, $flushRows) as $rows) {
                 $writtenRows += $this->upsertFacts($rows);
             }
@@ -727,11 +742,7 @@ class SyncMonthlyEfficiencyObjects extends Command
                 $unknownHours += $unknown;
             }
 
-            DB::transaction(function () use ($equipment, $template, $from, $to, $flushRows, $rowsToWrite, &$deletedRows, &$writtenRows): void {
-                $deletedRows = $this->option('force')
-                    ? $this->purgeExistingFacts($equipment, $template, $from, $to)
-                    : 0;
-
+            DB::transaction(function () use ($flushRows, $rowsToWrite, &$writtenRows): void {
                 foreach (array_chunk($rowsToWrite, $flushRows) as $rows) {
                     $writtenRows += $this->upsertFacts($rows);
                 }
@@ -750,12 +761,16 @@ class SyncMonthlyEfficiencyObjects extends Command
         }
     }
 
-    private function purgeExistingFacts(object $equipment, array $template, CarbonImmutable $from, CarbonImmutable $to): int
+    /** @param Collection<int, string> $unitIds */
+    private function purgeExistingFactsForScope(Collection $unitIds, CarbonImmutable $from, CarbonImmutable $to): int
     {
+        if ($unitIds->isEmpty()) {
+            return 0;
+        }
+
         return DB::table('monthly_efficiency_unit_geofence_facts')
-            ->where('wialon_unit_id', (string) $equipment->wialon_unit_id)
             ->whereBetween('stat_date', [$from->toDateString(), $to->toDateString()])
-            ->whereIn('source_report_name', $this->sourceReportNames($template))
+            ->whereIn('wialon_unit_id', $unitIds->all())
             ->delete();
     }
 

@@ -982,6 +982,53 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertNotNull($task->last_heartbeat_at);
     }
 
+    public function test_forced_object_sync_deletes_selected_scope_before_wialon_reload(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
+
+        $project = Project::query()->create(['name' => 'Predelete scope', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $target = $this->seedEquipment($project, $dumpTruck, '10-PREDELETE', Equipment::OWNERSHIP_NWC);
+        $other = $this->seedEquipment($project, $dumpTruck, '10-KEEP', Equipment::OWNERSHIP_NWC);
+
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 91,
+            'name' => 'Monthly Unit Report',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit',
+            'is_active' => true,
+        ]);
+
+        $this->seedObjectFact($target, '2026-07-01', 'total', 'Total', 99.0, 0);
+        $this->seedObjectFact($other, '2026-07-01', 'total', 'Total', 88.0, 0);
+
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('getSessionId')->once()->andReturn('sid-test');
+        $wialon->shouldReceive('cleanupReportResult')->twice()->with('sid-test');
+        $wialon->shouldReceive('executeReport')
+            ->once()
+            ->andThrow(new \RuntimeException('Wialon API error 1 for report/exec_report.'));
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('monthly-efficiency:sync-objects', [
+            '--from' => '2026-07-01',
+            '--to' => '2026-07-01',
+            '--unit' => '10-PREDELETE',
+            '--force' => true,
+            '--unit-chunk' => 1,
+        ])->assertExitCode(1);
+
+        $this->assertDatabaseMissing('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-01',
+            'wialon_unit_id' => '10-PREDELETE',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-01',
+            'wialon_unit_id' => '10-KEEP',
+            'engine_hours_decimal' => 88.0,
+        ]);
+    }
+
     public function test_object_sync_records_unknown_hours_when_wialon_report_has_no_geofence_table(): void
     {
         config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');
