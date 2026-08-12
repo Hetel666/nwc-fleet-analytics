@@ -14,6 +14,7 @@ use App\Support\DashboardFilterState;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class DashboardAccessTest extends TestCase
@@ -47,6 +48,69 @@ class DashboardAccessTest extends TestCase
                 return in_array('Operational Project', $names, true)
                     && ! in_array('Layihəsiz', $names, true)
                     && ! in_array('Təmir', $names, true);
+            });
+    }
+
+    public function test_project_efficiency_dashboard_includes_monthly_efficiency_data(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_source', 'group_report');
+
+        $admin = User::factory()->create([
+            'role' => User::ROLE_ADMIN,
+            'active' => true,
+        ]);
+        $project = Project::query()->create(['name' => 'Project efficiency', 'active' => true]);
+        $type = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701935',
+            'name' => 'Project efficiency - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $equipment = Equipment::query()->create([
+            'name' => '77-JS-497',
+            'wialon_unit_id' => '600709593',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        DB::table('monthly_efficiency_unit_geofence_facts')->insert([
+            'stat_date' => '2026-08-01',
+            'equipment_id' => $equipment->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'wialon_group_id' => $group->wialon_group_id,
+            'wialon_unit_id' => $equipment->wialon_unit_id,
+            'unit_name' => $equipment->name,
+            'vehicle_type' => $type->name,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'segment_type' => 'total',
+            'geofence_name' => 'Total',
+            'engine_hours_decimal' => 22.81,
+            'engine_seconds' => 82116,
+            'mileage_km' => 308.07,
+            'visits_count' => 0,
+            'source_report_template_id' => 25,
+            'source_report_name' => 'Report for Aylıq effektivlik (unit)',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('projects.dashboard', [
+                'project' => $project,
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-01',
+                'tab' => User::DASHBOARD_SECTION_EFFICIENCY,
+            ]))
+            ->assertOk()
+            ->assertViewHas('data', function (array $data): bool {
+                return isset($data['monthlyEfficiencyByOwnership']['NWC'])
+                    && (int) $data['monthlyEfficiencyByOwnership']['NWC']['total'] === 1;
             });
     }
 

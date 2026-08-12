@@ -7,11 +7,13 @@ use App\Models\Project;
 use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\GeofenceViolationsDashboardService;
+use App\Services\MonthlyEfficiencyDashboardService;
 use App\Support\DashboardFilterState;
 use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
+use InvalidArgumentException;
 
 class ProjectDashboardController extends Controller
 {
@@ -19,6 +21,7 @@ class ProjectDashboardController extends Controller
         Request $request,
         Project $project,
         DashboardService $dashboard,
+        MonthlyEfficiencyDashboardService $monthlyEfficiency,
         DashboardLayoutService $layout,
         GeofenceViolationsDashboardService $geofenceViolations,
         DashboardFilterState $filterState
@@ -41,6 +44,26 @@ class ProjectDashboardController extends Controller
 
         $startedAt = microtime(true);
         $data = $dashboard->getDashboardTab($filters, $selectedTab);
+
+        if ($selectedTab === 'efficiency') {
+            $monthlyFilters = [
+                ...$filters,
+                'search' => '',
+            ];
+
+            try {
+                $data['monthlyEfficiencyByOwnership'] = [
+                    'NWC' => $monthlyEfficiency->summaryForOwnership($monthlyFilters, 'NWC'),
+                    'ICARE' => $monthlyEfficiency->summaryForOwnership($monthlyFilters, 'ICARE'),
+                ];
+            } catch (InvalidArgumentException $exception) {
+                $data['monthlyEfficiencyByOwnership'] = [
+                    'NWC' => $this->emptyMonthlyEfficiencySummary($exception->getMessage()),
+                    'ICARE' => $this->emptyMonthlyEfficiencySummary($exception->getMessage()),
+                ];
+            }
+        }
+
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         Log::info('Project dashboard generated', [
@@ -71,5 +94,27 @@ class ProjectDashboardController extends Controller
                 ? $geofenceViolations->getDashboardWidget($filters)
                 : null,
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function emptyMonthlyEfficiencySummary(string $message): array
+    {
+        return [
+            'critical_low' => 0,
+            'low' => 0,
+            'normal' => 0,
+            'total' => 0,
+            'total_current_hours' => 0.0,
+            'total_normative_hours' => 0.0,
+            'efficiency_percent' => 0.0,
+            'completeness' => [
+                'is_complete' => false,
+                'message' => $message,
+                'expected_days' => 0,
+                'completed_days' => 0,
+                'failed_days' => 0,
+                'missing_days' => [],
+            ],
+        ];
     }
 }
