@@ -372,6 +372,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'ownership' => 'nwc',
         ]);
 
+        $this->assertSame('ayliq-effektivlik-NWC-2026-08-01-2026-08-06.xlsx', $export['filename']);
         $this->assertSame(['Dövr', '2026-08-01 - 2026-08-06'], $export['filters'][0]);
 
         $detailRows = collect($export['sections'][2]['rows']);
@@ -381,6 +382,22 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('30.00', $detailRows[0][6]);
         $this->assertStringNotContainsString('2026-08-10', json_encode($export, JSON_THROW_ON_ERROR));
         $this->assertStringNotContainsString('2026-08-11', json_encode($export, JSON_THROW_ON_ERROR));
+
+        $savedExport = app(MonthlyEfficiencyDashboardService::class)->export([
+            'month' => '2026-08',
+            'from' => '2026-08-01',
+            'to' => '2026-08-31',
+            'object_from' => '2026-08-01',
+            'object_to' => '2026-08-06',
+            'ownership_type' => 'nwc',
+        ]);
+
+        $this->assertSame('ayliq-effektivlik-NWC-2026-08-01-2026-08-06.xlsx', $savedExport['filename']);
+        $this->assertSame(['Dövr', '2026-08-01 - 2026-08-06'], $savedExport['filters'][0]);
+        $this->assertSame('2026-08-01 - 2026-08-06', $savedExport['sections'][2]['rows'][0][4]);
+        $this->assertSame('30.00', $savedExport['sections'][2]['rows'][0][6]);
+        $this->assertStringNotContainsString('2026-08-10', json_encode($savedExport, JSON_THROW_ON_ERROR));
+        $this->assertStringNotContainsString('2026-08-11', json_encode($savedExport, JSON_THROW_ON_ERROR));
     }
 
     public function test_monthly_efficiency_uses_object_group_ownership_for_daily_stats_source(): void

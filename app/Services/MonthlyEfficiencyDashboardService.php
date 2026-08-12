@@ -372,7 +372,7 @@ class MonthlyEfficiencyDashboardService
         ];
 
         return [
-            'filename' => 'ayliq-effektivlik-'.$filters['ownership_type'].'-'.$filters['month'].'.xlsx',
+            'filename' => 'ayliq-effektivlik-'.$filters['ownership_type'].'-'.$filters['object_from'].'-'.$filters['object_to'].'.xlsx',
             'title' => 'Aylıq effektivlik',
             'filters' => $filterRows,
             'sections' => $sections,
