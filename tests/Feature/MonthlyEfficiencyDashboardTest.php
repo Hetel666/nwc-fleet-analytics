@@ -604,6 +604,110 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         ]);
     }
 
+    public function test_object_sync_prefers_unit_report_when_unit_and_group_templates_exist(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for AylД±q effektivlik');
+        $project = Project::query()->create(['name' => 'Unit report project', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $this->seedEquipment($project, $dumpTruck, '6001002', Equipment::OWNERSHIP_NWC);
+
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 24,
+            'name' => 'Report for AylД±q effektivlik',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit_group',
+            'is_active' => true,
+        ]);
+        WialonReportTemplate::query()->create([
+            'wialon_template_id' => 25,
+            'name' => 'Report for AylД±q effektivlik (unit)',
+            'resource_id' => 601701680,
+            'report_type' => 'avl_unit',
+            'is_active' => true,
+        ]);
+
+        $start = CarbonImmutable::parse('2026-07-01 00:00:00', 'Asia/Baku')->timestamp;
+        $end = CarbonImmutable::parse('2026-07-01 23:59:58', 'Asia/Baku')->timestamp;
+        $wialon = Mockery::mock(WialonService::class);
+        $wialon->shouldReceive('getSessionId')->once()->andReturn('unit-sid');
+        $wialon->shouldReceive('cleanupReportResult')->twice()->with('unit-sid');
+        $wialon->shouldReceive('executeReport')
+            ->once()
+            ->withArgs(fn ($resource, $template, $unit): bool => $resource === 601701680
+                && $template === 25
+                && (string) $unit === '6001002')
+            ->andReturn(['reportResult' => ['tables' => [
+                [
+                    'name' => 'Engine hours',
+                    'header' => ['Grouping', 'Engine hours', 'Mileage', 'Beginning', 'End'],
+                    'header_type' => ['grouping', 'duration', 'mileage', 'time_begin', 'time_end'],
+                    'rows' => 1,
+                ],
+                [
+                    'name' => 'Geofence Engine hours',
+                    'header' => ['Grouping', 'Geofence', 'Entry time', 'Exit time', 'Engine hours', 'Mileage', 'Visits'],
+                    'header_type' => ['grouping', 'zone_name', 'time_begin', 'time_end', 'duration', 'mileage', 'visits_count'],
+                    'rows' => 1,
+                ],
+            ]]]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(0, 0, 0, 'unit-sid')
+            ->andReturn([['c' => [
+                '2026-07-01',
+                '22:48:36',
+                '308.06 km',
+                ['v' => $start],
+                ['v' => $end],
+            ]]]);
+        $wialon->shouldReceive('getReportResultRows')
+            ->once()
+            ->with(1, 0, 0, 'unit-sid')
+            ->andReturn([['c' => ['2026-07-01']]]);
+        $wialon->shouldReceive('getReportResultSubrows')
+            ->once()
+            ->with(1, 0, 'unit-sid')
+            ->andReturn([['c' => [
+                '',
+                'LOT-3 Гњmumi',
+                ['v' => CarbonImmutable::parse('2026-07-01 04:30:29', 'Asia/Baku')->timestamp],
+                ['v' => $end],
+                '19:29:24',
+                '240.30 km',
+                '1',
+            ]]]);
+        $this->app->instance(WialonService::class, $wialon);
+
+        $this->artisan('monthly-efficiency:sync-objects', [
+            '--from' => '2026-07-01',
+            '--to' => '2026-07-01',
+            '--unit' => '6001002',
+            '--force' => true,
+        ])->assertExitCode(0);
+
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'stat_date' => '2026-07-01',
+            'wialon_unit_id' => '6001002',
+            'segment_type' => 'total',
+            'engine_hours_decimal' => 22.81,
+            'mileage_km' => 308.06,
+            'source_report_template_id' => 25,
+            'source_report_name' => 'Report for AylД±q effektivlik (unit)',
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '6001002',
+            'segment_type' => 'geofence',
+            'engine_hours_decimal' => 19.49,
+            'mileage_km' => 240.30,
+        ]);
+        $this->assertDatabaseHas('monthly_efficiency_unit_geofence_facts', [
+            'wialon_unit_id' => '6001002',
+            'segment_type' => 'unknown',
+            'engine_hours_decimal' => 3.32,
+            'mileage_km' => 67.76,
+        ]);
+    }
+
     public function test_forced_object_sync_purges_full_unit_period_when_new_report_has_missing_days(): void
     {
         config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Monthly Unit Report');

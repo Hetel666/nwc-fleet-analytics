@@ -203,23 +203,6 @@ class SyncMonthlyEfficiencyObjects extends Command
     {
         $name = trim((string) config('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for Aylıq effektivlik'));
 
-        $groupTemplate = WialonReportTemplate::query()
-            ->where('name', $name)
-            ->where('report_type', 'avl_unit_group')
-            ->where(function (Builder $query): void {
-                $query->where('is_active', true)->orWhereNull('is_active');
-            })
-            ->first();
-
-        if ($groupTemplate) {
-            return [
-                'resource_id' => (int) $groupTemplate->resource_id,
-                'template_id' => (int) $groupTemplate->wialon_template_id,
-                'name' => (string) $groupTemplate->name,
-                'report_type' => 'avl_unit_group',
-            ];
-        }
-
         $candidates = collect([$name, $name.' (unit)'])->filter()->unique()->values();
 
         foreach ($candidates as $candidate) {
@@ -239,6 +222,38 @@ class SyncMonthlyEfficiencyObjects extends Command
                     'report_type' => 'avl_unit',
                 ];
             }
+        }
+
+        $groupTemplate = WialonReportTemplate::query()
+            ->where('name', $name)
+            ->where('report_type', 'avl_unit_group')
+            ->where(function (Builder $query): void {
+                $query->where('is_active', true)->orWhereNull('is_active');
+            })
+            ->first();
+
+        if ($groupTemplate) {
+            return [
+                'resource_id' => (int) $groupTemplate->resource_id,
+                'template_id' => (int) $groupTemplate->wialon_template_id,
+                'name' => (string) $groupTemplate->name,
+                'report_type' => 'avl_unit_group',
+            ];
+        }
+
+        foreach ($candidates as $candidate) {
+            $live = $wialon->findReportTemplateByName(null, $candidate);
+
+            if (! is_array($live) || ($live['type'] ?? null) !== 'avl_unit') {
+                continue;
+            }
+
+            return [
+                'resource_id' => (int) ($live['resource_id'] ?? config('fleet.wialon.efficiency_report_resource_id')),
+                'template_id' => (int) ($live['id'] ?? 0),
+                'name' => (string) ($live['name'] ?? $candidate),
+                'report_type' => 'avl_unit',
+            ];
         }
 
         $liveGroupTemplate = $wialon->findReportTemplateByName(null, $name);
