@@ -301,18 +301,21 @@ class MonthlyEfficiencyDashboardService
     public function export(array $filters): array
     {
         $filters = $this->normalizeFilters($filters, 'export');
-        $unitRows = $this->monthlyUnitRows($filters, true)
+        $unitRows = $this->exportUnitRows($filters)
             ->sortBy([
                 ['project', 'asc'],
                 ['unit_name', 'asc'],
             ])
             ->values();
+        $exportNormativeHours = $this->objectFactsAvailable($filters)
+            ? $this->periodNormativeHours($filters)
+            : self::NORMATIVE_HOURS;
         $summaryRows = $unitRows
             ->groupBy('monthly_status')
             ->map(function ($rows, string $status) use ($filters): array {
                 $count = $rows->count();
                 $current = round((float) $rows->sum(fn (object $row): float => (float) $row->current_hours), 2);
-                $normative = $count * self::NORMATIVE_HOURS;
+                $normative = round((float) $rows->sum(fn (object $row): float => (float) $row->normative_hours), 2);
 
                 return [
                     $this->ownershipLabel((string) $filters['ownership_type']),
@@ -362,7 +365,7 @@ class MonthlyEfficiencyDashboardService
             ['Ay', $filters['month']],
             ['Ownership', $filters['ownership_type'] ? $this->ownershipLabel($filters['ownership_type']) : 'Hamısı'],
             ['Hesablama vahidi', 'Unikal texnika'],
-            ['Normativ MS', number_format(self::NORMATIVE_HOURS, 0, '.', '')],
+            ['Normativ MS', number_format($exportNormativeHours, 0, '.', '')],
             ['Mənbə', $this->sourceReportName()],
         ];
         $sections = [
@@ -382,6 +385,41 @@ class MonthlyEfficiencyDashboardService
                 ['name' => 'Texnika üzrə', 'title' => 'Aylıq effektivlik', 'filters' => $filterRows, 'sections' => [$sections[2]]],
             ],
         ];
+    }
+
+    private function exportUnitRows(array $filters): Collection
+    {
+        if ($this->objectFactsAvailable($filters)) {
+            $normativeHours = $this->periodNormativeHours($filters);
+            $objectRows = $this->monthlyObjectRows($filters);
+            $projectNames = Project::query()
+                ->whereIn('id', $objectRows->pluck('project_id')->filter()->unique()->values()->all())
+                ->pluck('name', 'id');
+
+            return $objectRows
+                ->map(fn (object $row): object => (object) [
+                    'project_id' => (int) $row->project_id,
+                    'project' => $projectNames->get((int) $row->project_id, $row->actual_project ?: '-'),
+                    'project_source' => 'object_facts',
+                    'ownership' => $row->ownership,
+                    'wialon_unit_id' => $row->wialon_unit_id,
+                    'unit_name' => $row->unit_name,
+                    'registration_number' => $row->registration_number,
+                    'vehicle_type' => $row->vehicle_type,
+                    'period_from' => $row->period_from,
+                    'period_to' => $row->period_to,
+                    'synced_days_count' => (int) $row->synced_days_count,
+                    'current_hours' => (float) $row->total_engine_hours,
+                    'normative_hours' => $normativeHours,
+                    'efficiency_percent' => $normativeHours > 0
+                        ? round((float) $row->total_engine_hours * 100 / $normativeHours, 2)
+                        : 0.0,
+                    'monthly_status' => $row->monthly_status,
+                ])
+                ->values();
+        }
+
+        return $this->monthlyUnitRows($filters, true);
     }
 
     /** @return array<string, mixed> */
@@ -1021,6 +1059,11 @@ class MonthlyEfficiencyDashboardService
         return max(1, collect(CarbonPeriod::create($filters['object_from'] ?? $filters['from'], $filters['object_to'] ?? $filters['to']))->count());
     }
 
+    private function periodNormativeHours(array $filters): float
+    {
+        return $this->selectedDaysCount($filters) * 7.0;
+    }
+
     private function statusSql(string $column): string
     {
         return "CASE
@@ -1073,6 +1116,7 @@ class MonthlyEfficiencyDashboardService
             'wialon_geofence' => 'Wialon geozona',
             'group_fallback' => 'Wialon qrup fallback',
             'daily_stats' => '24 saat Dashboard cədvəli',
+            'object_facts' => 'Aylıq effektivlik obyekt faktları',
         ];
 
         return collect(explode(',', $source))

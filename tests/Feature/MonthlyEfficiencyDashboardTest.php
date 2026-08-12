@@ -501,6 +501,23 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame(1, $summary[MonthlyEfficiencyStatus::LOW]);
         $this->assertSame(2, $summary[MonthlyEfficiencyStatus::NORMAL]);
 
+        $export = app(MonthlyEfficiencyDashboardService::class)->export([
+            'date_from' => '2026-07-01',
+            'date_to' => '2026-07-02',
+            'ownership' => 'nwc',
+        ]);
+        $summaryRows = collect($export['sections'][0]['rows'])->keyBy(1);
+        $projectRows = collect($export['sections'][1]['rows'])->keyBy(0);
+
+        $this->assertSame(1, $summaryRows[MonthlyEfficiencyStatus::labels()[MonthlyEfficiencyStatus::CRITICAL_LOW]][2]);
+        $this->assertSame(1, $summaryRows[MonthlyEfficiencyStatus::labels()[MonthlyEfficiencyStatus::LOW]][2]);
+        $this->assertSame(2, $summaryRows[MonthlyEfficiencyStatus::labels()[MonthlyEfficiencyStatus::NORMAL]][2]);
+        $this->assertSame('14', $export['filters'][4][1]);
+        $this->assertSame(1, $projectRows['Object source'][2]);
+        $this->assertSame(1, $projectRows['Object source'][3]);
+        $this->assertSame(2, $projectRows['Object source'][4]);
+        $this->assertSame(4, $projectRows['Object source'][5]);
+
         $objects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.objects', [
             'date_from' => '2026-07-01',
             'date_to' => '2026-07-02',
