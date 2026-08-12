@@ -985,50 +985,63 @@ class DashboardReportPipelineService
     /** @param  array<string, mixed>  $pipeline */
     private function duplicateFactChecks(array $pipeline): array
     {
-        $dateRanges = collect($pipeline['plans'] ?? [])
-            ->map(fn (array $plan): array => [
-                'from' => (string) ($plan['date_from'] ?? ''),
-                'to' => (string) ($plan['date_to'] ?? ''),
-            ])
-            ->filter(fn (array $range): bool => $range['from'] !== '' && $range['to'] !== '')
-            ->values();
+        $plansBySection = collect($pipeline['plans'] ?? [])
+            ->filter(fn (mixed $plan): bool => is_array($plan))
+            ->groupBy(fn (array $plan): string => (string) ($plan['section'] ?? $plan['dashboard_section'] ?? ''));
 
-        if ($dateRanges->isEmpty()) {
+        if ($plansBySection->isEmpty()) {
             return [];
         }
 
-        return [
-            'efficiency_daily_facts' => $this->duplicateCount(
-                'efficiency_daily_facts',
-                'business_date',
-                ['business_date', 'project_id', 'wialon_unit_id'],
-                $dateRanges->all()
-            ),
-            'daytime_efficiency_daily_facts' => $this->duplicateCount(
-                'daytime_efficiency_daily_facts',
-                'business_date',
-                ['business_date', 'project_id', 'wialon_unit_id'],
-                $dateRanges->all()
-            ),
-            'nighttime_efficiency_daily_facts' => $this->duplicateCount(
-                'nighttime_efficiency_daily_facts',
-                'shift_date',
-                ['shift_date', 'project_id', 'wialon_unit_id'],
-                $dateRanges->all()
-            ),
-            'night_day_efficiency_daily_facts' => $this->duplicateCount(
-                'night_day_efficiency_daily_facts',
-                'business_date',
-                ['business_date', 'project_id', 'wialon_unit_id'],
-                $dateRanges->all()
-            ),
-            'engine_hours_report_unit_days' => $this->duplicateCount(
-                'engine_hours_report_unit_days',
-                'stat_date',
-                ['stat_date', 'equipment_id'],
-                $dateRanges->all()
-            ),
+        $checks = [
+            HistoricalRecalculation::SECTION_DAILY_AVERAGES => [
+                'engine_hours_report_unit_days' => ['engine_hours_report_unit_days', 'stat_date', ['stat_date', 'equipment_id']],
+            ],
+            HistoricalRecalculation::SECTION_EFFICIENCY => [
+                'efficiency_daily_facts' => ['efficiency_daily_facts', 'business_date', ['business_date', 'project_id', 'wialon_unit_id', 'source_report_name']],
+                'engine_hours_report_unit_days' => ['engine_hours_report_unit_days', 'stat_date', ['stat_date', 'equipment_id']],
+            ],
+            HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY => [
+                'monthly_efficiency_unit_geofence_facts' => [
+                    'monthly_efficiency_unit_geofence_facts',
+                    'stat_date',
+                    ['stat_date', 'wialon_unit_id', 'segment_type', 'geofence_name', 'source_report_name'],
+                ],
+            ],
+            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => [
+                'daytime_efficiency_daily_facts' => ['daytime_efficiency_daily_facts', 'business_date', ['business_date', 'project_id', 'wialon_unit_id']],
+            ],
+            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY => [
+                'nighttime_efficiency_daily_facts' => ['nighttime_efficiency_daily_facts', 'shift_date', ['shift_date', 'project_id', 'wialon_unit_id']],
+            ],
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY => [
+                'night_day_efficiency_daily_facts' => ['night_day_efficiency_daily_facts', 'business_date', ['business_date', 'project_id', 'wialon_unit_id']],
+            ],
         ];
+        $results = [];
+
+        foreach ($plansBySection as $section => $sectionPlans) {
+            $dateRanges = collect($sectionPlans)
+                ->map(fn (array $plan): array => [
+                    'from' => (string) ($plan['date_from'] ?? ''),
+                    'to' => (string) ($plan['date_to'] ?? ''),
+                ])
+                ->filter(fn (array $range): bool => $range['from'] !== '' && $range['to'] !== '')
+                ->values();
+
+            if ($dateRanges->isEmpty()) {
+                continue;
+            }
+
+            foreach ($checks[$section] ?? [] as $label => [$table, $dateColumn, $keys]) {
+                $results[$label] = max(
+                    (int) ($results[$label] ?? 0),
+                    $this->duplicateCount($table, $dateColumn, $keys, $dateRanges->all())
+                );
+            }
+        }
+
+        return $results;
     }
 
     private function duplicateCount(string $table, string $dateColumn, array $keys, array $dateRanges): int

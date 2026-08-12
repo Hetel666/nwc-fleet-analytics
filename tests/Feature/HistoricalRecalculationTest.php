@@ -307,6 +307,56 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertNotPushed(FinalizeHistoricalRecalculationJob::class);
     }
 
+    public function test_pipeline_duplicate_validation_uses_only_selected_module_tables(): void
+    {
+        $project = Project::query()->create(['name' => 'Duplicate validation project', 'active' => true]);
+
+        foreach (['Report A', 'Report B'] as $source) {
+            DB::table('efficiency_daily_facts')->insert([
+                'business_date' => '2026-08-01',
+                'project_id' => $project->id,
+                'wialon_group_id' => 'group-1',
+                'wialon_unit_id' => 'unit-1',
+                'unit_name' => '77-AA-001',
+                'vehicle_type' => 'Dump Truck',
+                'ownership' => Equipment::OWNERSHIP_NWC,
+                'engine_hours_decimal' => 5,
+                'engine_seconds' => 18000,
+                'mileage_km' => 10,
+                'efficiency_status' => 'normal',
+                'source_report_template_id' => 1,
+                'source_report_name' => $source,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $service = app(DashboardReportPipelineService::class);
+        $method = new \ReflectionMethod($service, 'duplicateFactChecks');
+        $method->setAccessible(true);
+
+        $monthlyChecks = $method->invoke($service, [
+            'plans' => [[
+                'section' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-01',
+            ]],
+        ]);
+
+        $this->assertArrayNotHasKey('efficiency_daily_facts', $monthlyChecks);
+        $this->assertSame(0, $monthlyChecks['monthly_efficiency_unit_geofence_facts'] ?? null);
+
+        $efficiencyChecks = $method->invoke($service, [
+            'plans' => [[
+                'section' => HistoricalRecalculation::SECTION_EFFICIENCY,
+                'date_from' => '2026-08-01',
+                'date_to' => '2026-08-01',
+            ]],
+        ]);
+
+        $this->assertSame(0, $efficiencyChecks['efficiency_daily_facts'] ?? null);
+    }
+
     public function test_monthly_efficiency_allows_selected_projects_scope(): void
     {
         Queue::fake();
