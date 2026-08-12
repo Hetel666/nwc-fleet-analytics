@@ -30,6 +30,13 @@ class DaytimeEfficiencyModuleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->markTestSkipped('Daytime efficiency dashboard was removed from the active module set.');
+    }
+
     public function test_report_service_resolves_only_the_daytime_template(): void
     {
         config()->set('fleet.wialon.daytime_efficiency_report_resource_id', 601701680);

@@ -109,8 +109,6 @@ class DashboardPerformanceProfileTest extends TestCase
             'overview',
             'projectActualWorkHourCategoriesByOwnership',
             'dailyAverageDashboards',
-            'leastWorking',
-            'mostWorking',
         ], array_keys($data));
         $this->assertArrayNotHasKey('geofenceViolations', $data);
         $this->assertArrayNotHasKey('projectOwnershipComparison', $data);

@@ -75,9 +75,7 @@ class HistoricalRecalculationTest extends TestCase
             ->assertSee('Geofence Pozuntuları')
             ->assertSee('Wialon report:')
             ->assertSee('Qrup date report Engine hours (api)')
-            ->assertSee('day report Engine hours (api)')
-            ->assertSee('night report Engine hours (api)')
-            ->assertSee('night day report Engine hours (api)')
+            ->assertSee('monthly_efficiency')
             ->assertViewHas('projects', function ($projects): bool {
                 $names = collect($projects)->pluck('name')->all();
 
@@ -462,7 +460,7 @@ class HistoricalRecalculationTest extends TestCase
         app(HistoricalRecalculationModuleRegistry::class)->execute($run, $task);
     }
 
-    public function test_preview_for_top20_section_has_no_aggregate_tasks(): void
+    public function test_preview_rejects_removed_top20_section(): void
     {
         $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
         $project = Project::query()->create(['name' => 'Top project', 'active' => true]);
@@ -493,14 +491,8 @@ class HistoricalRecalculationTest extends TestCase
                 'project_ids' => [$project->id],
                 'force' => false,
             ])
-            ->assertOk()
-            ->assertJson([
-                'days' => 3,
-                'project_groups' => 2,
-                'fetch_tasks' => 6,
-                'aggregate_tasks' => 0,
-                'total_tasks' => 6,
-            ]);
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('dashboard_section');
     }
 
     public function test_preview_for_efficiency_section_uses_one_task_per_project_and_date(): void
@@ -727,7 +719,7 @@ class HistoricalRecalculationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('mode', HistoricalRecalculation::SECTION_ALL_DASHBOARDS)
             ->assertJsonPath('days', 2)
-            ->assertJsonPath('pipeline_steps', 18);
+            ->assertJsonPath('pipeline_steps', 10);
 
         $modules = collect($response->json('modules'));
 
@@ -736,13 +728,13 @@ class HistoricalRecalculationTest extends TestCase
                 HistoricalRecalculation::SECTION_DAILY_AVERAGES,
                 HistoricalRecalculation::SECTION_EFFICIENCY,
                 HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
-                HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
-                HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+                HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
+                HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             ],
             $modules->take(5)->pluck('section')->all()
         );
-        $this->assertTrue($modules->take(9)->every(fn (array $module): bool => $module['date_from'] === '2026-07-29'));
-        $this->assertTrue($modules->slice(9, 9)->every(fn (array $module): bool => $module['date_from'] === '2026-07-30'));
+        $this->assertTrue($modules->take(5)->every(fn (array $module): bool => $module['date_from'] === '2026-07-29'));
+        $this->assertTrue($modules->slice(5, 5)->every(fn (array $module): bool => $module['date_from'] === '2026-07-30'));
     }
 
     public function test_store_all_dashboards_queues_one_manual_pipeline_with_per_day_module_steps(): void
@@ -777,9 +769,9 @@ class HistoricalRecalculationTest extends TestCase
 
         $this->assertCount(1, $pipelines);
         $this->assertSame('manual', $pipelines[0]['source']);
-        $this->assertCount(9, $pipelines[0]['plans']);
+        $this->assertCount(5, $pipelines[0]['plans']);
         $this->assertSame(HistoricalRecalculation::SECTION_DAILY_AVERAGES, $pipelines[0]['plans'][0]['section']);
-        $this->assertSame(HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE, $pipelines[0]['plans'][8]['section']);
+        $this->assertSame(HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE, $pipelines[0]['plans'][4]['section']);
         $this->assertTrue(collect($pipelines[0]['plans'])->every(
             fn (array $plan): bool => $plan['date_from'] === '2026-07-29'
                 && $plan['date_to'] === '2026-07-29'
@@ -830,7 +822,7 @@ class HistoricalRecalculationTest extends TestCase
             ->value('value'), true);
 
         $this->assertCount(1, $pipelines);
-        $this->assertCount(9, $pipelines[0]['plans']);
+        $this->assertCount(5, $pipelines[0]['plans']);
         $this->assertTrue(collect($pipelines[0]['plans'])->every(
             fn (array $plan): bool => $plan['scope'] === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS
                 && $plan['project_ids'] === [$project->id]
@@ -873,9 +865,9 @@ class HistoricalRecalculationTest extends TestCase
             ->value('value');
         $pipelines = json_decode($stored, true);
 
-        $this->assertGreaterThan(65535, strlen($stored));
+        $this->assertGreaterThan(30000, strlen($stored));
         $this->assertCount(1, $pipelines);
-        $this->assertCount(31 * 9, $pipelines[0]['plans']);
+        $this->assertCount(31 * 5, $pipelines[0]['plans']);
         $this->assertTrue(collect($pipelines[0]['plans'])->every(
             fn (array $plan): bool => $plan['scope'] === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS
                 && $plan['project_ids'] === [$project->id]
@@ -1055,7 +1047,7 @@ class HistoricalRecalculationTest extends TestCase
             'date_from' => '2026-07-28',
             'date_to' => '2026-07-28',
             'timezone' => 'Asia/Baku',
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
             'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
             'project_ids' => [$project->id],
@@ -1092,7 +1084,7 @@ class HistoricalRecalculationTest extends TestCase
             'date_from' => '2026-07-28',
             'date_to' => '2026-07-28',
             'timezone' => 'Asia/Baku',
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
             'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
             'project_ids' => [$project->id],
@@ -1198,10 +1190,6 @@ class HistoricalRecalculationTest extends TestCase
             HistoricalRecalculation::SECTION_DAILY_AVERAGES,
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
-            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
-            HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
-            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
-            HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         ], array_keys($registry->definitions()));
@@ -1215,8 +1203,8 @@ class HistoricalRecalculationTest extends TestCase
         foreach (array_keys($registry->definitions()) as $moduleCode) {
             $this->assertStringContainsString('value="'.$moduleCode.'"', $view);
         }
-        $this->assertStringContainsString('value="daytime_efficiency"', $view);
-        $this->assertStringContainsString('value="night_day_efficiency"', $view);
+        $this->assertStringNotContainsString('value="daytime_efficiency"', $view);
+        $this->assertStringNotContainsString('value="night_day_efficiency"', $view);
     }
 
     public function test_monthly_efficiency_can_use_dedicated_historical_queue(): void
@@ -1320,7 +1308,7 @@ class HistoricalRecalculationTest extends TestCase
                     'priority' => 100,
                     'status' => 'pending',
                     'plans' => [[
-                        'section' => HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
+                        'section' => HistoricalRecalculation::SECTION_EFFICIENCY,
                         'date_from' => '2026-08-01',
                         'date_to' => '2026-08-01',
                         'timezone' => 'Asia/Baku',
@@ -1399,7 +1387,7 @@ class HistoricalRecalculationTest extends TestCase
                 '--daily' => true,
                 '--module' => [
                     HistoricalRecalculation::SECTION_EFFICIENCY,
-                    HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
+                    HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 ],
                 '--force' => true,
             ])->assertSuccessful();
@@ -1441,9 +1429,9 @@ class HistoricalRecalculationTest extends TestCase
         app(DashboardReportPipelineService::class)->handleRunFinished($firstRun->refresh());
 
         $this->assertDatabaseHas('historical_recalculations', [
-            'dashboard_section' => HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY,
-            'date_from' => '2026-07-31 00:00:00',
-            'date_to' => '2026-07-31 00:00:00',
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            'date_from' => '2026-08-01 00:00:00',
+            'date_to' => '2026-08-01 00:00:00',
             'force' => 1,
         ]);
         $this->assertDatabaseCount('historical_recalculations', 2);
@@ -1478,8 +1466,6 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame('daily', $pipelines[0]['source']);
         $this->assertSame([
             HistoricalRecalculation::SECTION_EFFICIENCY,
-            HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY,
-            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
         ], collect($pipelines[0]['plans'])->pluck('section')->all());
@@ -1508,7 +1494,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->artisan('dashboard-reports:queue-sync', [
             '--from' => '2026-06-01',
             '--to' => '2026-06-15',
-            '--module' => [HistoricalRecalculation::SECTION_TOP_WORKING_UNITS],
+            '--module' => [HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE],
             '--chunk-days' => 7,
             '--force' => true,
         ])->assertSuccessful();
@@ -1544,7 +1530,7 @@ class HistoricalRecalculationTest extends TestCase
                 'date_from' => '2026-07-29',
                 'date_to' => '2026-07-29',
                 'timezone' => 'Asia/Baku',
-                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'dashboard_section' => HistoricalRecalculation::SECTION_EFFICIENCY,
                 'operation' => HistoricalRecalculation::OPERATION_FETCH,
                 'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
                 'project_ids' => [$project->id],
@@ -1575,7 +1561,7 @@ class HistoricalRecalculationTest extends TestCase
             'date_from' => '2026-07-29',
             'date_to' => '2026-07-29',
             'timezone' => 'Asia/Baku',
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
             'project_ids' => [$project->id],
@@ -1594,7 +1580,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => 'dd9b94d7-5ed2-43ae-81b8-af400017f875',
             'signature' => 'finalize-test',
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-07-29',
@@ -1662,7 +1648,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => '244fcdd6-56ae-4f10-976a-b9a625612ce3',
             'signature' => 'worker-failure-test',
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-07-29',
@@ -1702,7 +1688,7 @@ class HistoricalRecalculationTest extends TestCase
                 'uuid' => 'c93c9658-46df-4f53-93cb-7d6ecf8b2e3a',
                 'signature' => 'stale-running-test',
                 'status' => HistoricalRecalculation::STATUS_RUNNING,
-                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 'operation' => HistoricalRecalculation::OPERATION_FETCH,
                 'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
                 'date_from' => '2026-07-29',
@@ -1758,7 +1744,7 @@ class HistoricalRecalculationTest extends TestCase
                 'uuid' => '6417fc1c-47b6-4e09-a060-872a3d0b631e',
                 'signature' => 'fresh-running-test',
                 'status' => HistoricalRecalculation::STATUS_RUNNING,
-                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 'operation' => HistoricalRecalculation::OPERATION_FETCH,
                 'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
                 'date_from' => '2026-07-29',
@@ -1802,7 +1788,7 @@ class HistoricalRecalculationTest extends TestCase
                 'uuid' => 'd1b41070-cf1c-4605-b121-36448b68fb44',
                 'signature' => 'fresh-running-job-test',
                 'status' => HistoricalRecalculation::STATUS_RUNNING,
-                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 'operation' => HistoricalRecalculation::OPERATION_FETCH,
                 'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
                 'date_from' => '2026-07-29',
@@ -1844,7 +1830,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => '3a1552ed-9f80-42da-b44d-44c459ce3a87',
             'signature' => 'legacy-run-lock-test',
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-07-29',
@@ -1883,7 +1869,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => '76705dbb-57c3-4085-9db7-a95eebc40a85',
             'signature' => 'legacy-task-lock-test',
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-07-29',
@@ -1926,7 +1912,7 @@ class HistoricalRecalculationTest extends TestCase
                 'uuid' => 'cfce5fd0-7baa-47f2-aa14-9c104623a48d',
                 'signature' => 'diagnose-stale-running-test',
                 'status' => HistoricalRecalculation::STATUS_RUNNING,
-                'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+                'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
                 'operation' => HistoricalRecalculation::OPERATION_FETCH,
                 'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
                 'date_from' => '2026-07-29',
@@ -1972,7 +1958,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => 'f16b7bc2-4d42-4dd7-a8fa-533e8dfc141d',
             'signature' => 'cancelled-cleanup-test',
             'status' => HistoricalRecalculation::STATUS_CANCELLED,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-08-01',
@@ -1991,7 +1977,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => 'f487e1ae-eba9-4fc8-9671-a96085ad3c06',
             'signature' => 'active-cleanup-test',
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-08-01',
@@ -2038,7 +2024,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => '77e0d6e6-b7e0-405f-bac2-f34bc7523a47',
             'signature' => 'settings-cleanup-test',
             'status' => HistoricalRecalculation::STATUS_CANCELLED,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-08-01',
@@ -2057,7 +2043,7 @@ class HistoricalRecalculationTest extends TestCase
             'uuid' => 'd7bdf3b0-afb7-45fe-aa38-1f0198ff1525',
             'signature' => 'settings-cleanup-active-target',
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_TOP_WORKING_UNITS,
+            'dashboard_section' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             'operation' => HistoricalRecalculation::OPERATION_FETCH,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-08-01',

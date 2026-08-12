@@ -90,11 +90,6 @@ class DashboardGeneratorExclusionTest extends TestCase
         $this->assertSame(1, $averages[Equipment::OWNERSHIP_ICARE]['mileage_equipment_count']);
         $this->assertSame(100.0, $averages[Equipment::OWNERSHIP_ICARE]['avg_mileage']);
 
-        $leastWorking = $dashboard->getLeastWorking($filters, 10);
-        $mostWorking = $dashboard->getMostWorking($filters, 10);
-        $this->assertNotContains('Excluded Generator Group Unit', array_column($leastWorking, 'name'));
-        $this->assertNotContains('Excluded Generator Group Unit', array_column($mostWorking, 'name'));
-
         $geofenceRows = $dashboard->getGeofenceOutsideRows($filters, null);
         $this->assertSame(['NWC Excavator'], array_column($geofenceRows, 'grouping'));
 

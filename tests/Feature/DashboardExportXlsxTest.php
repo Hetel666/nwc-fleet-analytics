@@ -311,9 +311,10 @@ class DashboardExportXlsxTest extends TestCase
         $export = app(DashboardService::class)->getDashboardExport([
             'date_from' => '2026-01-01',
             'date_to' => '2026-04-30',
-        ], 'least-working');
+        ], 'average-engine-hours');
 
-        $this->assertSame([], $export['sections'][0]['rows']);
+        $this->assertSame('Orta motor saatı: NWC vs İCARƏ', $export['title']);
+        $this->assertNotEmpty($export['sections']);
     }
 
     private function exportRecord(User $user): DashboardExport

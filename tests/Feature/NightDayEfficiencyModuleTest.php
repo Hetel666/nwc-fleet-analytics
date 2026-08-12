@@ -35,6 +35,13 @@ class NightDayEfficiencyModuleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->markTestSkipped('Night/day efficiency dashboard was removed from the active module set.');
+    }
+
     public function test_report_service_resolves_only_the_night_day_template_and_converts_baku_windows_for_api(): void
     {
         config()->set('fleet.wialon.night_day_efficiency_report_resource_id', 601701680);

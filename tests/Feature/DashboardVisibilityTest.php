@@ -128,7 +128,7 @@ class DashboardVisibilityTest extends TestCase
         ]);
 
         $this->actingAs($admin)
-            ->putJson(route('api.admin.dashboard-visibility.update', 'top_20_low'), [
+            ->putJson(route('api.admin.dashboard-visibility.update', 'average_engine_hours'), [
                 'is_visible' => false,
                 'display_order' => 510,
             ])
@@ -137,9 +137,9 @@ class DashboardVisibilityTest extends TestCase
         $this->actingAs($admin)
             ->postJson(route('api.admin.dashboard-visibility.reset'))
             ->assertOk()
-            ->assertJsonFragment(['code' => 'top_20_low', 'is_visible' => true]);
+            ->assertJsonFragment(['code' => 'average_engine_hours', 'is_visible' => true]);
 
-        $this->assertTrue(app(DashboardDisplayConfigurationService::class)->isDashboardVisible('top_20_low'));
+        $this->assertTrue(app(DashboardDisplayConfigurationService::class)->isDashboardVisible('average_engine_hours'));
         $this->assertTrue(DashboardConfigurationAuditLog::query()->where('action', 'configuration_reset')->exists());
     }
 
