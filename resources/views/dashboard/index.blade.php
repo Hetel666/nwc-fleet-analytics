@@ -2879,6 +2879,7 @@
             @endif
             @endif
 
+            @endif
 
             @if ($selectedDashboardTab === 'geozones')
             @if ($dashboardDisplayVisibleFor('geofence_transfers'))
@@ -3235,14 +3236,8 @@ const workCategoryKeys = @json($visibleGeneralStatusKeys->values());
 const monthlyEfficiencyKeys = @json($visibleMonthlyStatusKeys->values());
 const workCategoryLabels = workCategoryKeys.map(key => workCategoryLabelMap[key] || key);
 const monthlyEfficiencyLabels = monthlyEfficiencyKeys.map(key => monthlyEfficiencyLabelMap[key] || key);
-const daytimeEfficiencyLabels = daytimeEfficiencyKeys.map(key => workCategoryLabelMap[key] || key);
-const nighttimeEfficiencyLabels = nighttimeEfficiencyKeys.map(key => workCategoryLabelMap[key] || key);
-const nightDayEfficiencyLabels = nightDayEfficiencyKeys.map(key => workCategoryLabelMap[key] || key);
 const workCategoryColorValues = workCategoryKeys.map(key => workCategoryColors[key]);
 const monthlyEfficiencyColorValues = monthlyEfficiencyKeys.map(key => monthlyEfficiencyColorMap[key]);
-const daytimeEfficiencyColorValues = daytimeEfficiencyKeys.map(key => workCategoryColors[key]);
-const nighttimeEfficiencyColorValues = nighttimeEfficiencyKeys.map(key => workCategoryColors[key]);
-const nightDayEfficiencyColorValues = nightDayEfficiencyKeys.map(key => workCategoryColors[key]);
 const workCategoryDonutKeys = workCategoryKeys;
 const workCategoryDonutIndexes = workCategoryDonutKeys.map(key => workCategoryKeys.indexOf(key));
 const workCategoryDonutLabels = workCategoryDonutIndexes.map(index => workCategoryLabels[index]);
@@ -3265,12 +3260,6 @@ let projectWorkCategoryNwcDonutCounts = [];
 let projectWorkCategoryIcareDonutCounts = [];
 let monthlyEfficiencyNwcCounts = [];
 let monthlyEfficiencyIcareCounts = [];
-let daytimeEfficiencyNwcCounts = [];
-let daytimeEfficiencyIcareCounts = [];
-let nighttimeEfficiencyNwcCounts = [];
-let nighttimeEfficiencyIcareCounts = [];
-let nightDayEfficiencyNwcCounts = [];
-let nightDayEfficiencyIcareCounts = [];
 let utilizationTrend = { labels: [], dates: [], series: {}, has_data: false };
 let projectComparisonLabels = [];
 let projectComparisonIds = [];
@@ -3301,12 +3290,6 @@ const applyDashboardChartData = data => {
     projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
     monthlyEfficiencyNwcCounts = data?.monthlyEfficiencyNwcCounts || [];
     monthlyEfficiencyIcareCounts = data?.monthlyEfficiencyIcareCounts || [];
-    daytimeEfficiencyNwcCounts = data?.daytimeEfficiencyNwcCounts || [];
-    daytimeEfficiencyIcareCounts = data?.daytimeEfficiencyIcareCounts || [];
-    nighttimeEfficiencyNwcCounts = data?.nighttimeEfficiencyNwcCounts || [];
-    nighttimeEfficiencyIcareCounts = data?.nighttimeEfficiencyIcareCounts || [];
-    nightDayEfficiencyNwcCounts = data?.nightDayEfficiencyNwcCounts || [];
-    nightDayEfficiencyIcareCounts = data?.nightDayEfficiencyIcareCounts || [];
     utilizationTrend = data?.utilizationTrend || { labels: [], dates: [], series: {}, has_data: false };
     projectComparisonLabels = data?.projectComparisonLabels || [];
     projectComparisonIds = data?.projectComparisonIds || [];
@@ -5576,25 +5559,10 @@ const initializeDashboardCharts = () => {
         colors: monthlyEfficiencyColorValues,
         drilldownItems: monthlyEfficiencyIcareDrilldownItems,
     });
-        labels: daytimeEfficiencyLabels,
-        colors: daytimeEfficiencyColorValues,
-        drilldownItems: daytimeEfficiencyIcareDrilldownItems,
     });
-        labels: nighttimeEfficiencyLabels,
-        colors: nighttimeEfficiencyColorValues,
-        drilldownItems: nighttimeEfficiencyNwcDrilldownItems,
     });
-        labels: nighttimeEfficiencyLabels,
-        colors: nighttimeEfficiencyColorValues,
-        drilldownItems: nighttimeEfficiencyIcareDrilldownItems,
     });
-        labels: nightDayEfficiencyLabels,
-        colors: nightDayEfficiencyColorValues,
-        drilldownItems: nightDayEfficiencyNwcDrilldownItems,
     });
-        labels: nightDayEfficiencyLabels,
-        colors: nightDayEfficiencyColorValues,
-        drilldownItems: nightDayEfficiencyIcareDrilldownItems,
     });
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
