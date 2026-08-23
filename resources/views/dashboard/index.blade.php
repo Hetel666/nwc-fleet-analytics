@@ -2747,7 +2747,7 @@
                 <div class="dashboard-efficiency-section-meta">
                     <span><i class="bi bi-database"></i>Mənbə: {{ $monthlyEfficiencySourceName }}</span>
                     <span><i class="bi bi-calculator"></i>Hesablama vahidi: Unikal texnika</span>
-                    <span><i class="bi bi-clock-history"></i>Normativ: 200 MS / ay</span>
+                    <span><i class="bi bi-clock-history"></i>Normativ: {{ $monthlyEfficiencySourceMode === 'daily_stats' ? '7 MS / gün' : '200 MS / ay' }}</span>
                 </div>
             </section>
             @endif

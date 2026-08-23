@@ -68,7 +68,7 @@ class MonthlyEfficiencyDashboardService
         $totalUnits = array_sum($summary);
         $normalUnits = (int) ($summary[MonthlyEfficiencyStatus::NORMAL] ?? 0);
         $totalCurrentHours = (float) $rows->flatten(1)->sum(fn (object $row): float => (float) $row->current_hours);
-        $totalNormativeHours = $totalUnits * self::NORMATIVE_HOURS;
+        $totalNormativeHours = $totalUnits * $this->fallbackNormativeHours($filters);
         $summary['total'] = $totalUnits;
         $summary['total_current_hours'] = round($totalCurrentHours, 2);
         $summary['total_normative_hours'] = round($totalNormativeHours, 2);
@@ -131,7 +131,7 @@ class MonthlyEfficiencyDashboardService
                 $first = $rows->first();
                 $count = $rows->count();
                 $current = round((float) $rows->sum(fn (object $row): float => (float) $row->current_hours), 2);
-                $normative = $count * self::NORMATIVE_HOURS;
+                $normative = round((float) $rows->sum(fn (object $row): float => (float) $row->normative_hours), 2);
 
                 return (object) [
                     'project_id' => (int) $first->project_id,
@@ -309,7 +309,7 @@ class MonthlyEfficiencyDashboardService
             ->values();
         $exportNormativeHours = $this->objectFactsAvailable($filters)
             ? $this->periodNormativeHours($filters)
-            : self::NORMATIVE_HOURS;
+            : $this->fallbackNormativeHours($filters);
         $summaryRows = $unitRows
             ->groupBy('monthly_status')
             ->map(function ($rows, string $status) use ($filters): array {
@@ -711,6 +711,9 @@ class MonthlyEfficiencyDashboardService
     private function monthlyUnitRows(array $filters, bool $byProject): Collection
     {
         $filters = $this->normalizeFilters($filters);
+        $days = $this->selectedDaysCount($filters);
+        $normativeHours = $this->fallbackNormativeHours($filters);
+        $usesPeriodNormative = $this->usesDailyStatsSource();
 
         $rows = $this->dailyFactRows($filters)
             ->groupBy(fn (object $row): string => implode('|', array_filter([
@@ -718,10 +721,10 @@ class MonthlyEfficiencyDashboardService
                 (string) $row->ownership,
                 (string) $row->wialon_unit_id,
             ], fn (?string $part): bool => $part !== null)))
-            ->map(function (Collection $rows) use ($byProject): object {
+            ->map(function (Collection $rows) use ($byProject, $days, $normativeHours, $usesPeriodNormative): object {
                 $first = $rows->sortBy('business_date')->first();
                 $currentHours = round((float) $rows->sum(fn (object $row): float => (float) $row->engine_hours_decimal), 2);
-                $efficiencyPercent = round($currentHours * 100 / self::NORMATIVE_HOURS, 2);
+                $efficiencyPercent = round($currentHours * 100 / $normativeHours, 2);
                 $projects = $rows->pluck('project')->filter()->unique()->values()->all();
                 $projectSources = $rows->pluck('project_source')->filter()->unique()->values()->all();
 
@@ -738,9 +741,11 @@ class MonthlyEfficiencyDashboardService
                     'period_to' => $rows->max('business_date'),
                     'synced_days_count' => $rows->pluck('business_date')->unique()->count(),
                     'current_hours' => $currentHours,
-                    'normative_hours' => self::NORMATIVE_HOURS,
+                    'normative_hours' => $normativeHours,
                     'efficiency_percent' => $efficiencyPercent,
-                    'monthly_status' => MonthlyEfficiencyStatus::classify($currentHours),
+                    'monthly_status' => $usesPeriodNormative
+                        ? MonthlyEfficiencyStatus::classifyForPeriod($currentHours, $days)
+                        : MonthlyEfficiencyStatus::classify($currentHours),
                 ];
             })
             ->values();
@@ -908,8 +913,8 @@ class MonthlyEfficiencyDashboardService
             'synced_days_count' => (int) $row->synced_days_count,
             'current_hours_decimal' => (float) $row->current_hours,
             'current_hours' => number_format((float) $row->current_hours, 2, '.', ''),
-            'normative_hours_decimal' => self::NORMATIVE_HOURS,
-            'normative_hours' => number_format(self::NORMATIVE_HOURS, 0, '.', ''),
+            'normative_hours_decimal' => (float) $row->normative_hours,
+            'normative_hours' => number_format((float) $row->normative_hours, 0, '.', ''),
             'efficiency_percent_decimal' => (float) $row->efficiency_percent,
             'efficiency_percent' => number_format((float) $row->efficiency_percent, 2, '.', '').'%',
             'ownership' => $this->ownershipLabel($row->ownership),
@@ -1063,6 +1068,13 @@ class MonthlyEfficiencyDashboardService
     private function periodNormativeHours(array $filters): float
     {
         return $this->selectedDaysCount($filters) * 7.0;
+    }
+
+    private function fallbackNormativeHours(array $filters): float
+    {
+        return $this->usesDailyStatsSource()
+            ? $this->periodNormativeHours($filters)
+            : self::NORMATIVE_HOURS;
     }
 
     private function statusSql(string $column): string

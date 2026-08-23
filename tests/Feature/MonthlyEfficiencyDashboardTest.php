@@ -329,6 +329,76 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('24 saat Dashboard cədvəli', $units[0]['project_source_label']);
     }
 
+    public function test_daily_stats_source_uses_selected_period_normative_for_dashboard_and_export(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_source', 'daily_stats');
+
+        $user = User::factory()->create(['active' => true]);
+        $project = Project::query()->create(['name' => 'LOT3', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+
+        foreach ([
+            'PERIOD-CRITICAL' => 4.99,
+            'PERIOD-LOW-MIN' => 5.00,
+            'PERIOD-LOW-MAX' => 7.00,
+            'PERIOD-NORMAL' => 7.01,
+        ] as $unitName => $hours) {
+            $equipment = Equipment::query()->create([
+                'name' => $unitName,
+                'registration_number' => $unitName,
+                'wialon_unit_id' => $unitName,
+                'equipment_type_id' => $dumpTruck->id,
+                'project_id' => $project->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'active' => true,
+            ]);
+
+            DB::table('equipment_daily_stats')->insert([
+                'stat_date' => '2026-08-21',
+                'equipment_id' => $equipment->id,
+                'project_id' => $project->id,
+                'ownership_type' => Equipment::OWNERSHIP_NWC,
+                'worked_hours' => $hours,
+                'distance_km' => 0,
+                'utilization_percent' => 0,
+                'calculation_source' => 'wialon_engine_hours_report',
+                'calculation_status' => 'success',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $filters = [
+            'date_from' => '2026-08-21',
+            'date_to' => '2026-08-21',
+            'ownership' => 'nwc',
+        ];
+        $summary = app(MonthlyEfficiencyDashboardService::class)
+            ->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(4, $summary['total']);
+        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::CRITICAL_LOW]);
+        $this->assertSame(2, $summary[MonthlyEfficiencyStatus::LOW]);
+        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(28.0, $summary['total_normative_hours']);
+        $this->assertSame(25.0, $summary['efficiency_percent']);
+
+        $units = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.units', $filters))
+            ->assertOk()
+            ->json('data');
+        $unitsByName = collect($units)->keyBy('registration_number');
+
+        $this->assertSame('7', $unitsByName['PERIOD-NORMAL']['normative_hours']);
+        $this->assertSame(MonthlyEfficiencyStatus::CRITICAL_LOW, $unitsByName['PERIOD-CRITICAL']['status']);
+        $this->assertSame(MonthlyEfficiencyStatus::LOW, $unitsByName['PERIOD-LOW-MIN']['status']);
+        $this->assertSame(MonthlyEfficiencyStatus::LOW, $unitsByName['PERIOD-LOW-MAX']['status']);
+        $this->assertSame(MonthlyEfficiencyStatus::NORMAL, $unitsByName['PERIOD-NORMAL']['status']);
+
+        $export = app(MonthlyEfficiencyDashboardService::class)->export($filters);
+        $this->assertSame(['Normativ MS', '7'], $export['filters'][4]);
+        $this->assertSame(['7.00'], collect($export['sections'][2]['rows'])->pluck(7)->unique()->values()->all());
+    }
+
     public function test_monthly_efficiency_export_uses_only_selected_daily_stats_period(): void
     {
         config()->set('fleet.wialon.monthly_efficiency_source', 'daily_stats');
@@ -374,6 +444,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 
         $this->assertSame('ayliq-effektivlik-NWC-2026-08-01-2026-08-06.xlsx', $export['filename']);
         $this->assertSame(['Dövr', '2026-08-01 - 2026-08-06'], $export['filters'][0]);
+        $this->assertSame(['Normativ MS', '42'], $export['filters'][4]);
 
         $detailRows = collect($export['sections'][2]['rows']);
         $this->assertCount(1, $detailRows);
@@ -394,6 +465,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 
         $this->assertSame('ayliq-effektivlik-NWC-2026-08-01-2026-08-06.xlsx', $savedExport['filename']);
         $this->assertSame(['Dövr', '2026-08-01 - 2026-08-06'], $savedExport['filters'][0]);
+        $this->assertSame(['Normativ MS', '42'], $savedExport['filters'][4]);
         $this->assertSame('2026-08-01 - 2026-08-06', $savedExport['sections'][2]['rows'][0][4]);
         $this->assertSame('30.00', $savedExport['sections'][2]['rows'][0][6]);
         $this->assertStringNotContainsString('2026-08-10', json_encode($savedExport, JSON_THROW_ON_ERROR));
@@ -449,7 +521,7 @@ class MonthlyEfficiencyDashboardTest extends TestCase
 
         $this->assertSame(0, $nwc['total']);
         $this->assertSame(1, $icare['total']);
-        $this->assertSame(1, $icare[MonthlyEfficiencyStatus::NORMAL]);
+        $this->assertSame(1, $icare[MonthlyEfficiencyStatus::LOW]);
     }
 
     public function test_monthly_efficiency_object_dashboard_uses_only_requested_types_and_geofence_drilldown(): void
