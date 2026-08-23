@@ -144,6 +144,7 @@ class XlsxWorkbookReader
         $strings = [];
 
         foreach ($document->xpath('//x:si') ?: [] as $item) {
+            $item->registerXPathNamespace('x', self::MAIN_NS);
             $parts = [];
 
             foreach ($item->xpath('.//x:t') ?: [] as $text) {

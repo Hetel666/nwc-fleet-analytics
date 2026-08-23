@@ -11,7 +11,7 @@ final class XlsxFixture
     /**
      * @param  array<string, array<int, array<int, string|int|float|null>>>  $sheets
      */
-    public static function upload(array $sheets, string $name = 'wialon-report.xlsx'): UploadedFile
+    public static function upload(array $sheets, string $name = 'wialon-report.xlsx', bool $useSharedStrings = false): UploadedFile
     {
         $path = tempnam(sys_get_temp_dir(), 'wialon-xlsx-');
 
@@ -28,6 +28,7 @@ final class XlsxFixture
         $overrides = [];
         $workbookSheets = [];
         $relationships = [];
+        $sharedStrings = $useSharedStrings ? self::sharedStringIndex($sheets) : [];
 
         foreach (array_values($sheets) as $index => $rows) {
             $sheetNumber = $index + 1;
@@ -35,7 +36,17 @@ final class XlsxFixture
             $overrides[] = '<Override PartName="/xl/worksheets/sheet'.$sheetNumber.'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
             $workbookSheets[] = '<sheet name="'.self::escape($sheetName).'" sheetId="'.$sheetNumber.'" r:id="rId'.$sheetNumber.'"/>';
             $relationships[] = '<Relationship Id="rId'.$sheetNumber.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'.$sheetNumber.'.xml"/>';
-            $zip->addFromString('xl/worksheets/sheet'.$sheetNumber.'.xml', self::sheetXml($rows));
+            $zip->addFromString('xl/worksheets/sheet'.$sheetNumber.'.xml', self::sheetXml($rows, $useSharedStrings ? $sharedStrings : null));
+        }
+
+        if ($useSharedStrings) {
+            $overrides[] = '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>';
+            $relationships[] = '<Relationship Id="rIdSharedStrings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>';
+            $values = array_keys($sharedStrings);
+            $items = array_map(fn (string $value): string => '<si><t xml:space="preserve">'.self::escape($value).'</t></si>', $values);
+            $zip->addFromString('xl/sharedStrings.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                .'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'.count($values).'" uniqueCount="'.count($values).'">'
+                .implode('', $items).'</sst>');
         }
 
         $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -60,7 +71,7 @@ final class XlsxFixture
     }
 
     /** @param array<int, array<int, string|int|float|null>> $rows */
-    private static function sheetXml(array $rows): string
+    private static function sheetXml(array $rows, ?array $sharedStrings = null): string
     {
         $xmlRows = [];
 
@@ -78,6 +89,8 @@ final class XlsxFixture
 
                 if (is_int($value) || is_float($value)) {
                     $cells[] = '<c r="'.$reference.'"><v>'.$value.'</v></c>';
+                } elseif ($sharedStrings !== null) {
+                    $cells[] = '<c r="'.$reference.'" t="s"><v>'.$sharedStrings[$value].'</v></c>';
                 } else {
                     $cells[] = '<c r="'.$reference.'" t="inlineStr"><is><t xml:space="preserve">'.self::escape($value).'</t></is></c>';
                 }
@@ -103,6 +116,27 @@ final class XlsxFixture
         }
 
         return $name;
+    }
+
+    /**
+     * @param  array<string, array<int, array<int, string|int|float|null>>>  $sheets
+     * @return array<string,int>
+     */
+    private static function sharedStringIndex(array $sheets): array
+    {
+        $index = [];
+
+        foreach ($sheets as $rows) {
+            foreach ($rows as $values) {
+                foreach ($values as $value) {
+                    if (is_string($value) && ! array_key_exists($value, $index)) {
+                        $index[$value] = count($index);
+                    }
+                }
+            }
+        }
+
+        return $index;
     }
 
     private static function escape(string $value): string

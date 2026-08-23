@@ -140,6 +140,30 @@ class DashboardManualImportTest extends TestCase
         $this->assertSame(4.0, (float) EfficiencyDailyFact::query()->where('wialon_unit_id', 'unit-1')->value('engine_hours_decimal'));
     }
 
+    public function test_wialon_shared_strings_are_parsed(): void
+    {
+        [$admin, $project] = $this->scenario();
+        $file = XlsxFixture::upload([
+            'Engine hours' => [
+                ['Grouping', 'Engine hours', 'Mileage', 'Beginning', 'End', 'Unit ID'],
+                ['77-AA-001', null, null, null, null, 'unit-1'],
+                ['2026-08-01', 8.5, '42.40 km', '07:00:00', '18:00:00', 'unit-1'],
+            ],
+        ], 'shared-strings.xlsx', true);
+
+        $this->actingAs($admin)->post(route('admin.dashboard-data-imports.store'), [
+            'module' => DashboardDataImport::MODULE_DAILY_EFFICIENCY,
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+            'project_id' => $project->id,
+            'files' => [$file],
+        ])->assertSessionHasNoErrors();
+
+        $import = DashboardDataImport::query()->firstOrFail();
+        $this->assertSame(DashboardDataImport::STATUS_READY, $import->status);
+        $this->assertSame(1, $import->accepted_rows);
+    }
+
     public function test_monthly_xlsx_writes_total_geofence_and_calculated_unknown_rows(): void
     {
         [$admin, $project] = $this->scenario();
