@@ -2,470 +2,143 @@
 
 @section('title', 'Dashboard mənbələri | '.__('app.app_name'))
 @section('page-title', 'Dashboard mənbələri')
-@section('page-subtitle', 'Hər vidjet üçün hesabat, cədvəl, service, modal və Excel bağlılığı')
 
 @push('styles')
     <style>
-        .analytics-map-hero {
-            background: linear-gradient(135deg, var(--fleet-card) 0%, var(--fleet-card-soft) 100%);
-            border: 1px solid var(--fleet-line);
-            border-radius: 16px;
-            box-shadow: var(--fleet-shadow);
-        }
-
-        .analytics-map-stat {
-            min-height: 86px;
-            border-radius: 14px;
+        .source-map-hero,
+        .source-map-card {
             background: var(--fleet-card);
             border: 1px solid var(--fleet-line);
+            border-radius: 8px;
         }
 
-        .analytics-map-card {
-            border: 1px solid var(--fleet-line);
-            border-radius: 16px;
-            background: var(--fleet-card);
-            box-shadow: var(--fleet-shadow);
-        }
+        .source-map-hero { box-shadow: var(--fleet-shadow); }
 
-        .analytics-map-card[data-hidden="true"] {
-            display: none;
-        }
-
-        .analytics-map-key {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-            color: var(--fleet-blue);
-            background: color-mix(in srgb, var(--fleet-blue) 12%, var(--fleet-card));
-            border-radius: 999px;
-            padding: .28rem .62rem;
-            font-size: .76rem;
-            font-weight: 700;
-        }
-
-        .analytics-map-label {
+        .source-map-kicker,
+        .source-map-label {
             color: var(--fleet-muted);
-            font-size: .74rem;
-            font-weight: 800;
-            letter-spacing: .03em;
+            font-size: .72rem;
+            font-weight: 700;
             text-transform: uppercase;
         }
 
-        .analytics-map-value {
-            color: var(--fleet-ink);
-            font-weight: 700;
-        }
-
-        .analytics-map-chip {
+        .source-map-key,
+        .source-map-route {
             display: inline-flex;
             align-items: center;
             gap: .35rem;
-            border-radius: 999px;
-            background: var(--fleet-card-soft);
             border: 1px solid var(--fleet-line);
-            color: var(--fleet-ink);
-            padding: .35rem .58rem;
-            font-size: .78rem;
-            font-weight: 700;
-        }
-
-        .analytics-map-list {
-            margin: 0;
-            padding-left: 1rem;
+            border-radius: 6px;
             color: var(--fleet-muted);
+            font-size: .76rem;
+            padding: .28rem .5rem;
         }
 
-        .analytics-map-list li + li {
-            margin-top: .28rem;
+        .source-map-report {
+            background: var(--fleet-card-soft);
+            border-left: 3px solid #2563eb;
+            padding: .75rem .85rem;
         }
 
-        .analytics-map-section-title {
-            font-size: .86rem;
-            font-weight: 800;
-            color: var(--fleet-ink);
-        }
+        .source-map-list { margin: 0; padding-left: 1.1rem; }
+        .source-map-list li + li { margin-top: .35rem; }
 
-        .analytics-map-search {
-            min-height: 44px;
-            border-radius: 12px;
-        }
-
-        .analytics-map-search-icon {
-            color: var(--fleet-muted);
+        .source-map-search {
             background: var(--fleet-card);
             border-color: var(--fleet-line);
+            color: var(--fleet-ink);
         }
 
-        .analytics-map-binding {
-            background: var(--fleet-card-soft);
-            border: 1px solid var(--fleet-line);
-            border-radius: 14px;
-        }
-
-        .analytics-map-update {
-            border-left: 4px solid #2563eb;
-        }
+        .source-map-search::placeholder { color: var(--fleet-muted); }
     </style>
 @endpush
 
 @section('content')
-    <div class="analytics-map-hero p-4 mb-4">
-        <div class="d-flex flex-column flex-xl-row align-items-xl-center justify-content-between gap-3">
+    @php
+        $blockCount = collect($groups)->sum(fn (array $group): int => count($group['blocks'] ?? []));
+    @endphp
+
+    <section class="source-map-hero p-4 mb-4">
+        <div class="d-flex flex-column flex-xl-row align-items-xl-end justify-content-between gap-3">
             <div>
-                <div class="d-inline-flex align-items-center gap-2 text-primary fw-bold small mb-2">
-                    <i class="bi bi-diagram-3"></i>
-                    Dashboard source map
-                </div>
-                <h2 class="h3 fw-bold mb-2">Dashboard analitika xəritəsi</h2>
+                <div class="source-map-kicker mb-2">Aktual hesablama xəritəsi</div>
+                <h2 class="h3 fw-bold mb-2">Hər Dashboard blokunun mənbəsi və hesablama qaydası</h2>
                 <p class="text-secondary mb-0">
-                    Bu səhifə yalnız administrasiya üçün məlumat xəritəsidir. Hesablamalara, API cavablarına və Wialon sinxronizasiyasına təsir etmir.
+                    Aşağıda yalnız hazırda işləyən bloklar göstərilir. Hər kartda Wialon hesabatı, layihə bağlılığı, tarix qaydası, formula və lokal cədvəl ayrı yazılıb.
                 </p>
             </div>
             <div class="col-12 col-xl-4">
-                <label for="analyticsMapSearch" class="form-label analytics-map-label">Axtarış</label>
-                <div class="input-group">
-                    <span class="input-group-text analytics-map-search-icon border-end-0"><i class="bi bi-search"></i></span>
-                    <input id="analyticsMapSearch" type="search" class="form-control analytics-map-search border-start-0" placeholder="Vidjet, report, service və ya cədvəl...">
+                <label for="sourceMapSearch" class="form-label source-map-label">Axtarış</label>
+                <input id="sourceMapSearch" type="search" class="form-control source-map-search" placeholder="Blok, hesabat, formula və ya cədvəl...">
+            </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <span class="source-map-key"><i class="bi bi-grid"></i> {{ $blockCount }} aktiv blok</span>
+            <span class="source-map-key"><i class="bi bi-database-check"></i> Dashboard yalnız lokal faktlardan oxuyur</span>
+        </div>
+    </section>
+
+    <div id="sourceMapEmpty" class="alert alert-secondary d-none">Axtarışa uyğun blok tapılmadı.</div>
+
+    <div id="sourceMapGroups">
+        @foreach ($groups as $group)
+            <section class="source-map-group mb-4" data-source-group>
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                    <h3 class="h5 fw-bold mb-0">{{ $group['title'] }}</h3>
+                    <span class="source-map-route"><i class="bi bi-window"></i> {{ $group['route'] }}</span>
                 </div>
-            </div>
-        </div>
-    </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-12 col-md-4">
-            <div class="analytics-map-stat p-3">
-                <div class="analytics-map-label mb-1">Dashboard sayı</div>
-                <div class="fs-3 fw-bold">{{ count($dashboards) }}</div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4">
-            <div class="analytics-map-stat p-3">
-                <div class="analytics-map-label mb-1">Vidjet sayı</div>
-                <div class="fs-3 fw-bold">{{ count($widgets) }}</div>
-            </div>
-        </div>
-        <div class="col-12 col-md-4">
-            <div class="analytics-map-stat p-3">
-                <div class="analytics-map-label mb-1">Əsas data prinsipi</div>
-                <div class="fw-bold">Dashboard lokal cədvəllərdən oxuyur</div>
-            </div>
-        </div>
-    </div>
+                <div class="row g-3">
+                    @foreach ($group['blocks'] as $block)
+                        <div class="col-12 col-xl-6 source-map-card-wrap"
+                             data-source-block
+                             data-search="{{ mb_strtolower(implode(' ', [
+                                 $group['title'], $block['key'], $block['title'], $block['report'],
+                                 $block['local_source'], $block['project_rule'], $block['period_rule'],
+                                 implode(' ', $block['calculation']), $block['result'],
+                             ])) }}">
+                            <article class="source-map-card h-100 p-3">
+                                <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
+                                    <h4 class="h5 fw-bold mb-0">{{ $block['title'] }}</h4>
+                                    <span class="source-map-key">{{ $block['key'] }}</span>
+                                </div>
 
-    @if (! empty($dashboards))
-        <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
-            <h3 class="h5 fw-bold mb-0">Dashboard məntiqi</h3>
-            <span class="text-secondary small">{{ count($dashboards) }} bölmə</span>
-        </div>
+                                <div class="source-map-report mb-3">
+                                    <div class="source-map-label mb-1">Wialon hesabatı</div>
+                                    <div class="fw-semibold">{{ $block['report'] }}</div>
+                                </div>
 
-        <div class="row g-3 mb-4">
-            @foreach ($dashboards as $key => $dashboard)
-                <div class="col-12 col-xl-6">
-                    <article class="analytics-map-binding h-100 p-3">
-                        <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-                            <div>
-                                <span class="analytics-map-key">{{ $key }}</span>
-                                <h4 class="h5 fw-bold mt-3 mb-1">{{ $dashboard['title'] }}</h4>
-                                <p class="text-secondary mb-0">{{ $dashboard['purpose'] }}</p>
-                            </div>
-                            <span class="analytics-map-chip"><i class="bi bi-hdd-network"></i> {{ $dashboard['route'] }}</span>
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <div class="source-map-label mb-1">Layihəyə aidiyyət qaydası</div>
+                                        <div>{{ $block['project_rule'] }}</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="source-map-label mb-1">Dövr və sətir seçimi</div>
+                                        <div>{{ $block['period_rule'] }}</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="source-map-label mb-2">Hesablama prinsipi</div>
+                                        <ul class="source-map-list">
+                                            @foreach ($block['calculation'] as $rule)
+                                                <li>{{ $rule }}</li>
+                                            @endforeach
+                                        </ul>
+                                    </div>
+                                    <div class="col-12 col-md-7">
+                                        <div class="source-map-label mb-1">Dashboard nəticəsi</div>
+                                        <div>{{ $block['result'] }}</div>
+                                    </div>
+                                    <div class="col-12 col-md-5">
+                                        <div class="source-map-label mb-1">Lokal mənbə</div>
+                                        <div class="text-secondary">{{ $block['local_source'] }}</div>
+                                    </div>
+                                </div>
+                            </article>
                         </div>
-
-                        <div class="row g-3 mb-3">
-                            <div class="col-12 col-md-6">
-                                <div class="analytics-map-label mb-1">Mənbə</div>
-                                <div class="small text-secondary">{{ $dashboard['source'] }}</div>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <div class="analytics-map-label mb-1">Worker / scheduler</div>
-                                <div class="small text-secondary">{{ $dashboard['worker'] }}</div>
-                            </div>
-                            <div class="col-12">
-                                <div class="analytics-map-label mb-1">Yenilənmə</div>
-                                <div class="small text-secondary">{{ $dashboard['refresh'] }}</div>
-                            </div>
-                        </div>
-
-                        <div class="row g-3">
-                            <div class="col-12 col-md-6">
-                                <div class="analytics-map-label mb-2">Oxunan cədvəllər</div>
-                                <ul class="analytics-map-list small">
-                                    @foreach ($dashboard['reads'] as $item)
-                                        <li>{{ $item }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <div class="analytics-map-label mb-2">Hesablama qaydası</div>
-                                <ul class="analytics-map-list small">
-                                    @foreach ($dashboard['calculation'] as $item)
-                                        <li>{{ $item }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <div class="analytics-map-label mb-2">Dashboard blokları</div>
-                                <ul class="analytics-map-list small">
-                                    @foreach ($dashboard['widgets'] as $item)
-                                        <li>{{ $item }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <div class="analytics-map-label mb-2">Klik / export</div>
-                                <ul class="analytics-map-list small">
-                                    @foreach ($dashboard['controls'] as $item)
-                                        <li>{{ $item }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
-                        </div>
-                    </article>
+                    @endforeach
                 </div>
-            @endforeach
-        </div>
-    @endif
-
-    <div class="row g-3 mb-4">
-        @foreach ($updateSections as $key => $section)
-            <div class="col-12 col-xl-6">
-                <div class="analytics-map-binding analytics-map-update h-100 p-3">
-                    <div class="d-flex align-items-start justify-content-between gap-3 mb-2">
-                        <div class="analytics-map-section-title">{{ $section['title'] }}</div>
-                        <span class="analytics-map-key">{{ $key }}</span>
-                    </div>
-                    <div class="row g-2 small">
-                        <div class="col-12">
-                            <span class="analytics-map-label">Əl ilə yenilə</span>
-                            <div class="analytics-map-value">{{ $section['manual'] }}</div>
-                        </div>
-                        <div class="col-12">
-                            <span class="analytics-map-label">Avtomatik yenilə</span>
-                            <div>{{ $section['auto'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <span class="analytics-map-label">Wialon əmri</span>
-                            <div class="small text-secondary">{{ $section['wialon_command'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <span class="analytics-map-label">Lokal cədvəllər</span>
-                            <div class="small text-secondary">{{ $section['local_tables'] }}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        @endforeach
-    </div>
-
-    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
-        <h3 class="h5 fw-bold mb-0">Module contracts</h3>
-        <span class="text-secondary small">{{ count($moduleContracts) }} modules</span>
-    </div>
-
-    @if (! empty($moduleContractErrors))
-        <div class="alert alert-warning">
-            <div class="fw-bold mb-1">Registry contract warnings</div>
-            <ul class="mb-0">
-                @foreach ($moduleContractErrors as $code => $errors)
-                    <li>{{ $code }}: {{ implode(', ', $errors) }}</li>
-                @endforeach
-            </ul>
-        </div>
-    @endif
-
-    <div class="row g-3 mb-4">
-        @foreach ($moduleContracts as $module)
-            <div class="col-12 col-xl-6">
-                <article class="analytics-map-binding h-100 p-3">
-                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-                        <div>
-                            <span class="analytics-map-key">{{ $module['code'] }}</span>
-                            <h4 class="h5 fw-bold mt-3 mb-1">{{ $module['title'] }}</h4>
-                            <p class="text-secondary mb-0">{{ $module['failure_isolation'] }}</p>
-                        </div>
-                        <div class="d-flex flex-wrap gap-2">
-                            <span class="analytics-map-chip"><i class="bi bi-window-sidebar"></i> {{ $module['tab'] }}</span>
-                            <span class="analytics-map-chip"><i class="bi bi-shield-check"></i> {{ $module['writes_shared_tables'] ? 'Shared write' : 'Isolated write' }}</span>
-                        </div>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Source report</div>
-                            <div class="small text-secondary">{{ $module['source_report'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Collector command</div>
-                            <div class="small text-secondary">{{ $module['collector_command'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Read service</div>
-                            <div class="small text-secondary">{{ $module['read_service'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Collector service</div>
-                            <div class="small text-secondary">{{ $module['collector_service'] ?: '-' }}</div>
-                        </div>
-                        <div class="col-12">
-                            <div class="analytics-map-label mb-1">Safe resync scope</div>
-                            <div class="small text-secondary">
-                                {{ $module['safe_resync_scope']['status'] ?? '-' }}:
-                                {{ implode(', ', $module['safe_resync_scope']['keys'] ?? []) }}
-                                @if (! empty($module['safe_resync_scope']['risk']))
-                                    <br>{{ $module['safe_resync_scope']['risk'] }}
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row g-3">
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-2">Result tables</div>
-                            <ul class="analytics-map-list small">
-                                @foreach ($module['result_tables'] as $table)
-                                    <li>{{ $table }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-2">Shared tables</div>
-                            <ul class="analytics-map-list small">
-                                @forelse ($module['shared_result_tables'] as $table)
-                                    <li>{{ $table }}</li>
-                                @empty
-                                    <li>none</li>
-                                @endforelse
-                            </ul>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-2">API endpoints</div>
-                            <ul class="analytics-map-list small">
-                                @foreach ($module['api_endpoints'] as $endpoint)
-                                    <li>{{ $endpoint }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-2">Frontend widgets</div>
-                            <ul class="analytics-map-list small">
-                                @foreach ($module['frontend_widgets'] as $widget)
-                                    <li>{{ $widget }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    </div>
-                </article>
-            </div>
-        @endforeach
-    </div>
-
-    <div class="row g-3 mb-4">
-        @foreach ($sharedBindings as $binding)
-            <div class="col-12 col-lg-4">
-                <div class="analytics-map-binding h-100 p-3">
-                    <div class="analytics-map-section-title mb-2">{{ $binding['title'] }}</div>
-                    <p class="text-secondary small mb-2">{{ $binding['description'] }}</p>
-                    <ul class="analytics-map-list small">
-                        @foreach ($binding['items'] as $item)
-                            <li>{{ $item }}</li>
-                        @endforeach
-                    </ul>
-                </div>
-            </div>
-        @endforeach
-    </div>
-
-    <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
-        <h3 class="h5 fw-bold mb-0">Vidjet bağlılıqları</h3>
-        <span class="text-secondary small"><span id="analyticsMapVisibleCount">{{ count($widgets) }}</span> / {{ count($widgets) }}</span>
-    </div>
-
-    <div class="row g-3" id="analyticsMapGrid">
-        @foreach ($widgets as $widget)
-            <div class="col-12 col-xl-6 analytics-map-card-wrap">
-                <article class="analytics-map-card h-100 p-3" data-analytics-card data-search="{{ mb_strtolower(implode(' ', [
-                    $widget['key'],
-                    $widget['title'],
-                    $widget['purpose'],
-                    $widget['dashboard_block'],
-                    $widget['wialon_report'],
-                    $widget['local_source'],
-                    $widget['service'],
-                    $widget['binding'],
-                    $widget['click'],
-                    $widget['excel'],
-                    $widget['update_section'],
-                    $updateSections[$widget['update_section']]['title'] ?? '',
-                    $updateSections[$widget['update_section']]['manual'] ?? '',
-                    $updateSections[$widget['update_section']]['wialon_command'] ?? '',
-                    $updateSections[$widget['update_section']]['local_tables'] ?? '',
-                    implode(' ', $widget['report_rows'] ?? []),
-                ])) }}">
-                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-2 mb-3">
-                        <div>
-                            <span class="analytics-map-key">{{ $widget['key'] }}</span>
-                            <h4 class="h5 fw-bold mt-3 mb-1">{{ $widget['title'] }}</h4>
-                            <p class="text-secondary mb-0">{{ $widget['purpose'] }}</p>
-                        </div>
-                        <div class="d-flex flex-wrap gap-2">
-                            <span class="analytics-map-chip"><i class="bi bi-shield-check"></i> Read only</span>
-                            <span class="analytics-map-chip"><i class="bi bi-arrow-repeat"></i> {{ $updateSections[$widget['update_section']]['title'] ?? $widget['update_section'] }}</span>
-                        </div>
-                    </div>
-
-                    <div class="row g-3">
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Dashboard bloku</div>
-                            <div class="analytics-map-value">{{ $widget['dashboard_block'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Wialon report</div>
-                            <div class="analytics-map-value">{{ $widget['wialon_report'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Lokal mənbə</div>
-                            <div class="analytics-map-value">{{ $widget['local_source'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Service / query</div>
-                            <div class="analytics-map-value">{{ $widget['service'] }}</div>
-                        </div>
-                    </div>
-
-                    <hr class="my-3">
-
-                    <div class="mb-3">
-                        <div class="analytics-map-label mb-1">Bağlılıq prinsipi</div>
-                        <div>{{ $widget['binding'] }}</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="analytics-map-label mb-1">Yenilənmə məntiqi</div>
-                        <div class="small text-secondary">
-                            Əl ilə: {{ $updateSections[$widget['update_section']]['manual'] ?? '-' }}<br>
-                            Avto: {{ $updateSections[$widget['update_section']]['auto'] ?? '-' }}
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="analytics-map-label mb-2">Report sətri / sütunları</div>
-                        <ul class="analytics-map-list">
-                            @foreach ($widget['report_rows'] as $row)
-                                <li>{{ $row }}</li>
-                            @endforeach
-                        </ul>
-                    </div>
-
-                    <div class="row g-3">
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Klik / modal</div>
-                            <div class="small text-secondary">{{ $widget['click'] }}</div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="analytics-map-label mb-1">Excel</div>
-                            <div class="small text-secondary">{{ $widget['excel'] }}</div>
-                        </div>
-                    </div>
-                </article>
-            </div>
+            </section>
         @endforeach
     </div>
 @endsection
@@ -473,26 +146,30 @@
 @push('scripts')
     <script>
         (() => {
-            const input = document.getElementById('analyticsMapSearch');
-            const cards = Array.from(document.querySelectorAll('[data-analytics-card]'));
-            const count = document.getElementById('analyticsMapVisibleCount');
+            const search = document.getElementById('sourceMapSearch');
+            const groups = Array.from(document.querySelectorAll('[data-source-group]'));
+            const empty = document.getElementById('sourceMapEmpty');
 
-            if (!input || !cards.length || !count) {
-                return;
-            }
+            if (!search) return;
 
-            input.addEventListener('input', () => {
-                const value = input.value.trim().toLowerCase();
-                let visible = 0;
+            search.addEventListener('input', () => {
+                const term = search.value.trim().toLocaleLowerCase('az');
+                let visibleBlocks = 0;
 
-                cards.forEach((card) => {
-                    const matched = value === '' || (card.dataset.search || '').includes(value);
-                    card.dataset.hidden = matched ? 'false' : 'true';
-                    card.closest('.analytics-map-card-wrap')?.classList.toggle('d-none', !matched);
-                    visible += matched ? 1 : 0;
+                groups.forEach(group => {
+                    let visibleInGroup = 0;
+
+                    group.querySelectorAll('[data-source-block]').forEach(block => {
+                        const visible = term === '' || (block.dataset.search || '').includes(term);
+                        block.classList.toggle('d-none', !visible);
+                        if (visible) visibleInGroup += 1;
+                    });
+
+                    group.classList.toggle('d-none', visibleInGroup === 0);
+                    visibleBlocks += visibleInGroup;
                 });
 
-                count.textContent = visible.toString();
+                empty.classList.toggle('d-none', visibleBlocks !== 0);
             });
         })();
     </script>
