@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CleanupHistoricalRecalculationQueueController;
 use App\Http\Controllers\Admin\DashboardAnalyticsController;
+use App\Http\Controllers\Admin\DashboardDataImportController;
 use App\Http\Controllers\Admin\DashboardResyncDryRunController;
 use App\Http\Controllers\Admin\DashboardVisibilityController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
@@ -88,6 +89,17 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/admin/dashboard-analytics', [DashboardAnalyticsController::class, 'index'])
         ->middleware('admin')
         ->name('admin.dashboard-analytics.index');
+
+    Route::prefix('admin/dashboard-data-imports')
+        ->name('admin.dashboard-data-imports.')
+        ->middleware('admin')
+        ->group(function (): void {
+            Route::get('/', [DashboardDataImportController::class, 'index'])->name('index');
+            Route::post('/', [DashboardDataImportController::class, 'store'])->name('store');
+            Route::get('/{dashboardDataImport:uuid}', [DashboardDataImportController::class, 'show'])->name('show');
+            Route::post('/{dashboardDataImport:uuid}/confirm', [DashboardDataImportController::class, 'confirm'])->name('confirm');
+            Route::delete('/{dashboardDataImport:uuid}', [DashboardDataImportController::class, 'destroy'])->name('destroy');
+        });
 
     Route::post('/admin/dashboard-resync/dry-run', DashboardResyncDryRunController::class)
         ->middleware('admin')

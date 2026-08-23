@@ -645,6 +645,9 @@
                         <a class="nav-link {{ request()->routeIs('admin.dashboard-analytics.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-analytics.index') }}">
                             <i data-lucide="database"></i><span>Dashboard mənbələri</span>
                         </a>
+                        <a class="nav-link {{ request()->routeIs('admin.dashboard-data-imports.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-data-imports.index') }}">
+                            <i data-lucide="file-up"></i><span>Wialon XLSX yüklə</span>
+                        </a>
                     @endif
                     @can('manage-dashboard-visibility')
                         <a class="nav-link {{ request()->routeIs('admin.dashboard-visibility.*') ? 'active' : '' }}" href="{{ route('admin.dashboard-visibility.index') }}">

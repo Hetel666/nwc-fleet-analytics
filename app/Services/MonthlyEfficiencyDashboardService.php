@@ -881,6 +881,7 @@ class MonthlyEfficiencyDashboardService
     private function dailyFactRowsCacheKey(array $filters): string
     {
         return 'monthly_efficiency:daily_fact_rows:'.sha1(json_encode([
+            'data_version' => (int) Cache::get('monthly_efficiency:data-version', 1),
             'from' => $filters['object_from'],
             'to' => $filters['object_to'],
             'ownership_type' => $filters['ownership_type'],
