@@ -671,8 +671,7 @@ class MonthlyEfficiencyDashboardService
             $vehicleTypes = $allowedVehicleTypes;
         }
 
-        return DB::table('monthly_efficiency_unit_geofence_facts')
-            ->whereBetween('stat_date', [$filters['object_from'], $filters['object_to']])
+        return $this->deduplicatedObjectFactsQuery($filters)
             ->when($filters['project_id'], fn (Builder $query, int $projectId): Builder => $query->where('project_id', $projectId))
             ->when($filters['project_ids'], fn (Builder $query, array $projectIds): Builder => $query->whereIn('project_id', $projectIds))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('ownership_type', $owner))
@@ -686,8 +685,38 @@ class MonthlyEfficiencyDashboardService
                             ->where('projects.active', true)
                             ->whereNotIn('projects.name', Project::dashboardOperationalExcludedNames());
                     });
-            })
-            ->whereIn('source_report_name', $this->objectSourceReportNames());
+            });
+    }
+
+    private function deduplicatedObjectFactsQuery(array $filters): Builder
+    {
+        $unitSource = $this->objectSourceReportName().' (unit)';
+
+        return DB::table('monthly_efficiency_unit_geofence_facts')
+            ->whereBetween('monthly_efficiency_unit_geofence_facts.stat_date', [$filters['object_from'], $filters['object_to']])
+            ->whereIn('monthly_efficiency_unit_geofence_facts.source_report_name', $this->objectSourceReportNames())
+            ->where(function (Builder $query) use ($unitSource): void {
+                $query
+                    ->where('monthly_efficiency_unit_geofence_facts.source_report_name', $unitSource)
+                    ->orWhereNotExists(function (Builder $preferred) use ($unitSource): void {
+                        $preferred
+                            ->selectRaw('1')
+                            ->from('monthly_efficiency_unit_geofence_facts as preferred_object_fact')
+                            ->whereColumn('preferred_object_fact.stat_date', 'monthly_efficiency_unit_geofence_facts.stat_date')
+                            ->whereColumn('preferred_object_fact.wialon_unit_id', 'monthly_efficiency_unit_geofence_facts.wialon_unit_id')
+                            ->whereColumn('preferred_object_fact.segment_type', 'monthly_efficiency_unit_geofence_facts.segment_type')
+                            ->where(function (Builder $geofence): void {
+                                $geofence
+                                    ->whereColumn('preferred_object_fact.geofence_name', 'monthly_efficiency_unit_geofence_facts.geofence_name')
+                                    ->orWhere(function (Builder $emptyGeofence): void {
+                                        $emptyGeofence
+                                            ->whereNull('preferred_object_fact.geofence_name')
+                                            ->whereNull('monthly_efficiency_unit_geofence_facts.geofence_name');
+                                    });
+                            })
+                            ->where('preferred_object_fact.source_report_name', $unitSource);
+                    });
+            });
     }
 
     private function objectFactsReady(): bool

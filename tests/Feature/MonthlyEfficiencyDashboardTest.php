@@ -653,6 +653,92 @@ class MonthlyEfficiencyDashboardTest extends TestCase
         $this->assertSame('7.00', $days[0]['motosaat']);
     }
 
+    public function test_object_dashboard_prefers_unit_facts_without_double_counting_group_fallback(): void
+    {
+        config()->set('fleet.wialon.monthly_efficiency_unit_report_template_name', 'Report for Aylıq effektivlik');
+
+        $user = User::factory()->create(['active' => true]);
+        $project = Project::query()->create(['name' => 'Laçın yol', 'active' => true]);
+        $dumpTruck = EquipmentType::query()->create(['name' => 'Dump Truck']);
+        $equipment = $this->seedEquipment($project, $dumpTruck, '600244707', Equipment::OWNERSHIP_NWC);
+
+        $this->seedObjectFact($equipment, '2026-08-02', 'total', 'Total', 30.0, 300.0);
+        $this->seedObjectFact($equipment, '2026-08-02', 'geofence', 'Laçın yol', 27.0, 270.0, 9);
+        $this->seedObjectFact($equipment, '2026-08-02', 'unknown', 'Naməlum', 3.0, 30.0);
+
+        DB::table('monthly_efficiency_unit_geofence_facts')
+            ->where('wialon_unit_id', '600244707')
+            ->get()
+            ->each(function (object $fallback): void {
+                $row = (array) $fallback;
+                unset($row['id']);
+                $row['source_report_template_id'] = 25;
+                $row['source_report_name'] = 'Report for Aylıq effektivlik (unit)';
+                $row['engine_hours_decimal'] = match ($row['segment_type']) {
+                    'total' => 8.0,
+                    'geofence' => 7.0,
+                    default => 1.0,
+                };
+                $row['engine_seconds'] = (int) round($row['engine_hours_decimal'] * 3600);
+                $row['mileage_km'] = match ($row['segment_type']) {
+                    'total' => 80.0,
+                    'geofence' => 70.0,
+                    default => 10.0,
+                };
+                $row['visits_count'] = $row['segment_type'] === 'geofence' ? 3 : 0;
+                $row['updated_at'] = now()->addMinute();
+
+                DB::table('monthly_efficiency_unit_geofence_facts')->insert($row);
+            });
+
+        $this->seedObjectFact($equipment, '2026-08-03', 'total', 'Total', 5.0, 50.0);
+        $this->seedObjectFact($equipment, '2026-08-03', 'geofence', 'Laçın yol', 4.0, 40.0, 2);
+        $this->seedObjectFact($equipment, '2026-08-03', 'unknown', 'Naməlum', 1.0, 10.0);
+
+        $filters = [
+            'date_from' => '2026-08-02',
+            'date_to' => '2026-08-03',
+            'ownership' => 'nwc',
+        ];
+        $summary = app(MonthlyEfficiencyDashboardService::class)
+            ->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $summary['total']);
+        $this->assertSame(13.0, $summary['total_current_hours']);
+        $this->assertSame(1, $summary[MonthlyEfficiencyStatus::LOW]);
+
+        $objects = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.objects', [
+            ...$filters,
+            'status' => 'low',
+        ]))->assertOk()->json('data');
+        $this->assertCount(1, $objects);
+        $this->assertSame('13.00', $objects[0]['total_hours']);
+        $this->assertSame('11.00', $objects[0]['known_hours']);
+        $this->assertSame('2.00', $objects[0]['unknown_hours']);
+
+        $geofences = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofences', [
+            ...$filters,
+            'wialon_unit_id' => '600244707',
+        ]))->assertOk()->json('data');
+        $geofence = collect($geofences)->firstWhere('geofence_name', 'Laçın yol');
+        $this->assertSame('11.00', $geofence['motosaat']);
+        $this->assertSame('110.00', $geofence['yurush']);
+        $this->assertSame(5, $geofence['visits']);
+
+        $days = $this->actingAs($user)->getJson(route('api.dashboard.monthly-efficiency.object-geofence-days', [
+            ...$filters,
+            'wialon_unit_id' => '600244707',
+            'geofence_name' => 'Laçın yol',
+        ]))->assertOk()->json('data');
+        $this->assertCount(2, $days);
+        $this->assertSame('7.00', $days[0]['motosaat']);
+        $this->assertSame('70.00', $days[0]['yurush']);
+        $this->assertSame(3, $days[0]['visits']);
+        $this->assertSame('4.00', $days[1]['motosaat']);
+        $this->assertSame('40.00', $days[1]['yurush']);
+        $this->assertSame(2, $days[1]['visits']);
+    }
+
     public function test_monthly_efficiency_export_is_queued_with_monthly_block(): void
     {
         Queue::fake();
