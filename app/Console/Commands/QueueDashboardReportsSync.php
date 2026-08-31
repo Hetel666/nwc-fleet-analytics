@@ -31,6 +31,7 @@ class QueueDashboardReportsSync extends Command
         HistoricalRecalculation::SECTION_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+        HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
     ];
 
     private const RANGE_MODULES = [
@@ -49,6 +50,7 @@ class QueueDashboardReportsSync extends Command
         'geofence_violations' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         'geofence_transfers' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
         'geofence_outside' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+        'monthly_efficiency' => HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
     ];
 
     public function handle(HistoricalRecalculationService $service, DashboardReportPipelineService $pipelines): int
@@ -162,7 +164,7 @@ class QueueDashboardReportsSync extends Command
                 return $sections->flatMap(function (string $section) use ($chunk): array {
                     return [$this->plan($section, $chunk['from'], $chunk['to'])];
                 })->all();
-        })->values();
+            })->values();
     }
 
     /** @return Collection<int, string> */

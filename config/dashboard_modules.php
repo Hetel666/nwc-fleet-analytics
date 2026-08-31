@@ -144,7 +144,7 @@ return [
             'source_report' => 'Report for Aylıq effektivlik',
             'collector_command' => 'monthly-efficiency:sync-objects',
             'manual_command' => 'monthly-efficiency:sync-objects --from=YYYY-MM-DD --to=YYYY-MM-DD --force',
-            'auto_schedule' => 'Not part of dashboard-reports:sync-daily yet',
+            'auto_schedule' => '00:00 Asia/Baku dashboard-reports:sync-daily (previous completed day, final pipeline step)',
             'result_tables' => [
                 'equipment_daily_stats',
                 'efficiency_daily_facts',

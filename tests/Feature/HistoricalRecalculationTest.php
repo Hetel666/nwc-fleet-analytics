@@ -1521,7 +1521,7 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
     }
 
-    public function test_sync_daily_command_queues_five_step_master_pipeline_without_cross_midnight_nighttime(): void
+    public function test_sync_daily_command_queues_monthly_efficiency_after_the_existing_daily_modules(): void
     {
         Queue::fake();
         Carbon::setTestNow(Carbon::parse('2026-08-02 00:00:00', 'Asia/Baku'));
@@ -1551,6 +1551,7 @@ class HistoricalRecalculationTest extends TestCase
             HistoricalRecalculation::SECTION_EFFICIENCY,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
         ], collect($pipelines[0]['plans'])->pluck('section')->all());
         $this->assertTrue(collect($pipelines[0]['plans'])->every(fn (array $plan): bool => (bool) $plan['force']));
         $this->assertDatabaseCount('historical_recalculations', 1);
