@@ -807,7 +807,9 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'uid' => 6001001,
             'c' => ['6001001'],
             'r' => [[
-                'c' => ['2026-07-01', '', '', '8:00:00', '', '', '', '10 km', ['v' => $start], ['v' => $end]],
+                't1' => $start,
+                't2' => $end,
+                'c' => ['2026-07-01', '', '', '8:00:00', '', '', '', '10 km', ['v' => $start], 'Rent'],
             ]],
         ]]);
         $wialon->shouldReceive('selectReportResultRows')->once()->withArgs(fn ($table): bool => $table === 1)->andReturn([[
@@ -834,6 +836,8 @@ class MonthlyEfficiencyDashboardTest extends TestCase
             'wialon_unit_id' => '6001001',
             'segment_type' => 'total',
             'engine_hours_decimal' => 8,
+            'started_at' => '2026-07-01 08:00:00',
+            'ended_at' => '2026-07-01 16:00:00',
             'source_report_template_id' => 24,
             'source_report_name' => 'Report for Aylıq effektivlik',
         ]);

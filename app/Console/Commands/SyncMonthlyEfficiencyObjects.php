@@ -549,8 +549,8 @@ class SyncMonthlyEfficiencyObjects extends Command
                     'seconds' => $seconds,
                     'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
                     'visits' => 0,
-                    'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
-                    'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
+                    'started_at' => $this->reportRowDateTime($dayRow, 't1', $cells[$beginIndex] ?? null, $date),
+                    'ended_at' => $this->reportRowDateTime($dayRow, 't2', $cells[$endIndex] ?? null, $date),
                     'raw' => $dayRow,
                 ]);
             }
@@ -602,8 +602,8 @@ class SyncMonthlyEfficiencyObjects extends Command
                         'seconds' => $seconds,
                         'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
                         'visits' => (int) round($this->numberValue($cells[$visitsIndex] ?? 0)),
-                        'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
-                        'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
+                        'started_at' => $this->reportRowDateTime($zoneRow, 't1', $cells[$beginIndex] ?? null, $date),
+                        'ended_at' => $this->reportRowDateTime($zoneRow, 't2', $cells[$endIndex] ?? null, $date),
                         'raw' => $zoneRow,
                     ]);
                 }
@@ -856,8 +856,8 @@ class SyncMonthlyEfficiencyObjects extends Command
                 'seconds' => $seconds,
                 'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
                 'visits' => 0,
-                'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
-                'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
+                'started_at' => $this->reportRowDateTime($row, 't1', $cells[$beginIndex] ?? null, $date),
+                'ended_at' => $this->reportRowDateTime($row, 't2', $cells[$endIndex] ?? null, $date),
                 'raw' => $row,
             ]);
         }
@@ -904,8 +904,8 @@ class SyncMonthlyEfficiencyObjects extends Command
                     'seconds' => $seconds,
                     'mileage' => $this->mileageKm($cells[$mileageIndex] ?? null),
                     'visits' => (int) round($this->numberValue($cells[$visitsIndex] ?? 0)),
-                    'started_at' => $this->dateTimeText($cells[$beginIndex] ?? null, $date),
-                    'ended_at' => $this->dateTimeText($cells[$endIndex] ?? null, $date),
+                    'started_at' => $this->reportRowDateTime($subrow, 't1', $cells[$beginIndex] ?? null, $date),
+                    'ended_at' => $this->reportRowDateTime($subrow, 't2', $cells[$endIndex] ?? null, $date),
                     'raw' => $subrow,
                 ]);
             }
@@ -1127,6 +1127,17 @@ class SyncMonthlyEfficiencyObjects extends Command
         }
     }
 
+    private function reportRowDateTime(array $row, string $timestampKey, mixed $fallbackCell, string $date): ?string
+    {
+        if (is_numeric($row[$timestampKey] ?? null) && (int) $row[$timestampKey] > 0) {
+            return CarbonImmutable::createFromTimestamp((int) $row[$timestampKey], 'UTC')
+                ->timezone(config('app.timezone'))
+                ->toDateTimeString();
+        }
+
+        return $this->dateTimeText($fallbackCell, $date);
+    }
+
     private function dateTimeText(mixed $cell, string $date): ?string
     {
         if (is_array($cell) && is_numeric($cell['v'] ?? null)) {
@@ -1145,7 +1156,11 @@ class SyncMonthlyEfficiencyObjects extends Command
             return $date.' '.$text;
         }
 
-        return $text;
+        try {
+            return CarbonImmutable::parse($text, config('app.timezone'))->toDateTimeString();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function durationSeconds(mixed $cell): int
@@ -1222,6 +1237,4 @@ class SyncMonthlyEfficiencyObjects extends Command
     }
 }
 
-class MissingMonthlyObjectReportTable extends RuntimeException
-{
-}
+class MissingMonthlyObjectReportTable extends RuntimeException {}
