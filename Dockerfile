@@ -28,6 +28,8 @@ RUN rm -f bootstrap/cache/*.php \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/framework/testing storage/logs bootstrap/cache \
     && chmod -R a+rX app bootstrap config database docker lang public resources routes vendor artisan composer.json composer.lock \
     && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R ug+rwX storage bootstrap/cache \
+    && chmod g+s storage/logs \
     && chmod +x /var/www/html/docker-entrypoint.sh
 
 COPY docker/nginx.conf /etc/nginx/sites-available/default

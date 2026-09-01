@@ -3,6 +3,8 @@ set -e
 
 mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/framework/testing storage/logs bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
+chmod -R ug+rwX storage bootstrap/cache
+chmod g+s storage/logs
 rm -f bootstrap/cache/*.php
 
 if [ "${DB_CONNECTION:-}" = "sqlite" ] && [ -n "${DB_DATABASE:-}" ] && [ "${DB_DATABASE}" != ":memory:" ]; then
@@ -28,6 +30,8 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 chown -R www-data:www-data storage bootstrap/cache
+chmod -R ug+rwX storage bootstrap/cache
+chmod g+s storage/logs
 
 if [ "$#" -gt 0 ]; then
     if [ "$(id -u)" = "0" ]; then
