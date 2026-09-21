@@ -163,10 +163,17 @@ class RunHistoricalRecalculationTaskJob implements ShouldBeUnique, ShouldQueue
             || str_contains($message, 'lock')
             || str_contains($message, 'is busy')
             || str_contains($message, 'wialon api error 1004')
+            || $this->isIncompleteAfterHoursReport($message)
             || str_contains($message, 'http 429')
             || str_contains($message, 'http 502')
             || str_contains($message, 'http 503')
             || str_contains($message, 'http 504');
+    }
+
+    private function isIncompleteAfterHoursReport(string $message): bool
+    {
+        return str_contains($message, 'wialon after-hours table')
+            && preg_match('/returned \d+ of \d+ rows\./', $message) === 1;
     }
 
     private function retryDelaySeconds(int $attempts): int

@@ -1192,6 +1192,45 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
     }
 
+    public function test_incomplete_after_hours_report_is_retried_before_task_is_failed(): void
+    {
+        Queue::fake();
+        $admin = User::factory()->create(['role' => User::ROLE_ADMIN, 'active' => true]);
+        $project = Project::query()->create(['name' => 'After-hours retry project', 'active' => true]);
+        $group = ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '502',
+            'name' => 'After-hours retry project - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+        $this->equipment($project, $group, Equipment::OWNERSHIP_NWC, '5020');
+        $service = app(HistoricalRecalculationService::class);
+        $run = $service->createRun([
+            'date_from' => '2026-09-01',
+            'date_to' => '2026-09-01',
+            'timezone' => 'Asia/Baku',
+            'dashboard_section' => HistoricalRecalculation::SECTION_AFTER_HOURS,
+            'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
+            'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
+            'project_ids' => [$project->id],
+            'force' => true,
+        ], $admin);
+        $task = $run->tasks()->where('operation', HistoricalRecalculation::OPERATION_FETCH)->firstOrFail();
+        $registry = \Mockery::mock(HistoricalRecalculationModuleRegistry::class);
+        $registry->shouldReceive('execute')
+            ->once()
+            ->andThrow(new \RuntimeException('Wialon after-hours table 1 returned 1 of 2 rows.'));
+
+        $job = (new RunHistoricalRecalculationTaskJob($task->id))->withFakeQueueInteractions();
+        $job->handle($registry, $service);
+        $job->assertReleased(60);
+
+        $this->assertSame(HistoricalRecalculationTask::STATUS_PENDING, $task->refresh()->status);
+        $this->assertSame(1, (int) $task->attempts);
+        $this->assertStringContainsString('Temporary failure', (string) $task->error_message);
+        Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 1);
+    }
+
     public function test_geofence_violations_history_uses_its_own_fetch_command(): void
     {
         Queue::fake();
