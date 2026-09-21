@@ -48,6 +48,18 @@ class NewEfficiencyModuleTest extends TestCase
         $this->assertSame(1, $parsed['rows_received']);
     }
 
+    public function test_parser_accepts_wialon_adjusted_mileage_metadata(): void
+    {
+        $report = $this->report('6001', '2.50', '18.75 km');
+        $report['tables'][0]['table']['header'][4] = 'Mileage (adjusted)';
+        $report['tables'][0]['table']['header_type'][4] = 'correct_mileage';
+
+        $parsed = app(WialonEfficiencyReportParser::class)->parse($report);
+
+        $this->assertSame(18.75, $parsed['records'][0]['mileage_km']);
+        $this->assertSame('18.75 km', $parsed['records'][0]['mileage_raw']);
+    }
+
     public function test_parser_reads_group_date_engine_hours_children_with_locations(): void
     {
         $parsed = app(WialonEfficiencyReportParser::class)->parse([

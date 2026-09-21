@@ -166,7 +166,12 @@ class WialonEfficiencyReportParser
             'engine_hours' => $this->index($headers, ['engine hours'], $types, ['duration']),
             'begin' => $this->index($headers, ['begin', 'start', 'начало'], $types, ['time_begin']),
             'end' => $this->index($headers, ['end', 'конец'], $types, ['time_end']),
-            'mileage' => $this->index($headers, ['mileage', 'пробег'], $types, ['mileage']),
+            'mileage' => $this->index(
+                $headers,
+                ['mileage', 'mileage (adjusted)', 'пробег'],
+                $types,
+                ['mileage', 'correct_mileage'],
+            ),
             'initial_location' => $this->index($headers, ['initial location', 'нач. положение', 'nach. polozhenie'], $types, []),
             'final_location' => $this->index($headers, ['final location', 'кон. положение', 'kon. polozhenie'], $types, []),
         ];
