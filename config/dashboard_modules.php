@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AfterHoursDashboardController;
 use App\Http\Controllers\EfficiencyDashboardController;
 use App\Http\Controllers\GeofenceViolationsDashboardController;
 use App\Http\Controllers\MonthlyEfficiencyDashboardController;
@@ -12,6 +13,8 @@ use App\Services\GeofenceViolationReportImporter;
 use App\Services\GeofenceViolationsDashboardService;
 use App\Services\GeofenceViolationService;
 use App\Services\MonthlyEfficiencyDashboardService;
+use App\Services\NightDayEfficiencyDashboardService;
+use App\Services\NightDayEfficiencyRecalculationHandler;
 use App\Services\WialonGeozonReportService;
 use App\Services\WialonReportStatsSyncService;
 
@@ -136,6 +139,44 @@ return [
             ],
             'writes_shared_tables' => true,
             'failure_isolation' => 'Medium: module has its own facts, but also refreshes shared daily aggregates.',
+        ],
+        'after_hours' => [
+            'title' => 'Qeyri iş saatlarında işləyən',
+            'tab' => 'efficiency',
+            'dashboard_section' => HistoricalRecalculation::SECTION_AFTER_HOURS,
+            'source_report' => 'Qeyri iş saatlarında işləyən',
+            'collector_command' => 'dashboard-reports:queue-sync --module=after_hours',
+            'manual_command' => 'dashboard-reports:queue-sync --module=after_hours --from=YYYY-MM-DD --to=YYYY-MM-DD --force',
+            'auto_schedule' => '00:00 Asia/Baku dashboard-reports:sync-daily',
+            'result_tables' => [
+                'night_day_efficiency_daily_facts',
+                'night_day_efficiency_sync_runs',
+                'night_day_efficiency_sync_tasks',
+                'night_day_efficiency_unmatched_rows',
+            ],
+            'shared_result_tables' => [],
+            'read_service' => NightDayEfficiencyDashboardService::class,
+            'collector_service' => NightDayEfficiencyRecalculationHandler::class,
+            'controller' => AfterHoursDashboardController::class,
+            'api_endpoints' => [
+                'GET /api/dashboard/after-hours/summary',
+                'GET /api/dashboard/after-hours/projects',
+                'GET /api/dashboard/after-hours/units',
+                'GET /api/dashboard/after-hours/export',
+            ],
+            'frontend_widgets' => ['after-hours-nwc', 'after-hours-icare'],
+            'safe_resync_scope' => [
+                'status' => 'isolated',
+                'keys' => ['business_date', 'project_id', 'wialon_unit_id', 'source_report_name'],
+                'risk' => 'Force rebuild replaces only after-hours facts for the selected project and day.',
+            ],
+            'dry_run_tables' => [
+                ['table' => 'night_day_efficiency_daily_facts', 'date_column' => 'business_date', 'project_column' => 'project_id'],
+                ['table' => 'night_day_efficiency_sync_tasks', 'date_column' => 'business_date', 'project_column' => 'project_id'],
+                ['table' => 'night_day_efficiency_unmatched_rows', 'date_column' => 'business_date', 'project_column' => 'project_id'],
+            ],
+            'writes_shared_tables' => false,
+            'failure_isolation' => 'High: the module writes only its dedicated after-hours tables.',
         ],
         'monthly_efficiency' => [
             'title' => 'Aylıq effektivlik',

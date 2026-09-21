@@ -802,7 +802,7 @@ class HistoricalRecalculationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('mode', HistoricalRecalculation::SECTION_ALL_DASHBOARDS)
             ->assertJsonPath('days', 2)
-            ->assertJsonPath('pipeline_steps', 10);
+            ->assertJsonPath('pipeline_steps', 12);
 
         $modules = collect($response->json('modules'));
 
@@ -810,14 +810,15 @@ class HistoricalRecalculationTest extends TestCase
             [
                 HistoricalRecalculation::SECTION_DAILY_AVERAGES,
                 HistoricalRecalculation::SECTION_EFFICIENCY,
+                HistoricalRecalculation::SECTION_AFTER_HOURS,
                 HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
                 HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
                 HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             ],
-            $modules->take(5)->pluck('section')->all()
+            $modules->take(6)->pluck('section')->all()
         );
-        $this->assertTrue($modules->take(5)->every(fn (array $module): bool => $module['date_from'] === '2026-07-29'));
-        $this->assertTrue($modules->slice(5, 5)->every(fn (array $module): bool => $module['date_from'] === '2026-07-30'));
+        $this->assertTrue($modules->take(6)->every(fn (array $module): bool => $module['date_from'] === '2026-07-29'));
+        $this->assertTrue($modules->slice(6, 6)->every(fn (array $module): bool => $module['date_from'] === '2026-07-30'));
     }
 
     public function test_store_all_dashboards_queues_one_manual_pipeline_with_per_day_module_steps(): void
@@ -852,9 +853,9 @@ class HistoricalRecalculationTest extends TestCase
 
         $this->assertCount(1, $pipelines);
         $this->assertSame('manual', $pipelines[0]['source']);
-        $this->assertCount(5, $pipelines[0]['plans']);
+        $this->assertCount(6, $pipelines[0]['plans']);
         $this->assertSame(HistoricalRecalculation::SECTION_DAILY_AVERAGES, $pipelines[0]['plans'][0]['section']);
-        $this->assertSame(HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE, $pipelines[0]['plans'][4]['section']);
+        $this->assertSame(HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE, $pipelines[0]['plans'][5]['section']);
         $this->assertTrue(collect($pipelines[0]['plans'])->every(
             fn (array $plan): bool => $plan['date_from'] === '2026-07-29'
                 && $plan['date_to'] === '2026-07-29'
@@ -905,7 +906,7 @@ class HistoricalRecalculationTest extends TestCase
             ->value('value'), true);
 
         $this->assertCount(1, $pipelines);
-        $this->assertCount(5, $pipelines[0]['plans']);
+        $this->assertCount(6, $pipelines[0]['plans']);
         $this->assertTrue(collect($pipelines[0]['plans'])->every(
             fn (array $plan): bool => $plan['scope'] === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS
                 && $plan['project_ids'] === [$project->id]
@@ -950,7 +951,7 @@ class HistoricalRecalculationTest extends TestCase
 
         $this->assertGreaterThan(30000, strlen($stored));
         $this->assertCount(1, $pipelines);
-        $this->assertCount(31 * 5, $pipelines[0]['plans']);
+        $this->assertCount(31 * 6, $pipelines[0]['plans']);
         $this->assertTrue(collect($pipelines[0]['plans'])->every(
             fn (array $plan): bool => $plan['scope'] === HistoricalRecalculation::SCOPE_SELECTED_PROJECTS
                 && $plan['project_ids'] === [$project->id]
@@ -1272,6 +1273,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame([
             HistoricalRecalculation::SECTION_DAILY_AVERAGES,
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_AFTER_HOURS,
             HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
@@ -1549,6 +1551,7 @@ class HistoricalRecalculationTest extends TestCase
         $this->assertSame('daily', $pipelines[0]['source']);
         $this->assertSame([
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_AFTER_HOURS,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,

@@ -778,6 +778,10 @@ class DashboardService
             return $this->efficiency->export($filters);
         }
 
+        if (in_array($block, ['after_hours', 'after-hours'], true)) {
+            return app(NightDayEfficiencyDashboardService::class)->export($filters);
+        }
+
         if ($block === 'geofence-violations-report') {
             $normalized = $this->normalizeFilters($filters, 'export');
             $equipmentType = $normalized['equipment_type_id']

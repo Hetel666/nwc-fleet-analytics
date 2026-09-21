@@ -16,6 +16,10 @@
     $drilldownDateFrom = $drilldownDateFrom ?? ($filters['from'] ?? null);
     $drilldownDateTo = $drilldownDateTo ?? ($filters['to'] ?? null);
     $drilldownOwnership = $ownershipCode === 'ICARE' ? 'icare' : 'nwc';
+    $drilldownView = $drilldownView ?? 'projects';
+    $drilldownMode = $drilldownMode ?? 'efficiency_projects';
+    $drilldownEndpointUrl = $drilldownEndpointUrl ?? null;
+    $drilldownExportUrl = $drilldownExportUrl ?? null;
 @endphp
 
 <section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column">
@@ -72,8 +76,10 @@
                                 data-drilldown-title="{{ ($title ?: 'Project üzrə: '.$ownershipLabel).' — '.$categoryLabels[$key] }}"
                                 data-drilldown-ownership="{{ $drilldownOwnership }}"
                                 data-drilldown-project-id="{{ $drilldownProjectId }}"
-                                data-drilldown-view="projects"
-                                data-drilldown-mode="efficiency_projects"
+                                data-drilldown-view="{{ $drilldownView }}"
+                                data-drilldown-mode="{{ $drilldownMode }}"
+                                @if ($drilldownEndpointUrl) data-drilldown-endpoint-url="{{ $drilldownEndpointUrl }}" @endif
+                                @if ($drilldownExportUrl) data-drilldown-export-url="{{ $drilldownExportUrl }}" @endif
                                 data-drilldown-work-category="{{ $key }}"
                                 data-drilldown-status="{{ $key }}"
                                 data-drilldown-date-from="{{ $drilldownDateFrom }}"
@@ -108,8 +114,10 @@
                                 data-drilldown-title="{{ ($title ?: 'Project üzrə: '.$ownershipLabel).' — '.$categoryLabels[$key] }}"
                                 data-drilldown-ownership="{{ $drilldownOwnership }}"
                                 data-drilldown-project-id="{{ $drilldownProjectId }}"
-                                data-drilldown-view="projects"
-                                data-drilldown-mode="efficiency_projects"
+                                data-drilldown-view="{{ $drilldownView }}"
+                                data-drilldown-mode="{{ $drilldownMode }}"
+                                @if ($drilldownEndpointUrl) data-drilldown-endpoint-url="{{ $drilldownEndpointUrl }}" @endif
+                                @if ($drilldownExportUrl) data-drilldown-export-url="{{ $drilldownExportUrl }}" @endif
                                 data-drilldown-work-category="{{ $key }}"
                                 data-drilldown-status="{{ $key }}"
                                 data-drilldown-date-from="{{ $drilldownDateFrom }}"

@@ -27,6 +27,8 @@ class UserDashboardPreference extends Model
         'monthly-efficiency-icare',
         'project-work-categories-nwc',
         'project-work-categories-icare',
+        'after-hours-nwc',
+        'after-hours-icare',
         'average-engine-hours',
         'average-mileage',
         'geofence-analysis',

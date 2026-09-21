@@ -24,7 +24,7 @@ class DashboardAnalyticsPageTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.dashboard-analytics.index'))
             ->assertOk()
-            ->assertSee('13 aktiv blok')
+            ->assertSee('15 aktiv blok')
             ->assertSee('Ümumi baxış')
             ->assertSee('Aylıq effektivlik - NWC üzrə')
             ->assertSee('Report for Aylıq effektivlik')

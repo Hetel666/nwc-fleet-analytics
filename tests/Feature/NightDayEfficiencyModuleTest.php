@@ -13,6 +13,7 @@ use App\Models\NightDayEfficiencySyncTask;
 use App\Models\NighttimeEfficiencyDailyFact;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\HistoricalRecalculationService;
 use App\Services\NightDayEfficiencyDashboardService;
@@ -35,28 +36,21 @@ class NightDayEfficiencyModuleTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->markTestSkipped('Night/day efficiency dashboard was removed from the active module set.');
-    }
-
     public function test_report_service_resolves_only_the_night_day_template_and_converts_baku_windows_for_api(): void
     {
-        config()->set('fleet.wialon.night_day_efficiency_report_resource_id', 601701680);
-        config()->set('fleet.wialon.night_day_efficiency_report_template_id', 22);
-        config()->set('fleet.wialon.night_day_efficiency_report_template_name', 'night day report Engine hours (api)');
+        config()->set('fleet.wialon.after_hours_report_resource_id', 601701680);
+        config()->set('fleet.wialon.after_hours_report_template_id', 22);
+        config()->set('fleet.wialon.after_hours_report_template_name', 'Qeyri iş saatlarında işləyən');
 
         $wialon = Mockery::mock(WialonService::class);
         $wialon->shouldReceive('findReportTemplateByName')
             ->once()
-            ->with(601701680, 'night day report Engine hours (api)')
+            ->with(601701680, 'Qeyri iş saatlarında işləyən')
             ->andReturn(['resource_id' => 601701680, 'id' => 22, 'type' => 'avl_unit_group']);
         $wialon->shouldReceive('getReportTemplateData')->once()->andReturn([
             'tbl' => [[
                 'n' => 'unit_group_engine_hours',
-                'sch' => ['f1' => 0, 't1' => 479, 'f2' => 1080, 't2' => 1439, 'fl' => 1],
+                'sch' => ['f1' => 0, 't1' => 479, 'f2' => 1081, 't2' => 1439, 'fl' => 1],
             ]],
         ]);
         $wialon->shouldReceive('cleanupReportResult')->twice();
@@ -76,10 +70,10 @@ class NightDayEfficiencyModuleTest extends TestCase
             ->execute($group, $date->startOfDay(), $date->endOfDay(), 'test-session');
 
         $this->assertSame(22, $result['template_id']);
-        $this->assertSame('night day report Engine hours (api)', $result['template_name']);
+        $this->assertSame('Qeyri iş saatlarında işləyən', $result['template_name']);
         $this->assertSame(0, $execution[1]['tbl'][0]['sch']['f1']);
         $this->assertSame(239, $execution[1]['tbl'][0]['sch']['t1']);
-        $this->assertSame(840, $execution[1]['tbl'][0]['sch']['f2']);
+        $this->assertSame(841, $execution[1]['tbl'][0]['sch']['f2']);
         $this->assertSame(1439, $execution[1]['tbl'][0]['sch']['t2']);
         $this->assertSame(CarbonImmutable::parse('2026-07-31 00:00:00', 'Asia/Baku')->timestamp, $execution[3]);
         $this->assertSame(CarbonImmutable::parse('2026-07-31 23:59:59', 'Asia/Baku')->timestamp, $execution[4]);
@@ -116,7 +110,7 @@ class NightDayEfficiencyModuleTest extends TestCase
             'efficiency_status' => EfficiencyStatus::OVER_TEN,
             'engine_seconds' => 36036,
             'source_report_template_id' => 22,
-            'source_report_name' => 'night day report Engine hours (api)',
+            'source_report_name' => 'Qeyri iş saatlarında işləyən',
             'started_at' => '2026-07-31 00:10:00',
             'ended_at' => '2026-07-31 23:50:00',
         ]);
@@ -151,15 +145,15 @@ class NightDayEfficiencyModuleTest extends TestCase
         $this->nightDayFact($project, '7001', '2026-07-31', 10.0, EfficiencyStatus::SEVEN_TO_TEN);
 
         $query = ['date_from' => '2026-07-30', 'date_to' => '2026-07-31', 'status' => EfficiencyStatus::SEVEN_TO_TEN];
-        $this->actingAs($user)->getJson(route('api.dashboard.night-day-efficiency.summary', $query))
+        $this->actingAs($user)->getJson(route('api.dashboard.after-hours.summary', $query))
             ->assertOk()
             ->assertJsonPath('data.2.count', 1);
-        $this->actingAs($user)->getJson(route('api.dashboard.night-day-efficiency.projects', $query))
+        $this->actingAs($user)->getJson(route('api.dashboard.after-hours.projects', $query))
             ->assertOk()
             ->assertJsonPath('data.0.project', 'Night day API')
             ->assertJsonPath('data.0.unique_units_count', 1)
             ->assertJsonPath('data.0.average_engine_hours', '7.00');
-        $this->actingAs($user)->getJson(route('api.dashboard.night-day-efficiency.units', $query))
+        $this->actingAs($user)->getJson(route('api.dashboard.after-hours.units', $query))
             ->assertOk()
             ->assertJsonPath('data.0.synced_days_count', 2)
             ->assertJsonPath('data.0.total_engine_hours_decimal', 14)
@@ -167,7 +161,61 @@ class NightDayEfficiencyModuleTest extends TestCase
 
         $export = app(NightDayEfficiencyDashboardService::class)->export($query);
         $this->assertSame(['Xülasə', 'Texnika üzrə', 'Gündəlik detallar'], array_column($export['sheets'], 'name'));
-        $this->assertSame('night day report Engine hours (api)', $export['filters'][4][1]);
+        $this->assertSame('Qeyri iş saatlarında işləyən', $export['filters'][4][1]);
+    }
+
+    public function test_dashboard_excludes_rows_from_the_removed_legacy_report(): void
+    {
+        $project = Project::query()->create(['name' => 'After-hours source filter', 'active' => true]);
+        $this->nightDayFact($project, '7101', '2026-07-31', 2.0, EfficiencyStatus::ONE_TO_SEVEN);
+        $this->nightDayFact(
+            $project,
+            '7102',
+            '2026-07-31',
+            9.0,
+            EfficiencyStatus::SEVEN_TO_TEN,
+            'night day report Engine hours (api)'
+        );
+
+        $summary = app(NightDayEfficiencyDashboardService::class)->summaryForOwnership([
+            'date_from' => '2026-07-31',
+            'date_to' => '2026-07-31',
+        ], Equipment::OWNERSHIP_NWC);
+
+        $this->assertSame(1, $summary['total']);
+        $this->assertSame(1, $summary[EfficiencyStatus::ONE_TO_SEVEN]);
+        $this->assertSame(0, $summary[EfficiencyStatus::SEVEN_TO_TEN]);
+    }
+
+    public function test_export_daily_details_do_not_leak_the_same_unit_from_another_project(): void
+    {
+        $matchingProject = Project::query()->create(['name' => 'Matching project', 'active' => true]);
+        $otherProject = Project::query()->create(['name' => 'Other project', 'active' => true]);
+        $this->nightDayFact($matchingProject, '7201', '2026-07-31', 8.0, EfficiencyStatus::SEVEN_TO_TEN);
+        $this->nightDayFact($otherProject, '7201', '2026-07-31', 2.0, EfficiencyStatus::ONE_TO_SEVEN);
+
+        $export = app(NightDayEfficiencyDashboardService::class)->export([
+            'date_from' => '2026-07-31',
+            'date_to' => '2026-07-31',
+            'status' => EfficiencyStatus::SEVEN_TO_TEN,
+        ]);
+        $details = $export['sheets'][2]['sections'][0]['rows'];
+
+        $this->assertCount(1, $details);
+        $this->assertSame('Matching project', $details[0][2]);
+    }
+
+    public function test_efficiency_page_renders_the_after_hours_cards_and_exact_intervals(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+
+        $this->actingAs($user)
+            ->get(route('dashboard', ['tab' => 'efficiency']))
+            ->assertOk()
+            ->assertSee('id="efficiency-after-hours"', false)
+            ->assertSee('data-widget-key="after-hours-nwc"', false)
+            ->assertSee('data-widget-key="after-hours-icare"', false)
+            ->assertSee('Qeyri iş vaxtı: 00:00-07:59 və 18:01-23:59');
     }
 
     public function test_sync_daily_command_includes_night_day_stage_without_cross_midnight_nighttime(): void
@@ -190,12 +238,12 @@ class NightDayEfficiencyModuleTest extends TestCase
             Carbon::setTestNow();
         }
 
-        $pipelines = json_decode((string) \App\Models\Setting::query()
+        $pipelines = json_decode((string) Setting::query()
             ->where('key', 'dashboard_report_pipelines')
             ->value('value'), true);
 
         $sections = collect($pipelines[0]['plans'])->pluck('section')->all();
-        $this->assertContains(HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY, $sections);
+        $this->assertContains(HistoricalRecalculation::SECTION_AFTER_HOURS, $sections);
         $this->assertNotContains(HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY, $sections);
     }
 
@@ -205,7 +253,7 @@ class NightDayEfficiencyModuleTest extends TestCase
             'uuid' => fake()->uuid(),
             'signature' => sha1(fake()->uuid()),
             'status' => HistoricalRecalculation::STATUS_RUNNING,
-            'dashboard_section' => HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
+            'dashboard_section' => HistoricalRecalculation::SECTION_AFTER_HOURS,
             'operation' => HistoricalRecalculation::OPERATION_FETCH_AND_RECALCULATE,
             'scope' => HistoricalRecalculation::SCOPE_ALL_PROJECTS,
             'date_from' => '2026-07-31',
@@ -258,7 +306,7 @@ class NightDayEfficiencyModuleTest extends TestCase
             'uuid' => fake()->uuid(),
             'signature' => sha1(fake()->uuid()),
             'status' => 'running',
-            'dashboard_section' => HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
+            'dashboard_section' => HistoricalRecalculation::SECTION_AFTER_HOURS,
             'operation' => HistoricalRecalculation::OPERATION_RECALCULATE,
             'scope' => HistoricalRecalculation::SCOPE_SELECTED_PROJECTS,
             'date_from' => '2026-07-31',
@@ -281,7 +329,7 @@ class NightDayEfficiencyModuleTest extends TestCase
         $reports->shouldReceive('settings')->andReturn([
             'resource_id' => 601701680,
             'template_id' => 22,
-            'template_name' => 'night day report Engine hours (api)',
+            'template_name' => 'Qeyri iş saatlarında işləyən',
         ]);
         $report instanceof RuntimeException
             ? $reports->shouldReceive('execute')->andThrow($report)
@@ -320,8 +368,14 @@ class NightDayEfficiencyModuleTest extends TestCase
         ]]];
     }
 
-    private function nightDayFact(Project $project, string $unitId, string $date, float $hours, string $status): void
-    {
+    private function nightDayFact(
+        Project $project,
+        string $unitId,
+        string $date,
+        float $hours,
+        string $status,
+        string $sourceReportName = 'Qeyri iş saatlarında işləyən'
+    ): void {
         NightDayEfficiencyDailyFact::query()->create([
             'business_date' => $date,
             'project_id' => $project->id,
@@ -339,7 +393,7 @@ class NightDayEfficiencyModuleTest extends TestCase
             'mileage_raw' => '12,75 km',
             'efficiency_status' => $status,
             'source_report_template_id' => 22,
-            'source_report_name' => 'night day report Engine hours (api)',
+            'source_report_name' => $sourceReportName,
             'source_table_index' => 0,
         ]);
     }

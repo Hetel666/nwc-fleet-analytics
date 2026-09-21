@@ -67,6 +67,20 @@ return [
             'layout_widget' => 'project-work-categories-icare',
             'export_blocks' => ['actual-work-hours-icare'],
         ],
+        'after_hours_nwc' => [
+            'title_az' => 'Qeyri iş saatlarında işləyən: NWC',
+            'section' => 'efficiency',
+            'default_order' => 120,
+            'layout_widget' => 'after-hours-nwc',
+            'export_blocks' => ['after_hours'],
+        ],
+        'after_hours_rental' => [
+            'title_az' => 'Qeyri iş saatlarında işləyən: Icare',
+            'section' => 'efficiency',
+            'default_order' => 121,
+            'layout_widget' => 'after-hours-icare',
+            'export_blocks' => ['after_hours'],
+        ],
         'average_engine_hours' => [
             'title_az' => 'Orta Engine hours',
             'section' => 'efficiency',

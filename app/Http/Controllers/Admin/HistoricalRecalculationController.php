@@ -25,6 +25,7 @@ class HistoricalRecalculationController extends Controller
     private const ALL_DASHBOARD_SECTIONS = [
         HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         HistoricalRecalculation::SECTION_EFFICIENCY,
+        HistoricalRecalculation::SECTION_AFTER_HOURS,
         HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,

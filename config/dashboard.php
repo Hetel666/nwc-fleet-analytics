@@ -70,6 +70,20 @@ return [
             'column_class' => 'col-12 col-xl-6',
             'active' => true,
         ],
+        'after-hours-nwc' => [
+            'label_key' => 'app.work_hours_by_ownership',
+            'default_order' => 65,
+            'default_width' => 6,
+            'column_class' => 'col-12 col-xl-6',
+            'active' => true,
+        ],
+        'after-hours-icare' => [
+            'label_key' => 'app.work_hours_by_ownership',
+            'default_order' => 66,
+            'default_width' => 6,
+            'column_class' => 'col-12 col-xl-6',
+            'active' => true,
+        ],
         'average-engine-hours' => [
             'label_key' => 'app.avg_engine_hours',
             'default_order' => 70,

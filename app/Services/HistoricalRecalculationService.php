@@ -402,7 +402,10 @@ class HistoricalRecalculationService
                 ]);
         }
 
-        if ($run->dashboard_section === HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY
+        if (in_array($run->dashboard_section, [
+            HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY,
+            HistoricalRecalculation::SECTION_AFTER_HOURS,
+        ], true)
             && Schema::hasTable('night_day_efficiency_sync_runs')) {
             NightDayEfficiencySyncRun::query()
                 ->where('historical_recalculation_id', $run->id)
@@ -724,6 +727,7 @@ class HistoricalRecalculationService
 
         if (in_array(($payload['dashboard_section'] ?? null), [
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_AFTER_HOURS,
         ], true)) {
             return Project::query()
                 ->where('active', true)
@@ -795,6 +799,7 @@ class HistoricalRecalculationService
 
         if (in_array($dashboardSection, [
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_AFTER_HOURS,
         ], true)
             && $operation === HistoricalRecalculation::OPERATION_RECALCULATE) {
             return true;
@@ -819,6 +824,7 @@ class HistoricalRecalculationService
     {
         if (in_array(($payload['dashboard_section'] ?? HistoricalRecalculation::SECTION_DAILY_AVERAGES), [
             HistoricalRecalculation::SECTION_EFFICIENCY,
+            HistoricalRecalculation::SECTION_AFTER_HOURS,
             HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
             HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
             HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,

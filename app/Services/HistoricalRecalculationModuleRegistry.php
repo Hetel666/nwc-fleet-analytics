@@ -17,6 +17,7 @@ class HistoricalRecalculationModuleRegistry
     public function __construct(
         private WialonReportStatsSyncService $dailyStats,
         private EfficiencyRecalculationHandler $efficiency,
+        private NightDayEfficiencyRecalculationHandler $afterHours,
     ) {}
 
     /** @return array<string, array<string, mixed>> */
@@ -50,6 +51,20 @@ class HistoricalRecalculationModuleRegistry
                     'daily_unit_aggregates',
                     'engine_hours_report_unit_days',
                     'wialon_report_sync_items',
+                ],
+                'aliases' => [],
+            ],
+            HistoricalRecalculation::SECTION_AFTER_HOURS => [
+                'label' => 'Qeyri iş saatlarında işləyən',
+                'handler' => 'executeAfterHours',
+                'service' => NightDayEfficiencyRecalculationHandler::class,
+                'job' => RunHistoricalRecalculationTaskJob::class,
+                'queue' => $queue,
+                'result_tables' => [
+                    'night_day_efficiency_daily_facts',
+                    'night_day_efficiency_sync_runs',
+                    'night_day_efficiency_sync_tasks',
+                    'night_day_efficiency_unmatched_rows',
                 ],
                 'aliases' => [],
             ],
@@ -153,6 +168,11 @@ class HistoricalRecalculationModuleRegistry
     private function executeEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
     {
         return $this->efficiency->execute($run, $task);
+    }
+
+    private function executeAfterHours(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int
+    {
+        return $this->afterHours->execute($run, $task);
     }
 
     private function executeMonthlyEfficiency(HistoricalRecalculation $run, HistoricalRecalculationTask $task): int

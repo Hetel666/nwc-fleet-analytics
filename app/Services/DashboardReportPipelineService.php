@@ -399,6 +399,7 @@ class DashboardReportPipelineService
         return match ($section) {
             HistoricalRecalculation::SECTION_DAILY_AVERAGES => 'Orta göstəricilər',
             HistoricalRecalculation::SECTION_EFFICIENCY => 'Effektivlik',
+            HistoricalRecalculation::SECTION_AFTER_HOURS => 'Qeyri iş saatlarında işləyən',
             HistoricalRecalculation::SECTION_DAYTIME_EFFICIENCY => 'Effektivlik gündüz',
             HistoricalRecalculation::SECTION_NIGHTTIME_EFFICIENCY => 'Effektivlik gecə',
             HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY => 'Gün daxilində gecə effektivliyi',
@@ -1016,6 +1017,9 @@ class DashboardReportPipelineService
             ],
             HistoricalRecalculation::SECTION_NIGHT_DAY_EFFICIENCY => [
                 'night_day_efficiency_daily_facts' => ['night_day_efficiency_daily_facts', 'business_date', ['business_date', 'project_id', 'wialon_unit_id']],
+            ],
+            HistoricalRecalculation::SECTION_AFTER_HOURS => [
+                'night_day_efficiency_daily_facts' => ['night_day_efficiency_daily_facts', 'business_date', ['business_date', 'project_id', 'wialon_unit_id', 'source_report_name']],
             ],
         ];
         $results = [];

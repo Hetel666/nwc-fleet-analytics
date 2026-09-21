@@ -29,6 +29,7 @@ class QueueDashboardReportsSync extends Command
     /** @var array<int, string> */
     private const DAILY_MODULES = [
         HistoricalRecalculation::SECTION_EFFICIENCY,
+        HistoricalRecalculation::SECTION_AFTER_HOURS,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
         HistoricalRecalculation::SECTION_MONTHLY_EFFICIENCY,
@@ -37,6 +38,7 @@ class QueueDashboardReportsSync extends Command
     private const RANGE_MODULES = [
         HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         HistoricalRecalculation::SECTION_EFFICIENCY,
+        HistoricalRecalculation::SECTION_AFTER_HOURS,
         HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
     ];
@@ -47,6 +49,7 @@ class QueueDashboardReportsSync extends Command
         'average_mileage' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         'daily_averages' => HistoricalRecalculation::SECTION_DAILY_AVERAGES,
         'efficiency' => HistoricalRecalculation::SECTION_EFFICIENCY,
+        'after_hours' => HistoricalRecalculation::SECTION_AFTER_HOURS,
         'geofence_violations' => HistoricalRecalculation::SECTION_GEOFENCE_VIOLATIONS,
         'geofence_transfers' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
         'geofence_outside' => HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,

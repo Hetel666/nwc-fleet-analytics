@@ -32,12 +32,12 @@ class NightDayEfficiencyRecalculationHandler
     {
         $date = CarbonImmutable::parse($historicalTask->stat_date, $historicalRun->timezone);
         $lock = Cache::lock(
-            'night-day-efficiency:'.$historicalTask->project_id.':'.$date->toDateString(),
-            (int) config('fleet.wialon.night_day_efficiency_sync_lock_seconds', 1800),
+            'after-hours-efficiency:'.$historicalTask->project_id.':'.$date->toDateString(),
+            (int) config('fleet.wialon.after_hours_sync_lock_seconds', 1800),
         );
 
         if (! $lock->get()) {
-            throw new RuntimeException('Night day efficiency synchronization is already running for this project and date.');
+            throw new RuntimeException('After-hours efficiency synchronization is already running for this project and date.');
         }
 
         $run = $this->syncRun($historicalRun);
@@ -174,7 +174,7 @@ class NightDayEfficiencyRecalculationHandler
                 }
 
                 if (isset($facts[(string) $unitId])) {
-                    throw new RuntimeException("Wialon unit {$unitId} returned more than one night day efficiency row.");
+                    throw new RuntimeException("Wialon unit {$unitId} returned more than one after-hours efficiency row.");
                 }
 
                 $matchedIds[(string) $unitId] = true;

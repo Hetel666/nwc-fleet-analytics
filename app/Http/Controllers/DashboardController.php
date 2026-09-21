@@ -9,6 +9,7 @@ use App\Services\DashboardLayoutService;
 use App\Services\DashboardService;
 use App\Services\GeofenceViolationsDashboardService;
 use App\Services\MonthlyEfficiencyDashboardService;
+use App\Services\NightDayEfficiencyDashboardService;
 use App\Support\DashboardFilterState;
 use App\Support\DashboardSectionAccess;
 use Illuminate\Http\Request;
@@ -22,12 +23,13 @@ class DashboardController extends Controller
         Request $request,
         DashboardService $dashboard,
         MonthlyEfficiencyDashboardService $monthlyEfficiency,
+        NightDayEfficiencyDashboardService $afterHours,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
         DashboardFilterState $filterState
     ): View {
-        return $this->renderDashboard($request, $dashboard, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState);
+        return $this->renderDashboard($request, $dashboard, $monthlyEfficiency, $afterHours, $layout, $displayConfiguration, $geofenceViolations, $filterState);
     }
 
     public function tab(
@@ -35,6 +37,7 @@ class DashboardController extends Controller
         string $tab,
         DashboardService $dashboard,
         MonthlyEfficiencyDashboardService $monthlyEfficiency,
+        NightDayEfficiencyDashboardService $afterHours,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
@@ -43,13 +46,14 @@ class DashboardController extends Controller
         $tabs = config('dashboard.tabs', []);
         $selectedTab = array_key_exists($tab, $tabs) ? $tab : (string) config('dashboard.default_tab', 'overview');
 
-        return $this->renderDashboard($request, $dashboard, $monthlyEfficiency, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
+        return $this->renderDashboard($request, $dashboard, $monthlyEfficiency, $afterHours, $layout, $displayConfiguration, $geofenceViolations, $filterState, $selectedTab, true);
     }
 
     private function renderDashboard(
         Request $request,
         DashboardService $dashboard,
         MonthlyEfficiencyDashboardService $monthlyEfficiency,
+        NightDayEfficiencyDashboardService $afterHours,
         DashboardLayoutService $layout,
         DashboardDisplayConfigurationService $displayConfiguration,
         GeofenceViolationsDashboardService $geofenceViolations,
@@ -90,6 +94,11 @@ class DashboardController extends Controller
                     'ICARE' => $this->emptyMonthlyEfficiencySummary($exception->getMessage()),
                 ];
             }
+
+            $data['afterHoursByOwnership'] = [
+                'NWC' => $afterHours->summaryForOwnership($filters, 'NWC'),
+                'ICARE' => $afterHours->summaryForOwnership($filters, 'ICARE'),
+            ];
         }
         $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
         $dashboardPreferences = $request->user()->resolvedDashboardPreferences();

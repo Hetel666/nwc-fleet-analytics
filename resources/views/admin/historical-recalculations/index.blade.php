@@ -145,6 +145,9 @@
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-efficiency" value="efficiency" autocomplete="off" @checked(old('dashboard_section') === 'efficiency')>
                                 <label class="btn btn-outline-primary text-start" for="section-efficiency">Effektivlik</label>
 
+                                <input type="radio" class="btn-check" name="dashboard_section" id="section-after-hours" value="after_hours" autocomplete="off" @checked(old('dashboard_section') === 'after_hours')>
+                                <label class="btn btn-outline-primary text-start" for="section-after-hours">Qeyri iş saatlarında işləyən</label>
+
                                 <input type="radio" class="btn-check" name="dashboard_section" id="section-geofence-outside" value="geofence_outside" autocomplete="off" @checked(old('dashboard_section') === 'geofence_outside')>
                                 <label class="btn btn-outline-primary text-start" for="section-geofence-outside">Geofence Transferləri</label>
 
@@ -239,6 +242,7 @@
                                 <td>{{ [
                                     'daily_averages' => 'Orta göstəricilər',
                                     'efficiency' => 'Effektivlik',
+                                    'after_hours' => 'Qeyri iş saatlarında işləyən',
                                     'monthly_efficiency' => 'Aylıq effektivlik',
                                     'geofence_outside' => 'Geofence Transferləri',
                                     'geofence_violations' => 'Geofence Pozuntuları',

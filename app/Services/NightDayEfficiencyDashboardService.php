@@ -180,8 +180,8 @@ class NightDayEfficiencyDashboardService
             ['Dövr', $filters['from'].' - '.$filters['to']],
             ['Ownership', $filters['ownership_type'] ? $this->ownershipLabel($filters['ownership_type']) : 'Hamısı'],
             ['Hesablama vahidi', 'Unikal texnika'],
-            ['İş vaxtı', '00:00-07:59 və 18:00-23:59'],
-            ['Mənbə', 'night day report Engine hours (api)'],
+            ['Qeyri iş vaxtı', '00:00-07:59 və 18:01-23:59'],
+            ['Mənbə', $this->sourceReportName()],
         ];
         $sections = [
             ['title' => 'Xülasə', 'columns' => ['Status', 'Unikal texnika sayı', 'Orta Engine hours'], 'rows' => $summaryRows],
@@ -190,14 +190,14 @@ class NightDayEfficiencyDashboardService
         ];
 
         return [
-            'filename' => 'effektivlik-gece-gun-daxilinde-'.$filters['from'].'-'.$filters['to'].'.xlsx',
-            'title' => 'Gün daxilində gecə effektivliyi',
+            'filename' => 'qeyri-is-saatlarinda-isleyen-'.$filters['from'].'-'.$filters['to'].'.xlsx',
+            'title' => 'Qeyri iş saatlarında işləyən',
             'filters' => $filterRows,
             'sections' => $sections,
             'sheets' => [
-                ['name' => 'Xülasə', 'title' => 'Gün daxilində gecə effektivliyi', 'filters' => $filterRows, 'sections' => [$sections[0]]],
-                ['name' => 'Texnika üzrə', 'title' => 'Gün daxilində gecə effektivliyi', 'filters' => $filterRows, 'sections' => [$sections[1]]],
-                ['name' => 'Gündəlik detallar', 'title' => 'Gün daxilində gecə effektivliyi', 'filters' => $filterRows, 'sections' => [$sections[2]]],
+                ['name' => 'Xülasə', 'title' => 'Qeyri iş saatlarında işləyən', 'filters' => $filterRows, 'sections' => [$sections[0]]],
+                ['name' => 'Texnika üzrə', 'title' => 'Qeyri iş saatlarında işləyən', 'filters' => $filterRows, 'sections' => [$sections[1]]],
+                ['name' => 'Gündəlik detallar', 'title' => 'Qeyri iş saatlarında işləyən', 'filters' => $filterRows, 'sections' => [$sections[2]]],
             ],
         ];
     }
@@ -257,6 +257,7 @@ class NightDayEfficiencyDashboardService
         $filters = $this->normalizeFilters($filters);
         $sub = DB::table('night_day_efficiency_daily_facts')
             ->join('projects', 'projects.id', '=', 'night_day_efficiency_daily_facts.project_id')
+            ->where('night_day_efficiency_daily_facts.source_report_name', $this->sourceReportName())
             ->whereDate('night_day_efficiency_daily_facts.business_date', '>=', $filters['from'])
             ->whereDate('night_day_efficiency_daily_facts.business_date', '<=', $filters['to'])
             ->when($filters['project_id'], fn (Builder $query, int $id): Builder => $query->where('night_day_efficiency_daily_facts.project_id', $id))
@@ -296,14 +297,20 @@ class NightDayEfficiencyDashboardService
     private function dailyDetailQuery(array $filters): Builder
     {
         $filters = $this->normalizeFilters($filters, 'export');
-        $finalUnits = $this->unitRowsQuery($filters)->select('wialon_unit_id');
+        $finalUnits = $this->unitRowsQuery($filters)
+            ->select('project_id', 'ownership', 'wialon_unit_id');
 
         return DB::table('night_day_efficiency_daily_facts')
             ->join('projects', 'projects.id', '=', 'night_day_efficiency_daily_facts.project_id')
+            ->joinSub($finalUnits, 'final_units', function ($join): void {
+                $join->on('final_units.project_id', '=', 'night_day_efficiency_daily_facts.project_id')
+                    ->on('final_units.ownership', '=', 'night_day_efficiency_daily_facts.ownership')
+                    ->on('final_units.wialon_unit_id', '=', 'night_day_efficiency_daily_facts.wialon_unit_id');
+            })
             ->select('night_day_efficiency_daily_facts.*', 'projects.name as project')
+            ->where('night_day_efficiency_daily_facts.source_report_name', $this->sourceReportName())
             ->whereDate('night_day_efficiency_daily_facts.business_date', '>=', $filters['from'])
             ->whereDate('night_day_efficiency_daily_facts.business_date', '<=', $filters['to'])
-            ->whereIn('night_day_efficiency_daily_facts.wialon_unit_id', $finalUnits)
             ->when($filters['project_id'], fn (Builder $query, int $id): Builder => $query->where('night_day_efficiency_daily_facts.project_id', $id))
             ->when($filters['project_ids'], fn (Builder $query, array $ids): Builder => $query->whereIn('night_day_efficiency_daily_facts.project_id', $ids))
             ->when($filters['ownership_type'], fn (Builder $query, string $owner): Builder => $query->where('night_day_efficiency_daily_facts.ownership', $owner))
@@ -365,6 +372,11 @@ class NightDayEfficiencyDashboardService
     private function ownershipLabel(string $ownership): string
     {
         return $ownership === Equipment::OWNERSHIP_ICARE ? 'İcarə' : 'NWC';
+    }
+
+    private function sourceReportName(): string
+    {
+        return (string) config('fleet.wialon.after_hours_report_template_name', 'Qeyri iş saatlarında işləyən');
     }
 
     /** @return array<string, int> */

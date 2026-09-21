@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\DashboardResyncDryRunController;
 use App\Http\Controllers\Admin\DashboardVisibilityController;
 use App\Http\Controllers\Admin\HistoricalRecalculationController;
 use App\Http\Controllers\Admin\WialonCatalogController;
+use App\Http\Controllers\AfterHoursDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardDisplayConfigurationController;
@@ -70,6 +71,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/api/dashboard/efficiency/projects', [EfficiencyDashboardController::class, 'projects'])->name('api.dashboard.efficiency.projects');
         Route::get('/api/dashboard/efficiency/units', [EfficiencyDashboardController::class, 'units'])->name('api.dashboard.efficiency.units');
         Route::get('/api/dashboard/efficiency/export', [EfficiencyDashboardController::class, 'export'])->name('api.dashboard.efficiency.export');
+        Route::get('/api/dashboard/after-hours/summary', [AfterHoursDashboardController::class, 'summary'])->name('api.dashboard.after-hours.summary');
+        Route::get('/api/dashboard/after-hours/projects', [AfterHoursDashboardController::class, 'projects'])->name('api.dashboard.after-hours.projects');
+        Route::get('/api/dashboard/after-hours/units', [AfterHoursDashboardController::class, 'units'])->name('api.dashboard.after-hours.units');
+        Route::get('/api/dashboard/after-hours/export', [AfterHoursDashboardController::class, 'export'])->name('api.dashboard.after-hours.export');
         Route::get('/api/dashboard/monthly-efficiency/summary', [MonthlyEfficiencyDashboardController::class, 'summary'])->name('api.dashboard.monthly-efficiency.summary');
         Route::get('/api/dashboard/monthly-efficiency/projects', [MonthlyEfficiencyDashboardController::class, 'projects'])->name('api.dashboard.monthly-efficiency.projects');
         Route::get('/api/dashboard/monthly-efficiency/units', [MonthlyEfficiencyDashboardController::class, 'units'])->name('api.dashboard.monthly-efficiency.units');

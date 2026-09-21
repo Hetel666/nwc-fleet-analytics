@@ -2,6 +2,7 @@
 
 $catalogReport = 'Wialon hesabatı istifadə edilmir. Mənbə sinxronlaşdırılmış texnika kataloqudur.';
 $dailyReport = 'Qrup date report Engine hours (api)';
+$afterHoursReport = 'Qeyri iş saatlarında işləyən';
 $monthlyReport = 'Report for Aylıq effektivlik; cədvəllər: Engine hours və Geofence. Obyekt qrupu: Bulldozer, Excavator, Loader, Backhoe Loader, Road Grader, Road Roller, Dump Truck.';
 $monthlyCalculation = [
     'D = seçilmiş gün sayı; MS = obyektin seçilmiş günlər üzrə Total Engine hours cəmi.',
@@ -135,6 +136,26 @@ return [
                     'period_rule' => 'Hesablama vahidi texnika-gündür. Dublikat olduqda business_date + project_id + wialon_unit_id üzrə ən son fakt götürülür.',
                     'calculation' => $dailyEfficiencyCalculation,
                     'result' => 'Hər status üzrə İCARƏ texnika-gün sayı və payı.',
+                ],
+                [
+                    'key' => 'after-hours-nwc',
+                    'title' => 'Qeyri iş saatlarında işləyən: NWC',
+                    'report' => $afterHoursReport,
+                    'local_source' => 'night_day_efficiency_daily_facts',
+                    'project_rule' => 'Ümumi effektivlik ilə eyni qayda: aktiv, Dashboard-da görünən, uyğun project_wialon_groups NWC qrupuna bağlı və icazəli texnika növləri. Layihəsiz və Təmir xaric edilir.',
+                    'period_rule' => 'Yalnız seçilmiş günlər və 00:00-07:59, 18:01-23:59 intervalları. Yalnız bu modulun dəqiq mənbə hesabatına uyğun sətirlər istifadə edilir.',
+                    'calculation' => $dailyEfficiencyCalculation,
+                    'result' => 'Seçilmiş dövrdə qeyri iş saatlarında işləyən NWC texnikaları motosaat intervalına görə qruplaşdırılır.',
+                ],
+                [
+                    'key' => 'after-hours-icare',
+                    'title' => 'Qeyri iş saatlarında işləyən: İCARƏ',
+                    'report' => $afterHoursReport,
+                    'local_source' => 'night_day_efficiency_daily_facts',
+                    'project_rule' => 'Ümumi effektivlik ilə eyni qayda: aktiv, Dashboard-da görünən, uyğun project_wialon_groups İCARƏ qrupuna bağlı və icazəli texnika növləri. Layihəsiz və Təmir xaric edilir.',
+                    'period_rule' => 'Yalnız seçilmiş günlər və 00:00-07:59, 18:01-23:59 intervalları. Yalnız bu modulun dəqiq mənbə hesabatına uyğun sətirlər istifadə edilir.',
+                    'calculation' => $dailyEfficiencyCalculation,
+                    'result' => 'Seçilmiş dövrdə qeyri iş saatlarında işləyən İCARƏ texnikaları motosaat intervalına görə qruplaşdırılır.',
                 ],
                 [
                     'key' => 'average-engine-hours',

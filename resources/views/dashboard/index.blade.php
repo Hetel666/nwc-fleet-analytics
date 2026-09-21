@@ -90,6 +90,9 @@
     };
     $projectWorkCategorySummaryNwc = $projectWorkCategorySummaryFor($projectWorkCategoryRowsNwc);
     $projectWorkCategorySummaryIcare = $projectWorkCategorySummaryFor($projectWorkCategoryRowsIcare);
+    $afterHoursGroups = $data['afterHoursByOwnership'] ?? [$nwc => [], $icare => []];
+    $afterHoursSummaryNwc = collect($afterHoursGroups[$nwc] ?? [])->merge(['total' => (int) ($afterHoursGroups[$nwc]['total'] ?? 0)]);
+    $afterHoursSummaryIcare = collect($afterHoursGroups[$icare] ?? [])->merge(['total' => (int) ($afterHoursGroups[$icare]['total'] ?? 0)]);
     $monthlyEfficiencyLabels = collect(\App\Support\MonthlyEfficiencyStatus::labels());
     $monthlyEfficiencyColors = collect(\App\Support\MonthlyEfficiencyStatus::colors());
     $monthlyEfficiencyGroups = $data['monthlyEfficiencyByOwnership'] ?? [$nwc => [], $icare => []];
@@ -227,6 +230,7 @@
     $visibleMonthlyStatusKeys = $dashboardStatusKeysFor('monthly_efficiency');
     $showMonthlyEfficiencySection = $dashboardDisplayVisibleFor('monthly_efficiency_nwc') || $dashboardDisplayVisibleFor('monthly_efficiency_rental');
     $showGeneralEfficiencySection = $dashboardDisplayVisibleFor('efficiency_general_nwc') || $dashboardDisplayVisibleFor('efficiency_general_rental');
+    $showAfterHoursSection = $dashboardDisplayVisibleFor('after_hours_nwc') || $dashboardDisplayVisibleFor('after_hours_rental');
     $showAveragesSection = $dashboardDisplayVisibleFor('average_engine_hours') || $dashboardDisplayVisibleFor('average_mileage');
     $dashboardLayoutItems = collect($dashboardLayout ?? [])->keyBy('key');
     $dashboardWidgetLayoutFor = function (string $key, string $defaultClass, int $defaultWidth) use ($dashboardLayoutItems): array {
@@ -260,6 +264,8 @@
         'monthly-efficiency-icare' => 'Aylıq effektivlik - İcarə üzrə',
         'project-work-categories-nwc' => 'Project üzrə: '.__('app.ownership_nwc'),
         'project-work-categories-icare' => 'Project üzrə: '.__('app.ownership_icare'),
+        'after-hours-nwc' => 'Qeyri iş saatlarında işləyən: NWC',
+        'after-hours-icare' => 'Qeyri iş saatlarında işləyən: İcarə',
         'average-engine-hours' => 'Orta motosaat göstəricisi',
         'average-mileage' => 'Orta yürüş göstəricisi',
         'geofence-analysis' => __('app.geofence_analysis'),
@@ -283,6 +289,8 @@
         'typeIcareTotal' => (int) $typeIcare->sum('total'),
         'projectWorkCategoryNwcCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values()->all(),
         'projectWorkCategoryIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
+        'afterHoursNwcCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($afterHoursSummaryNwc[$key] ?? 0))->values()->all(),
+        'afterHoursIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($afterHoursSummaryIcare[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyNwcCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyIcareCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
         'utilizationTrend' => $utilizationTrendByOwnership,
@@ -2853,6 +2861,76 @@
             @endif
 
 
+            @if ($showAfterHoursSection)
+            <section
+                id="efficiency-after-hours"
+                class="col-12 mt-4 dashboard-efficiency-section-heading"
+                data-efficiency-group="after-hours"
+                aria-labelledby="efficiency-after-hours-title"
+                style="order: 300"
+            >
+                <h2 class="h4 fw-bold mb-1" id="efficiency-after-hours-title">Qeyri iş saatlarında işləyən</h2>
+                <div class="dashboard-efficiency-section-meta">
+                    <span><i class="bi bi-database"></i>Mənbə: Qeyri iş saatlarında işləyən</span>
+                    <span><i class="bi bi-clock-history"></i>Qeyri iş vaxtı: 00:00-07:59 və 18:01-23:59</span>
+                    <span><i class="bi bi-calculator"></i>Hesablama vahidi: Unikal texnika</span>
+                </div>
+            </section>
+            @endif
+
+            @if ($dashboardDisplayVisibleFor('after_hours_nwc'))
+            @php
+                $afterHoursUnitsUrl = route('api.dashboard.after-hours.units');
+                $afterHoursExportUrl = route('api.dashboard.after-hours.export');
+                $widgetLayout = $dashboardWidgetLayoutFor('after-hours-nwc', 'col-12 col-md-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('after-hours-nwc') }}{{ $dashboardUserHiddenClassFor('after-hours-nwc') }}" data-dashboard-widget="after-hours-nwc" data-widget-key="after-hours-nwc" data-efficiency-group="after-hours" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="310" data-widget-visible="{{ $dashboardWidgetVisibleFor('after-hours-nwc') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('after-hours-nwc') }}" style="order: 310" draggable="false">
+                @include('dashboard.partials.project-engine-hours-status-card', [
+                    'chartId' => 'afterHoursNwc',
+                    'ownershipCode' => $nwc,
+                    'ownershipLabel' => __('app.ownership_nwc'),
+                    'summary' => $afterHoursSummaryNwc,
+                    'categoryLabels' => $actualWorkCategoryLabels,
+                    'categoryRanges' => $actualWorkCategoryRanges,
+                    'categoryColors' => $actualWorkCategoryColors,
+                    'exportUrl' => $afterHoursExportUrl.'?'.http_build_query(array_filter(['date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc', 'project_id' => $filters['project_id']], fn ($value) => $value !== null && $value !== '')),
+                    'filters' => $filters,
+                    'visibleStatuses' => $visibleGeneralStatusKeys,
+                    'title' => $dashboardWidgetTitleFor('after-hours-nwc', 'Qeyri iş saatlarında işləyən: NWC'),
+                    'drilldownView' => 'units',
+                    'drilldownMode' => 'fleet',
+                    'drilldownEndpointUrl' => $afterHoursUnitsUrl,
+                    'drilldownExportUrl' => $afterHoursExportUrl,
+                ])
+            </div>
+            @endif
+
+            @if ($dashboardDisplayVisibleFor('after_hours_rental'))
+            @php
+                $widgetLayout = $dashboardWidgetLayoutFor('after-hours-icare', 'col-12 col-md-6', 6);
+            @endphp
+            <div class="{{ $widgetLayout['class'] }} dashboard-widget dashboard-efficiency-pair-widget{{ $dashboardWidgetVisibilityClassFor('after-hours-icare') }}{{ $dashboardUserHiddenClassFor('after-hours-icare') }}" data-dashboard-widget="after-hours-icare" data-widget-key="after-hours-icare" data-efficiency-group="after-hours" data-widget-width="{{ $widgetLayout['width'] }}" data-widget-order="311" data-widget-visible="{{ $dashboardWidgetVisibleFor('after-hours-icare') ? '1' : '0' }}" data-widget-user-hidden="{{ $dashboardUserHiddenAttrFor('after-hours-icare') }}" style="order: 311" draggable="false">
+                @include('dashboard.partials.project-engine-hours-status-card', [
+                    'chartId' => 'afterHoursIcare',
+                    'ownershipCode' => $icare,
+                    'ownershipLabel' => __('app.ownership_icare'),
+                    'summary' => $afterHoursSummaryIcare,
+                    'categoryLabels' => $actualWorkCategoryLabels,
+                    'categoryRanges' => $actualWorkCategoryRanges,
+                    'categoryColors' => $actualWorkCategoryColors,
+                    'exportUrl' => $afterHoursExportUrl.'?'.http_build_query(array_filter(['date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare', 'project_id' => $filters['project_id']], fn ($value) => $value !== null && $value !== '')),
+                    'filters' => $filters,
+                    'visibleStatuses' => $visibleGeneralStatusKeys,
+                    'title' => $dashboardWidgetTitleFor('after-hours-icare', 'Qeyri iş saatlarında işləyən: İcarə'),
+                    'drilldownView' => 'units',
+                    'drilldownMode' => 'fleet',
+                    'drilldownEndpointUrl' => $afterHoursUnitsUrl,
+                    'drilldownExportUrl' => $afterHoursExportUrl,
+                ])
+            </div>
+            @endif
+
+
             @if ($showAveragesSection)
             <section id="efficiency-averages" class="col-12 mt-4 dashboard-efficiency-section-heading" data-efficiency-group="averages" style="order: 400" aria-labelledby="efficiency-averages-title">
                 <h2 class="h4 fw-bold mb-1" id="efficiency-averages-title">Orta göstəricilər</h2>
@@ -3272,6 +3350,8 @@ let projectWorkCategoryNwcCounts = [];
 let projectWorkCategoryIcareCounts = [];
 let projectWorkCategoryNwcDonutCounts = [];
 let projectWorkCategoryIcareDonutCounts = [];
+let afterHoursNwcCounts = [];
+let afterHoursIcareCounts = [];
 let monthlyEfficiencyNwcCounts = [];
 let monthlyEfficiencyIcareCounts = [];
 let utilizationTrend = { labels: [], dates: [], series: {}, has_data: false };
@@ -3302,6 +3382,8 @@ const applyDashboardChartData = data => {
     projectWorkCategoryIcareCounts = data?.projectWorkCategoryIcareCounts || [];
     projectWorkCategoryNwcDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryNwcCounts[index] || 0);
     projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
+    afterHoursNwcCounts = data?.afterHoursNwcCounts || [];
+    afterHoursIcareCounts = data?.afterHoursIcareCounts || [];
     monthlyEfficiencyNwcCounts = data?.monthlyEfficiencyNwcCounts || [];
     monthlyEfficiencyIcareCounts = data?.monthlyEfficiencyIcareCounts || [];
     utilizationTrend = data?.utilizationTrend || { labels: [], dates: [], series: {}, has_data: false };
@@ -5572,6 +5654,14 @@ const initializeDashboardCharts = () => {
         labels: monthlyEfficiencyLabels,
         colors: monthlyEfficiencyColorValues,
         drilldownItems: monthlyEfficiencyIcareDrilldownItems,
+    });
+    createProjectWorkCategoryChart('afterHoursNwc', afterHoursNwcCounts, {
+        labels: workCategoryLabels,
+        colors: workCategoryColorValues,
+    });
+    createProjectWorkCategoryChart('afterHoursIcare', afterHoursIcareCounts, {
+        labels: workCategoryLabels,
+        colors: workCategoryColorValues,
     });
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 

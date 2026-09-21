@@ -26,9 +26,9 @@ class WialonNightDayEfficiencyReportService
             return $this->resolvedSettings;
         }
 
-        $resourceId = (int) config('fleet.wialon.night_day_efficiency_report_resource_id');
-        $templateId = (int) config('fleet.wialon.night_day_efficiency_report_template_id');
-        $templateName = (string) config('fleet.wialon.night_day_efficiency_report_template_name');
+        $resourceId = (int) config('fleet.wialon.after_hours_report_resource_id');
+        $templateId = (int) config('fleet.wialon.after_hours_report_template_id');
+        $templateName = (string) config('fleet.wialon.after_hours_report_template_name');
         $template = $this->wialon->findReportTemplateByName($resourceId ?: null, $templateName);
 
         if ($template !== null) {
@@ -37,19 +37,19 @@ class WialonNightDayEfficiencyReportService
         }
 
         if ($resourceId <= 0 || $templateId <= 0 || $template === null) {
-            throw new RuntimeException("Wialon night day efficiency report '{$templateName}' was not found.");
+            throw new RuntimeException("Wialon after-hours report '{$templateName}' was not found.");
         }
 
         if (($template['type'] ?? null) !== 'avl_unit_group') {
-            throw new RuntimeException("Wialon night day efficiency report '{$templateName}' is not bound to unit groups.");
+            throw new RuntimeException("Wialon after-hours report '{$templateName}' is not bound to unit groups.");
         }
 
         return $this->resolvedSettings = [
             'resource_id' => $resourceId,
             'template_id' => $templateId,
             'template_name' => $templateName,
-            'chunk_size' => max(1, (int) config('fleet.wialon.night_day_efficiency_report_chunk_size', 500)),
-            'timeout' => max(5, (int) config('fleet.wialon.night_day_efficiency_report_timeout', 90)),
+            'chunk_size' => max(1, (int) config('fleet.wialon.after_hours_report_chunk_size', 500)),
+            'timeout' => max(5, (int) config('fleet.wialon.after_hours_report_timeout', 90)),
         ];
     }
 
@@ -76,7 +76,7 @@ class WialonNightDayEfficiencyReportService
                 $reportResult = $result['reportResult'] ?? null;
 
                 if (! is_array($reportResult) || ! is_array($reportResult['tables'] ?? null)) {
-                    throw new RuntimeException('Wialon night day efficiency report returned an invalid result structure.');
+                    throw new RuntimeException('Wialon after-hours report returned an invalid result structure.');
                 }
 
                 $tables = [];
@@ -90,7 +90,7 @@ class WialonNightDayEfficiencyReportService
                     $rows = $this->loadRows($sid, (int) $index, $rowCount, $settings['chunk_size']);
 
                     if (count($rows) !== $rowCount) {
-                        throw new RuntimeException("Wialon night day efficiency table {$index} returned ".count($rows)." of {$rowCount} rows.");
+                        throw new RuntimeException("Wialon after-hours table {$index} returned ".count($rows)." of {$rowCount} rows.");
                     }
 
                     $tables[] = ['index' => (int) $index, 'table' => $table, 'rows' => $rows];
@@ -98,7 +98,7 @@ class WialonNightDayEfficiencyReportService
 
                 if ($reportResult['tables'] !== []
                     && ! collect($tables)->contains(fn (array $item): bool => in_array('duration', $item['table']['header_type'] ?? [], true))) {
-                    throw new RuntimeException('Wialon night day efficiency report did not return the Engine hours table.');
+                    throw new RuntimeException('Wialon after-hours report did not return the Engine hours table.');
                 }
 
                 $response = [
@@ -119,7 +119,7 @@ class WialonNightDayEfficiencyReportService
                 }
             }
 
-            return $response ?? throw new RuntimeException('Wialon night day efficiency report returned no response.');
+            return $response ?? throw new RuntimeException('Wialon after-hours report returned no response.');
         });
     }
 
@@ -146,24 +146,24 @@ class WialonNightDayEfficiencyReportService
             $engineTableFound = true;
             $schedule = $table['sch'] ?? [];
 
-            if ((int) ($schedule['fl'] ?? 0) !== 1 || $this->scheduleWindows($schedule) !== ['0-479', '1080-1439']) {
-                throw new RuntimeException('Wialon night day efficiency table must be limited to 00:00-07:59 and 18:00-23:59 Asia/Baku.');
+            if ((int) ($schedule['fl'] ?? 0) !== 1 || $this->scheduleWindows($schedule) !== ['0-479', '1081-1439']) {
+                throw new RuntimeException('Wialon after-hours table must be limited to 00:00-07:59 and 18:01-23:59 Asia/Baku.');
             }
 
             if ($offsetMinutes !== 240) {
-                throw new RuntimeException('Wialon night day efficiency currently requires the Asia/Baku UTC+04:00 offset.');
+                throw new RuntimeException('Wialon after-hours report currently requires the Asia/Baku UTC+04:00 offset.');
             }
 
             // Wialon applies table schedules in UTC. For one Baku calendar day
-            // we send the equivalent API windows: 20:00-03:59 and 14:00-23:59 UTC.
+            // we send the equivalent API windows: 20:00-03:59 and 14:01-23:59 UTC.
             $template['tbl'][$index]['sch']['f1'] = 0;
             $template['tbl'][$index]['sch']['t1'] = 239;
-            $template['tbl'][$index]['sch']['f2'] = 840;
+            $template['tbl'][$index]['sch']['f2'] = 841;
             $template['tbl'][$index]['sch']['t2'] = 1439;
         }
 
         if (! $engineTableFound) {
-            throw new RuntimeException('Wialon night day efficiency template has no Engine hours table.');
+            throw new RuntimeException('Wialon after-hours template has no Engine hours table.');
         }
 
         return $template;
