@@ -259,6 +259,43 @@ class NightDayEfficiencyModuleTest extends TestCase
             ->assertJsonMissing(['ownership' => 'İcarə']);
     }
 
+    public function test_after_hours_dashboard_excludes_zero_hour_placeholder_rows_from_all_outputs(): void
+    {
+        $project = Project::query()->create(['name' => 'After-hours placeholders', 'active' => true]);
+        $this->nightDayFact($project, '7401', '2026-09-20', 0.41, EfficiencyStatus::ZERO_TO_ONE);
+        $this->nightDayFact($project, '7402', '2026-09-20', 0, EfficiencyStatus::NO_DATA);
+        NightDayEfficiencyDailyFact::query()
+            ->where('wialon_unit_id', '7402')
+            ->update([
+                'started_at' => null,
+                'ended_at' => null,
+                'mileage_km' => null,
+                'mileage_raw' => null,
+            ]);
+
+        $filters = [
+            'date_from' => '2026-09-20',
+            'date_to' => '2026-09-20',
+            'ownership' => 'nwc',
+            'project_id' => $project->id,
+        ];
+        $service = app(NightDayEfficiencyDashboardService::class);
+        $summary = $service->summaryForOwnership($filters, Equipment::OWNERSHIP_NWC);
+        $projects = $service->paginateProjects($filters);
+        $units = $service->paginateUnits($filters);
+        $export = $service->export($filters);
+
+        $this->assertSame(1, $summary['total']);
+        $this->assertSame(0, $summary[EfficiencyStatus::NO_DATA]);
+        $this->assertSame(1, $projects->total());
+        $this->assertSame(1, $projects->items()[0]['unique_units_count']);
+        $this->assertSame(1, $units->total());
+        $this->assertSame('Unit 7401', $units->items()[0]['name']);
+        $this->assertCount(1, $export['sheets'][1]['sections'][0]['rows']);
+        $this->assertCount(1, $export['sheets'][2]['sections'][0]['rows']);
+        $this->assertSame('Unit 7401', $export['sheets'][2]['sections'][0]['rows'][0][1]);
+    }
+
     public function test_dashboard_excludes_rows_from_the_removed_legacy_report(): void
     {
         $project = Project::query()->create(['name' => 'After-hours source filter', 'active' => true]);
