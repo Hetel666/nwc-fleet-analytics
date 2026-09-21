@@ -268,7 +268,7 @@ class NightDayEfficiencyRecalculationHandler
             'project_id' => $group->project_id,
             'wialon_group_id' => (string) $group->wialon_group_id,
             'wialon_unit_id' => (string) $equipment->wialon_unit_id,
-            'unit_name' => $record['unit_name'] ?: $equipment->name,
+            'unit_name' => $equipment->name,
             'vehicle_type' => FleetVehicleType::label($equipment->type?->name),
             'ownership' => $group->ownership_type,
             'engine_hours_decimal' => number_format($hours, 2, '.', ''),

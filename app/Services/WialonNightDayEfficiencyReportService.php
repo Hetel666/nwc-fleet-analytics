@@ -96,11 +96,6 @@ class WialonNightDayEfficiencyReportService
                     $tables[] = ['index' => (int) $index, 'table' => $table, 'rows' => $rows];
                 }
 
-                if ($reportResult['tables'] !== []
-                    && ! collect($tables)->contains(fn (array $item): bool => in_array('duration', $item['table']['header_type'] ?? [], true))) {
-                    throw new RuntimeException('Wialon after-hours report did not return the Engine hours table.');
-                }
-
                 $response = [
                     'resource_id' => $settings['resource_id'],
                     'template_id' => $settings['template_id'],

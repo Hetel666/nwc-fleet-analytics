@@ -97,6 +97,54 @@ class NightDayEfficiencyModuleTest extends TestCase
         $this->assertSame('failed', $syncTask->status);
     }
 
+    public function test_parser_combines_the_two_after_hours_windows_into_one_daily_unit_record(): void
+    {
+        $date = CarbonImmutable::parse('2026-07-31', 'Asia/Baku');
+        $report = $this->report('6001', '7.95', '10.25 km');
+        $second = $report['tables'][0]['rows'][0];
+        $second['c'][1] = '5.90';
+        $second['c'][2] = [
+            't' => '2026-07-31 18:01:00',
+            'v' => $date->setTime(18, 1)->timestamp,
+            'u' => 6001,
+        ];
+        $second['c'][3] = [
+            't' => '2026-07-31 23:59:00',
+            'v' => $date->setTime(23, 59)->timestamp,
+            'u' => 6001,
+        ];
+        $second['c'][4] = '4.75 km';
+        $report['tables'][0]['rows'][] = $second;
+        $report['tables'][0]['table']['rows'] = 2;
+
+        $parsed = app(WialonNightDayEfficiencyReportParser::class)->parse($report);
+
+        $this->assertSame(2, $parsed['rows_received']);
+        $this->assertCount(1, $parsed['records']);
+        $this->assertSame(13.85, $parsed['records'][0]['engine_hours_decimal']);
+        $this->assertSame(49860, $parsed['records'][0]['engine_seconds']);
+        $this->assertSame(15.0, $parsed['records'][0]['mileage_km']);
+        $this->assertCount(2, $parsed['records'][0]['raw_row_json']);
+    }
+
+    public function test_parser_treats_an_omitted_empty_engine_hours_table_as_no_records(): void
+    {
+        $report = ['tables' => [[
+            'index' => 0,
+            'table' => [
+                'header' => ['Grouping', 'Name', 'Visits'],
+                'header_type' => ['', 'zone_name', 'visits_count'],
+                'rows' => 1,
+            ],
+            'rows' => [['c' => ['Unit 6001', 'Zone', 1]]],
+        ]]];
+
+        $this->assertSame(
+            ['records' => [], 'rows_received' => 0],
+            app(WialonNightDayEfficiencyReportParser::class)->parse($report),
+        );
+    }
+
     public function test_forced_sync_replaces_only_night_day_facts_for_the_calendar_business_date(): void
     {
         [$handler, $run, $task, $project] = $this->handlerScenario($this->report('6001', '10,01', '14,25 km'));
