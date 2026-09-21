@@ -38,8 +38,7 @@ class DashboardReportPipelineService
         ?int $priority = null,
         bool $allowDuplicate = false,
         ?User $user = null
-    ): array
-    {
+    ): array {
         $plans = $this->normalizePlans($plans);
 
         if ($plans === []) {
@@ -270,7 +269,6 @@ class DashboardReportPipelineService
 
     /**
      * @param  array<string, mixed>  $pipeline
-     * @param  int  $pipelineIndex
      * @param  array<int, int>  $positions
      * @param  array<int, array<string, mixed>>  $jobsByRun
      * @return array<string, mixed>
@@ -656,6 +654,8 @@ class DashboardReportPipelineService
     private function reconcile(array &$pipelines, ?HistoricalRecalculation $finishedRun = null): void
     {
         foreach ($pipelines as &$pipeline) {
+            $this->refreshFinishedRunSteps($pipeline);
+
             if (! in_array($pipeline['status'] ?? null, [self::STATUS_PENDING, self::STATUS_RUNNING], true)) {
                 continue;
             }
@@ -690,7 +690,11 @@ class DashboardReportPipelineService
             ]);
 
             if ($run->status !== HistoricalRecalculation::STATUS_COMPLETED) {
-                $pipeline['errors'][] = "Run {$run->id} finished as {$run->status}.";
+                $runError = "Run {$run->id} finished as {$run->status}.";
+
+                if (! in_array($runError, $pipeline['errors'] ?? [], true)) {
+                    $pipeline['errors'][] = $runError;
+                }
             }
 
             $pipeline['current_run_id'] = null;
@@ -702,6 +706,68 @@ class DashboardReportPipelineService
             }
         }
         unset($pipeline);
+    }
+
+    /** @param  array<string, mixed>  $pipeline */
+    private function refreshFinishedRunSteps(array &$pipeline): void
+    {
+        $runIds = collect($pipeline['steps'] ?? [])
+            ->pluck('run_id')
+            ->map(fn (mixed $runId): int => (int) $runId)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($runIds->isEmpty()) {
+            return;
+        }
+
+        $runs = HistoricalRecalculation::query()
+            ->whereIn('id', $runIds->all())
+            ->get()
+            ->keyBy('id');
+        $changed = false;
+
+        foreach ($pipeline['steps'] as $index => $step) {
+            $runId = (int) ($step['run_id'] ?? 0);
+            $run = $runs->get($runId);
+
+            if (! $run instanceof HistoricalRecalculation || ! $run->isTerminal()) {
+                continue;
+            }
+
+            $pipeline['steps'][$index] = array_merge($step, [
+                'status' => $run->status,
+                'completed_at' => optional($run->completed_at)->toDateTimeString(),
+                'failed_tasks' => (int) $run->failed_tasks,
+                'cancelled_tasks' => (int) $run->cancelled_tasks,
+            ]);
+
+            $errorPrefix = "Run {$runId} finished as ";
+            $pipeline['errors'] = collect($pipeline['errors'] ?? [])
+                ->reject(fn (mixed $error): bool => str_starts_with((string) $error, $errorPrefix))
+                ->values()
+                ->all();
+
+            if ($run->status !== HistoricalRecalculation::STATUS_COMPLETED) {
+                $pipeline['errors'][] = "Run {$runId} finished as {$run->status}.";
+            }
+
+            $changed = true;
+        }
+
+        if (! $changed) {
+            return;
+        }
+
+        $pipeline['errors'] = array_values(array_unique($pipeline['errors'] ?? []));
+        $pipeline['updated_at'] = now(config('app.timezone'))->toDateTimeString();
+
+        if (($pipeline['status'] ?? null) === self::STATUS_COMPLETED_WITH_ERRORS
+            && empty($pipeline['errors'])
+            && (int) ($pipeline['current_index'] ?? 0) >= count($pipeline['plans'] ?? [])) {
+            $pipeline['status'] = self::STATUS_COMPLETED;
+        }
     }
 
     /** @param  array<int, array<string, mixed>>  $pipelines */

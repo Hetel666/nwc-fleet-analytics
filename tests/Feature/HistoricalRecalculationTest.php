@@ -1562,6 +1562,57 @@ class HistoricalRecalculationTest extends TestCase
         Queue::assertPushed(RunHistoricalRecalculationTaskJob::class, 2);
     }
 
+    public function test_pipeline_clears_a_run_error_after_failed_tasks_are_retried_successfully(): void
+    {
+        Queue::fake();
+        $project = Project::query()->create(['name' => 'Pipeline retry status', 'active' => true]);
+        ProjectWialonGroup::query()->create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '7101',
+            'name' => 'Pipeline retry status - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+        ]);
+
+        $this->artisan('dashboard-reports:queue-sync', [
+            '--date' => '2026-09-01',
+            '--module' => [
+                HistoricalRecalculation::SECTION_AFTER_HOURS,
+                HistoricalRecalculation::SECTION_GEOFENCE_OUTSIDE,
+            ],
+            '--force' => true,
+        ])->assertSuccessful();
+
+        $service = app(DashboardReportPipelineService::class);
+        $firstRun = HistoricalRecalculation::query()->firstOrFail();
+        $firstRun->tasks()->update([
+            'status' => HistoricalRecalculationTask::STATUS_FAILED,
+            'error_message' => 'Temporary report failure.',
+            'completed_at' => now('Asia/Baku'),
+        ]);
+        app(HistoricalRecalculationService::class)->refreshProgress($firstRun);
+        $firstRun->forceFill([
+            'status' => HistoricalRecalculation::STATUS_COMPLETED_WITH_ERRORS,
+            'completed_at' => now('Asia/Baku'),
+        ])->save();
+        $service->handleRunFinished($firstRun->refresh());
+
+        $firstRun->tasks()->update([
+            'status' => HistoricalRecalculationTask::STATUS_COMPLETED,
+            'error_message' => null,
+        ]);
+        app(HistoricalRecalculationService::class)->refreshProgress($firstRun);
+        $firstRun->forceFill(['status' => HistoricalRecalculation::STATUS_COMPLETED])->save();
+        $service->tick();
+
+        $pipeline = collect(json_decode((string) Setting::query()
+            ->where('key', 'dashboard_report_pipelines')
+            ->value('value'), true))->first();
+
+        $this->assertSame(HistoricalRecalculation::STATUS_COMPLETED, $pipeline['steps'][0]['status']);
+        $this->assertSame(0, $pipeline['steps'][0]['failed_tasks']);
+        $this->assertSame([], $pipeline['errors']);
+    }
+
     public function test_sync_daily_command_queues_monthly_efficiency_after_the_existing_daily_modules(): void
     {
         Queue::fake();
