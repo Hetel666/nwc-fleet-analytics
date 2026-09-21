@@ -257,13 +257,31 @@ class NightDayEfficiencyModuleTest extends TestCase
     {
         $user = User::factory()->create(['active' => true]);
 
-        $this->actingAs($user)
+        $response = $this->actingAs($user)
             ->get(route('dashboard', ['tab' => 'efficiency']))
             ->assertOk()
             ->assertSee('id="efficiency-after-hours"', false)
             ->assertSee('data-widget-key="after-hours-nwc"', false)
             ->assertSee('data-widget-key="after-hours-icare"', false)
+            ->assertSee('data-count-only="1"', false)
+            ->assertSee('afterHoursNwcTotal', false)
             ->assertSee('Qeyri iş vaxtı: 00:00-07:59 və 18:01-23:59');
+
+        $content = $response->getContent();
+        $nwcStart = strpos($content, 'data-widget-key="after-hours-nwc"');
+        $icareStart = strpos($content, 'data-widget-key="after-hours-icare"');
+        $averageStart = strpos($content, 'data-widget-key="average-engine-hours"');
+
+        $this->assertIsInt($nwcStart);
+        $this->assertIsInt($icareStart);
+        $this->assertIsInt($averageStart);
+
+        $nwcCard = substr($content, $nwcStart, $icareStart - $nwcStart);
+        $this->assertStringContainsString('data-count-only="1"', $nwcCard);
+        $this->assertStringNotContainsString('dashboard-work-status-table', $nwcCard);
+
+        $icareCard = substr($content, $icareStart, $averageStart - $icareStart);
+        $this->assertStringNotContainsString('data-count-only="1"', $icareCard);
     }
 
     public function test_sync_daily_command_includes_night_day_stage_without_cross_midnight_nighttime(): void

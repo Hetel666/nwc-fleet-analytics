@@ -290,6 +290,7 @@
         'projectWorkCategoryNwcCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryNwc[$key] ?? 0))->values()->all(),
         'projectWorkCategoryIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($projectWorkCategorySummaryIcare[$key] ?? 0))->values()->all(),
         'afterHoursNwcCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($afterHoursSummaryNwc[$key] ?? 0))->values()->all(),
+        'afterHoursNwcTotal' => (int) ($afterHoursSummaryNwc['total'] ?? 0),
         'afterHoursIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($afterHoursSummaryIcare[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyNwcCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyIcareCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
@@ -703,6 +704,9 @@
         grid-template-columns: minmax(210px, 290px) minmax(0, 1fr);
         align-items: center;
         gap: 24px;
+    }
+    .dashboard-work-status-layout-count-only {
+        grid-template-columns: 1fr;
     }
     .dashboard-monthly-layout {
         display: grid;
@@ -2896,6 +2900,7 @@
                     'exportUrl' => $afterHoursExportUrl.'?'.http_build_query(array_filter(['date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'nwc', 'project_id' => $filters['project_id']], fn ($value) => $value !== null && $value !== '')),
                     'filters' => $filters,
                     'visibleStatuses' => $visibleGeneralStatusKeys,
+                    'countOnly' => true,
                     'title' => $dashboardWidgetTitleFor('after-hours-nwc', 'Qeyri iş saatlarında işləyən: NWC'),
                     'drilldownView' => 'units',
                     'drilldownMode' => 'fleet',
@@ -3351,6 +3356,7 @@ let projectWorkCategoryIcareCounts = [];
 let projectWorkCategoryNwcDonutCounts = [];
 let projectWorkCategoryIcareDonutCounts = [];
 let afterHoursNwcCounts = [];
+let afterHoursNwcTotal = 0;
 let afterHoursIcareCounts = [];
 let monthlyEfficiencyNwcCounts = [];
 let monthlyEfficiencyIcareCounts = [];
@@ -3383,6 +3389,7 @@ const applyDashboardChartData = data => {
     projectWorkCategoryNwcDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryNwcCounts[index] || 0);
     projectWorkCategoryIcareDonutCounts = workCategoryDonutIndexes.map(index => projectWorkCategoryIcareCounts[index] || 0);
     afterHoursNwcCounts = data?.afterHoursNwcCounts || [];
+    afterHoursNwcTotal = Number(data?.afterHoursNwcTotal || 0);
     afterHoursIcareCounts = data?.afterHoursIcareCounts || [];
     monthlyEfficiencyNwcCounts = data?.monthlyEfficiencyNwcCounts || [];
     monthlyEfficiencyIcareCounts = data?.monthlyEfficiencyIcareCounts || [];
@@ -5655,9 +5662,10 @@ const initializeDashboardCharts = () => {
         colors: monthlyEfficiencyColorValues,
         drilldownItems: monthlyEfficiencyIcareDrilldownItems,
     });
-    createProjectWorkCategoryChart('afterHoursNwc', afterHoursNwcCounts, {
-        labels: workCategoryLabels,
-        colors: workCategoryColorValues,
+    createDoughnutChart('afterHoursNwc', ['Cəmi'], [afterHoursNwcTotal], [ownershipColor.NWC], {
+        showLegend: false,
+        total: afterHoursNwcTotal,
+        showCenterTotal: true,
     });
     createProjectWorkCategoryChart('afterHoursIcare', afterHoursIcareCounts, {
         labels: workCategoryLabels,

@@ -9,7 +9,10 @@
     $additionalCategoryKeys = collect();
     $fullTotal = (int) ($summary['total'] ?? 0);
     $total = (int) $primaryCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0));
-    $hasRows = $total + (int) $additionalCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0)) > 0;
+    $countOnly = (bool) ($countOnly ?? false);
+    $hasRows = $countOnly
+        ? $fullTotal > 0
+        : $total + (int) $additionalCategoryKeys->sum(fn (string $key): int => (int) ($summary[$key] ?? 0)) > 0;
     $ownershipColor = $ownershipCode === 'NWC' ? '#24b35b' : '#1f6feb';
     $title = $title ?? null;
     $drilldownProjectId = $drilldownProjectId ?? ($filters['project_id'] ?? null);
@@ -22,7 +25,7 @@
     $drilldownExportUrl = $drilldownExportUrl ?? null;
 @endphp
 
-<section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column">
+<section class="panel p-3 dashboard-card dashboard-work-status-card d-flex flex-column" @if ($countOnly) data-count-only="1" @endif>
     <div class="dashboard-panel-header d-flex align-items-start justify-content-between gap-2 mb-3">
         <div class="min-w-0">
             <h2 class="h5 dashboard-work-status-title fw-bold mb-0 dashboard-card-title-text">
@@ -52,10 +55,14 @@
     </div>
 
     @if ($hasRows)
-        <div class="dashboard-work-status-layout flex-grow-1">
+        <div class="dashboard-work-status-layout{{ $countOnly ? ' dashboard-work-status-layout-count-only' : '' }} flex-grow-1">
             <div class="dashboard-work-status-chart">
                 <canvas id="{{ $chartId }}"></canvas>
+                @if ($countOnly)
+                    <span class="visually-hidden">Cəmi: {{ number_format($fullTotal, 0, '.', ' ') }}</span>
+                @endif
             </div>
+            @unless ($countOnly)
             <div class="dashboard-work-status-table">
                 <table class="table table-sm align-middle mb-0">
                     <thead>
@@ -135,6 +142,7 @@
                     </tbody>
                 </table>
             </div>
+            @endunless
         </div>
     @else
         <div class="dashboard-empty flex-grow-1">Seçilmiş dövr üçün məlumat yoxdur</div>
