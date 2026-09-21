@@ -73,13 +73,13 @@ class NightDayEfficiencyDashboardService
     {
         $filters = $this->normalizeFilters($filters);
         $query = DB::query()
-            ->fromSub($this->unitRowsQuery($filters), 'final_units')
+            ->fromSub($this->unitRowsQuery([...$filters, 'search' => '']), 'final_units')
             ->select('project_id', 'project', 'ownership')
-            ->selectRaw('final_status as status')
             ->selectRaw('COUNT(*) as unique_units_count')
             ->selectRaw('MAX(synced_days_count) as synced_days_count')
             ->selectRaw('ROUND(AVG(average_engine_hours), 2) as average_engine_hours')
-            ->groupBy('project_id', 'project', 'ownership', 'final_status');
+            ->when($filters['search'] !== '', fn (Builder $query): Builder => $query->where('project', 'like', '%'.$filters['search'].'%'))
+            ->groupBy('project_id', 'project', 'ownership');
 
         return $query->orderByDesc('unique_units_count')->orderBy('project')
             ->paginate($filters['per_page'], ['*'], 'page', $filters['page'])
@@ -87,7 +87,6 @@ class NightDayEfficiencyDashboardService
                 'project_id' => (int) $row->project_id,
                 'project' => $row->project,
                 'ownership' => $this->ownershipLabel($row->ownership),
-                'status' => EfficiencyStatus::labels()[$row->status] ?? $row->status,
                 'unique_units_count' => (int) $row->unique_units_count,
                 'synced_days_count' => (int) $row->synced_days_count,
                 'average_engine_hours' => number_format((float) $row->average_engine_hours, 2, '.', ''),
@@ -218,7 +217,7 @@ class NightDayEfficiencyDashboardService
         };
         $status = $filters['status'] ?? $filters['work_category'] ?? $filters['day_status'] ?? null;
         $status = $this->canonicalStatus($status);
-        $hasVisibleStatusRestriction = array_key_exists('visible_statuses', $filters);
+        $hasVisibleStatusRestriction = is_array($filters['visible_statuses'] ?? null);
         $visibleStatuses = collect($filters['visible_statuses'] ?? [])
             ->map(fn ($visibleStatus): ?string => $this->canonicalStatus((string) $visibleStatus))
             ->filter()

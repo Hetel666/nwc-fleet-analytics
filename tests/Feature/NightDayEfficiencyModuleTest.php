@@ -212,6 +212,53 @@ class NightDayEfficiencyModuleTest extends TestCase
         $this->assertSame('Qeyri iş saatlarında işləyən', $export['filters'][4][1]);
     }
 
+    public function test_after_hours_hierarchy_separates_ownership_and_groups_projects_once(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $nwcProject = Project::query()->create(['name' => 'NWC project', 'active' => true]);
+        $icareProject = Project::query()->create(['name' => 'Icare project', 'active' => true]);
+
+        $this->nightDayFact($nwcProject, '7301', '2026-07-31', 2.0, EfficiencyStatus::ONE_TO_SEVEN);
+        $this->nightDayFact($nwcProject, '7302', '2026-07-31', 9.0, EfficiencyStatus::SEVEN_TO_TEN);
+        $this->nightDayFact(
+            $icareProject,
+            '8301',
+            '2026-07-31',
+            8.0,
+            EfficiencyStatus::SEVEN_TO_TEN,
+            ownership: Equipment::OWNERSHIP_ICARE
+        );
+
+        $period = ['date_from' => '2026-07-31', 'date_to' => '2026-07-31'];
+
+        $this->actingAs($user)->getJson(route('api.dashboard.after-hours.projects', [...$period, 'ownership' => 'nwc']))
+            ->assertOk()
+            ->assertJsonPath('columns.project', 'Layihə')
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.project', 'NWC project')
+            ->assertJsonPath('data.0.ownership', 'NWC')
+            ->assertJsonPath('data.0.unique_units_count', 2);
+
+        $this->actingAs($user)->getJson(route('api.dashboard.after-hours.projects', [...$period, 'ownership' => 'icare']))
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.project', 'Icare project')
+            ->assertJsonPath('data.0.ownership', 'İcarə')
+            ->assertJsonPath('data.0.unique_units_count', 1);
+
+        $this->actingAs($user)->getJson(route('api.dashboard.after-hours.units', [
+            ...$period,
+            'ownership' => 'nwc',
+            'project_id' => $nwcProject->id,
+        ]))
+            ->assertOk()
+            ->assertJsonPath('columns.name', 'Maşın nömrəsi')
+            ->assertJsonPath('meta.total', 2)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.ownership', 'NWC')
+            ->assertJsonMissing(['ownership' => 'İcarə']);
+    }
+
     public function test_dashboard_excludes_rows_from_the_removed_legacy_report(): void
     {
         $project = Project::query()->create(['name' => 'After-hours source filter', 'active' => true]);
@@ -281,7 +328,10 @@ class NightDayEfficiencyModuleTest extends TestCase
         $this->assertStringNotContainsString('dashboard-work-status-table', $nwcCard);
 
         $icareCard = substr($content, $icareStart, $averageStart - $icareStart);
-        $this->assertStringNotContainsString('data-count-only="1"', $icareCard);
+        $this->assertStringContainsString('data-count-only="1"', $icareCard);
+        $this->assertStringNotContainsString('dashboard-work-status-table', $icareCard);
+        $this->assertStringContainsString('endpoint_url: afterHoursEndpoints.projects', $content);
+        $this->assertStringContainsString('units_endpoint_url: afterHoursEndpoints.units', $content);
     }
 
     public function test_sync_daily_command_includes_night_day_stage_without_cross_midnight_nighttime(): void
@@ -440,7 +490,8 @@ class NightDayEfficiencyModuleTest extends TestCase
         string $date,
         float $hours,
         string $status,
-        string $sourceReportName = 'Qeyri iş saatlarında işləyən'
+        string $sourceReportName = 'Qeyri iş saatlarında işləyən',
+        string $ownership = Equipment::OWNERSHIP_NWC
     ): void {
         NightDayEfficiencyDailyFact::query()->create([
             'business_date' => $date,
@@ -449,7 +500,7 @@ class NightDayEfficiencyModuleTest extends TestCase
             'wialon_unit_id' => $unitId,
             'unit_name' => 'Unit '.$unitId,
             'vehicle_type' => 'Loader',
-            'ownership' => Equipment::OWNERSHIP_NWC,
+            'ownership' => $ownership,
             'engine_hours_decimal' => $hours,
             'engine_seconds' => (int) round($hours * 3600),
             'engine_hours_raw' => number_format($hours, 2, '.', ''),

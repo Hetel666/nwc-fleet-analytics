@@ -18,12 +18,40 @@ class AfterHoursDashboardController extends Controller
 
     public function projects(Request $request, NightDayEfficiencyDashboardService $dashboard): array
     {
-        return $this->paginated($dashboard->paginateProjects($this->filters($request)));
+        $rows = $dashboard->paginateProjects($this->filters($request));
+
+        return [
+            'title' => 'Qeyri iş saatlarında işləyən: '.$this->ownershipLabel($request),
+            'columns' => [
+                'project' => 'Layihə',
+                'ownership' => 'Ownership',
+                'unique_units_count' => 'Texnika sayı',
+            ],
+            ...$this->paginated($rows),
+            'summary' => ['total' => $rows->total()],
+        ];
     }
 
     public function units(Request $request, NightDayEfficiencyDashboardService $dashboard): array
     {
-        return $this->paginated($dashboard->paginateUnits($this->filters($request)));
+        $rows = $dashboard->paginateUnits($this->filters($request));
+
+        return [
+            'columns' => [
+                'number' => '№',
+                'date' => 'Tarix',
+                'name' => 'Maşın nömrəsi',
+                'project' => 'Layihə',
+                'vehicle_type' => 'Texnika növü',
+                'ownership' => 'Ownership',
+                'engine_hours' => 'Motosaat',
+                'started_at' => 'Başlama',
+                'ended_at' => 'Bitmə',
+                'mileage' => 'Yürüş',
+            ],
+            ...$this->paginated($rows),
+            'summary' => ['total' => $rows->total()],
+        ];
     }
 
     public function export(Request $request, NightDayEfficiencyDashboardService $dashboard): JsonResponse
@@ -76,5 +104,14 @@ class AfterHoursDashboardController extends Controller
                 'total' => $rows->total(),
             ],
         ];
+    }
+
+    private function ownershipLabel(Request $request): string
+    {
+        return match (mb_strtolower((string) ($request->input('ownership_type') ?? $request->input('ownership')))) {
+            'icare', 'icarə' => 'İcarə',
+            'nwc' => 'NWC',
+            default => 'NWC + İcarə',
+        };
     }
 }

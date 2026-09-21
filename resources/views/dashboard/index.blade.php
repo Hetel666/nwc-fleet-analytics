@@ -292,6 +292,7 @@
         'afterHoursNwcCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($afterHoursSummaryNwc[$key] ?? 0))->values()->all(),
         'afterHoursNwcTotal' => (int) ($afterHoursSummaryNwc['total'] ?? 0),
         'afterHoursIcareCounts' => $visibleGeneralStatusKeys->map(fn (string $key): int => (int) ($afterHoursSummaryIcare[$key] ?? 0))->values()->all(),
+        'afterHoursIcareTotal' => (int) ($afterHoursSummaryIcare['total'] ?? 0),
         'monthlyEfficiencyNwcCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryNwc[$key] ?? 0))->values()->all(),
         'monthlyEfficiencyIcareCounts' => $visibleMonthlyStatusKeys->map(fn (string $key): int => (int) ($monthlyEfficiencySummaryIcare[$key] ?? 0))->values()->all(),
         'utilizationTrend' => $utilizationTrendByOwnership,
@@ -2884,6 +2885,7 @@
 
             @if ($dashboardDisplayVisibleFor('after_hours_nwc'))
             @php
+                $afterHoursProjectsUrl = route('api.dashboard.after-hours.projects');
                 $afterHoursUnitsUrl = route('api.dashboard.after-hours.units');
                 $afterHoursExportUrl = route('api.dashboard.after-hours.export');
                 $widgetLayout = $dashboardWidgetLayoutFor('after-hours-nwc', 'col-12 col-md-6', 6);
@@ -2902,9 +2904,9 @@
                     'visibleStatuses' => $visibleGeneralStatusKeys,
                     'countOnly' => true,
                     'title' => $dashboardWidgetTitleFor('after-hours-nwc', 'Qeyri iş saatlarında işləyən: NWC'),
-                    'drilldownView' => 'units',
-                    'drilldownMode' => 'fleet',
-                    'drilldownEndpointUrl' => $afterHoursUnitsUrl,
+                    'drilldownView' => 'projects',
+                    'drilldownMode' => 'efficiency_projects',
+                    'drilldownEndpointUrl' => $afterHoursProjectsUrl,
                     'drilldownExportUrl' => $afterHoursExportUrl,
                 ])
             </div>
@@ -2926,10 +2928,11 @@
                     'exportUrl' => $afterHoursExportUrl.'?'.http_build_query(array_filter(['date_from' => $filters['from'], 'date_to' => $filters['to'], 'ownership' => 'icare', 'project_id' => $filters['project_id']], fn ($value) => $value !== null && $value !== '')),
                     'filters' => $filters,
                     'visibleStatuses' => $visibleGeneralStatusKeys,
+                    'countOnly' => true,
                     'title' => $dashboardWidgetTitleFor('after-hours-icare', 'Qeyri iş saatlarında işləyən: İcarə'),
-                    'drilldownView' => 'units',
-                    'drilldownMode' => 'fleet',
-                    'drilldownEndpointUrl' => $afterHoursUnitsUrl,
+                    'drilldownView' => 'projects',
+                    'drilldownMode' => 'efficiency_projects',
+                    'drilldownEndpointUrl' => $afterHoursProjectsUrl,
                     'drilldownExportUrl' => $afterHoursExportUrl,
                 ])
             </div>
@@ -3358,6 +3361,7 @@ let projectWorkCategoryIcareDonutCounts = [];
 let afterHoursNwcCounts = [];
 let afterHoursNwcTotal = 0;
 let afterHoursIcareCounts = [];
+let afterHoursIcareTotal = 0;
 let monthlyEfficiencyNwcCounts = [];
 let monthlyEfficiencyIcareCounts = [];
 let utilizationTrend = { labels: [], dates: [], series: {}, has_data: false };
@@ -3391,6 +3395,7 @@ const applyDashboardChartData = data => {
     afterHoursNwcCounts = data?.afterHoursNwcCounts || [];
     afterHoursNwcTotal = Number(data?.afterHoursNwcTotal || 0);
     afterHoursIcareCounts = data?.afterHoursIcareCounts || [];
+    afterHoursIcareTotal = Number(data?.afterHoursIcareTotal || 0);
     monthlyEfficiencyNwcCounts = data?.monthlyEfficiencyNwcCounts || [];
     monthlyEfficiencyIcareCounts = data?.monthlyEfficiencyIcareCounts || [];
     utilizationTrend = data?.utilizationTrend || { labels: [], dates: [], series: {}, has_data: false };
@@ -5295,7 +5300,7 @@ const openSummaryUnits = trigger => {
     } else if (isMonthlyEfficiencyGeofenceSummary) {
         drilldownState.endpointUrl = drilldownState.daysEndpointUrl;
         drilldownState.exportEnabled = false;
-    } else if (isMonthlyEfficiencyProjectSummary) {
+    } else if (isMonthlyEfficiencyProjectSummary || (isEfficiencyProjectSummary && drilldownState.unitsEndpointUrl)) {
         drilldownState.endpointUrl = drilldownState.unitsEndpointUrl;
     }
     drilldownState.mode = isMonthlyEfficiencyGeofenceSummary
@@ -5580,6 +5585,29 @@ const monthlyEfficiencyEndpoints = {
     objectGeofenceDays: @json(route('api.dashboard.monthly-efficiency.object-geofence-days')),
     export: @json(route('api.dashboard.monthly-efficiency.export')),
 };
+const afterHoursEndpoints = {
+    projects: @json(route('api.dashboard.after-hours.projects')),
+    units: @json(route('api.dashboard.after-hours.units')),
+    export: @json(route('api.dashboard.after-hours.export')),
+};
+const afterHoursNwcDrilldown = {
+    title: 'Qeyri iş saatlarında işləyən: NWC',
+    ownership: 'nwc',
+    view: 'projects',
+    drilldown_mode: 'efficiency_projects',
+    endpoint_url: afterHoursEndpoints.projects,
+    units_endpoint_url: afterHoursEndpoints.units,
+    export_url: afterHoursEndpoints.export,
+};
+const afterHoursIcareDrilldown = {
+    title: 'Qeyri iş saatlarında işləyən: İcarə',
+    ownership: 'icare',
+    view: 'projects',
+    drilldown_mode: 'efficiency_projects',
+    endpoint_url: afterHoursEndpoints.projects,
+    units_endpoint_url: afterHoursEndpoints.units,
+    export_url: afterHoursEndpoints.export,
+};
 const monthlyEfficiencyNwcDrilldownItems = monthlyEfficiencyKeys.map((key, index) => ({
     title: `${labels.nwc} üzrə — ${monthlyEfficiencyLabels[index]}`,
     ownership: 'nwc',
@@ -5666,10 +5694,15 @@ const initializeDashboardCharts = () => {
         showLegend: false,
         total: afterHoursNwcTotal,
         showCenterTotal: true,
+        drilldownItems: [afterHoursNwcDrilldown],
+        centerDrilldown: afterHoursNwcDrilldown,
     });
-    createProjectWorkCategoryChart('afterHoursIcare', afterHoursIcareCounts, {
-        labels: workCategoryLabels,
-        colors: workCategoryColorValues,
+    createDoughnutChart('afterHoursIcare', ['Cəmi'], [afterHoursIcareTotal], [ownershipColor.ICARE], {
+        showLegend: false,
+        total: afterHoursIcareTotal,
+        showCenterTotal: true,
+        drilldownItems: [afterHoursIcareDrilldown],
+        centerDrilldown: afterHoursIcareDrilldown,
     });
     createHorizontalOwnershipChart('projectComparison', projectComparisonLabels, projectComparisonNwc, projectComparisonIcare);
 
