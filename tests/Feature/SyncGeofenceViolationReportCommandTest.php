@@ -8,6 +8,8 @@ use App\Models\GeofenceViolationReportRow;
 use App\Models\GeofenceViolationSyncItem;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Services\GeofenceViolationTelemetryValidator;
+use App\Services\WialonProjectGeofenceSelector;
 use App\Services\WialonService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -23,6 +25,14 @@ class SyncGeofenceViolationReportCommandTest extends TestCase
         parent::setUp();
 
         config()->set('geofence_violations.empty_snapshot_attempts', 1);
+        $validator = Mockery::mock(GeofenceViolationTelemetryValidator::class);
+        $validator->shouldReceive('filter')->andReturnUsing(fn (array $rows) => $rows);
+        $this->app->instance(GeofenceViolationTelemetryValidator::class, $validator);
+
+        $selector = Mockery::mock(WialonProjectGeofenceSelector::class);
+        $selector->shouldReceive('resolveProjectGroupToken')->andReturn('gr601701680_31');
+        $selector->shouldReceive('apply')->andReturnUsing(fn (array $template): array => $template);
+        $this->app->instance(WialonProjectGeofenceSelector::class, $selector);
     }
 
     public function test_command_uses_a_dedicated_wialon_session(): void

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ProjectWialonGroup;
 use Carbon\CarbonInterface;
 use RuntimeException;
 use Throwable;
@@ -11,6 +12,8 @@ class WialonGeozonReportService
     public function __construct(
         private WialonService $wialon,
         private ?WialonReportSessionLock $reportSessionLock = null,
+        private ?WialonProjectGeofenceSelector $geofenceSelector = null,
+        private ?GeofenceReportViolationCalculator $geofenceCalculator = null,
     ) {}
 
     public function findTemplateByName(?string $name = null): ?array
@@ -56,9 +59,25 @@ class WialonGeozonReportService
         try {
             $this->wialon->cleanupReportResult($sid);
 
-            $result = $this->wialon->executeReport(
+            $group = ProjectWialonGroup::query()
+                ->with('project:id,name,active')
+                ->where('wialon_group_id', (string) $groupId)
+                ->first();
+            $homeIds = $group?->project
+                ? ($this->geofenceCalculator ?? app(GeofenceReportViolationCalculator::class))
+                    ->resolveAllowedHomeGeofences($group->project)
+                    ->pluck('wialon_geofence_id')->filter()->all()
+                : [];
+            $selector = $this->geofenceSelector ?? app(WialonProjectGeofenceSelector::class);
+            $template = $selector->apply(
+                $this->wialon->getReportTemplateData($settings['resource_id'], $settings['template_id'], $sid),
+                $selector->resolveProjectGroupToken($this->wialon, $settings['resource_id'], $sid),
+                $homeIds,
+                true
+            );
+            $result = $this->wialon->executeReportTemplate(
                 $settings['resource_id'],
-                $settings['template_id'],
+                $template,
                 $groupId,
                 $from->timestamp,
                 $to->timestamp,

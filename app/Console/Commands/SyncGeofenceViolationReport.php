@@ -6,8 +6,11 @@ use App\Models\GeofenceViolationReportRow;
 use App\Models\GeofenceViolationSyncItem;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Services\GeofenceReportViolationCalculator;
 use App\Services\GeofenceViolationReportImporter;
 use App\Services\GeofenceViolationReportParser;
+use App\Services\GeofenceViolationTelemetryValidator;
+use App\Services\WialonProjectGeofenceSelector;
 use App\Services\WialonReportSessionLock;
 use App\Services\WialonService;
 use App\Support\GeofenceExcludedGroups;
@@ -36,7 +39,10 @@ class SyncGeofenceViolationReport extends Command
         WialonReportSessionLock $reportLock,
         GeofenceViolationReportParser $parser,
         GeofenceViolationReportImporter $importer,
-        GeofenceExcludedGroups $excludedGroups
+        GeofenceExcludedGroups $excludedGroups,
+        GeofenceViolationTelemetryValidator $telemetry,
+        WialonProjectGeofenceSelector $geofenceSelector,
+        GeofenceReportViolationCalculator $geofenceCalculator
     ): int {
         [$from, $to] = $this->period();
 
@@ -69,12 +75,17 @@ class SyncGeofenceViolationReport extends Command
         $sessionId = $wialon->loginByToken(false);
 
         try {
-            $settings['report_template'] = $this->fullDetailReportTemplate(
+            $settings['base_report_template'] = $this->fullDetailReportTemplate(
                 $wialon->getReportTemplateData(
                     $settings['resource_id'],
                     $settings['template_id'],
                     $sessionId
                 )
+            );
+            $projectGroupToken = $geofenceSelector->resolveProjectGroupToken(
+                $wialon,
+                $settings['resource_id'],
+                $sessionId
             );
 
             foreach ($groups as $group) {
@@ -107,6 +118,17 @@ class SyncGeofenceViolationReport extends Command
                 ])->save();
 
                 try {
+                    $settings['report_template'] = $geofenceSelector->apply(
+                        $settings['base_report_template'],
+                        $projectGroupToken,
+                        $group->project
+                            ? $geofenceCalculator->resolveAllowedHomeGeofences($group->project)
+                                ->pluck('wialon_geofence_id')
+                                ->filter()
+                                ->values()
+                                ->all()
+                            : []
+                    );
                     $parsed = $this->fetchParsedReport(
                         $wialon,
                         $reportLock,
@@ -134,11 +156,18 @@ class SyncGeofenceViolationReport extends Command
                         ));
                     }
 
+                    $confirmedRecords = $telemetry->filter($parsed['records'], $wialon, $sessionId);
+                    $withoutTelemetry = count($parsed['records']) - count($confirmedRecords);
+                    if ($withoutTelemetry > 0) {
+                        $this->line($group->wialon_group_id.' | skipped_without_telemetry='.$withoutTelemetry);
+                    }
+                    $parsed['skipped_types'] += $withoutTelemetry;
+                    $totals['skipped'] += $withoutTelemetry;
                     $result = $importer->replaceGroupSnapshot(
                         $group,
                         $from,
                         $to,
-                        $parsed['records'],
+                        $confirmedRecords,
                         now(config('app.timezone')),
                         (bool) $this->option('force')
                     );
@@ -546,6 +575,7 @@ class SyncGeofenceViolationReport extends Command
 
                 if ($current === null) {
                     $current = $record;
+
                     continue;
                 }
 
@@ -554,6 +584,7 @@ class SyncGeofenceViolationReport extends Command
                 if ($recordStart->timestamp > $currentEnd->timestamp + 1) {
                     $merged[] = $this->finalizeChunkedRecord($current, $group, $from, $to, $activeTolerance);
                     $current = $record;
+
                     continue;
                 }
 

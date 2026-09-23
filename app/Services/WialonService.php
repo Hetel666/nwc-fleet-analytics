@@ -128,12 +128,12 @@ class WialonService
         return $response['items'] ?? [];
     }
 
-    public function getResource(int|string $resourceId): array
+    public function getResource(int|string $resourceId, ?string $sid = null): array
     {
         $response = $this->request('core/search_item', [
             'id' => (int) $resourceId,
             'flags' => -1,
-        ]);
+        ], $sid ?? $this->getSessionId());
 
         return $response['item'] ?? $response;
     }
@@ -186,6 +186,24 @@ class WialonService
         ]);
 
         return $response['messages'] ?? [];
+    }
+
+    public function getDataMessageCount(int|string $unitId, int $from, int $to, string $sid): int
+    {
+        $response = $this->request('messages/load_interval', [
+            'itemId' => (int) $unitId,
+            'timeFrom' => $from,
+            'timeTo' => $to,
+            'flags' => 1,
+            'flagsMask' => 65281,
+            'loadCount' => 0,
+        ], $sid);
+
+        if (! isset($response['count']) || ! is_numeric($response['count']) || (int) $response['count'] < 0) {
+            throw new RuntimeException('Telemetry count was not confirmed by Wialon.');
+        }
+
+        return (int) $response['count'];
     }
 
     public function getGeofences(): array
@@ -252,55 +270,55 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-        $sid = $this->getSessionId();
-        $this->cleanupReportResult($sid);
+            $sid = $this->getSessionId();
+            $this->cleanupReportResult($sid);
 
-        $payload = $this->reportExecutionPayload([
-            'reportResourceId' => (int) $resourceId,
-            'reportTemplateId' => (int) $templateId,
-            'reportTemplate' => null,
-            'reportObjectId' => (int) $objectId,
-            'reportObjectSecId' => 0,
-            'interval' => [
-                'from' => $from,
-                'to' => $to,
-                'flags' => $intervalFlags,
-            ],
-        ]);
+            $payload = $this->reportExecutionPayload([
+                'reportResourceId' => (int) $resourceId,
+                'reportTemplateId' => (int) $templateId,
+                'reportTemplate' => null,
+                'reportObjectId' => (int) $objectId,
+                'reportObjectSecId' => 0,
+                'interval' => [
+                    'from' => $from,
+                    'to' => $to,
+                    'flags' => $intervalFlags,
+                ],
+            ]);
 
-        if ($remoteExec) {
-            $payload['remoteExec'] = 1;
-            $payload['reportObjectIdList'] = [];
-        }
-
-        $result = $this->request('report/exec_report', $payload, $sid);
-
-        if ($remoteExec) {
-            $result = $this->waitForRemoteReportResult($sid);
-        }
-
-        $table = $result['reportResult']['tables'][$tableIndex] ?? null;
-        $rowCount = (int) ($table['rows'] ?? 0);
-        $rows = [];
-
-        for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
-            $chunk = $this->getResultRowsChunk(
-                $sid,
-                $tableIndex,
-                $indexFrom,
-                min($rowCount - 1, $indexFrom + $chunkSize - 1)
-            );
-
-            if (is_array($chunk)) {
-                $rows = array_merge($rows, $chunk);
+            if ($remoteExec) {
+                $payload['remoteExec'] = 1;
+                $payload['reportObjectIdList'] = [];
             }
-        }
 
-        return [
-            'result' => $result,
-            'table' => $table,
-            'rows' => $rows,
-        ];
+            $result = $this->request('report/exec_report', $payload, $sid);
+
+            if ($remoteExec) {
+                $result = $this->waitForRemoteReportResult($sid);
+            }
+
+            $table = $result['reportResult']['tables'][$tableIndex] ?? null;
+            $rowCount = (int) ($table['rows'] ?? 0);
+            $rows = [];
+
+            for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
+                $chunk = $this->getResultRowsChunk(
+                    $sid,
+                    $tableIndex,
+                    $indexFrom,
+                    min($rowCount - 1, $indexFrom + $chunkSize - 1)
+                );
+
+                if (is_array($chunk)) {
+                    $rows = array_merge($rows, $chunk);
+                }
+            }
+
+            return [
+                'result' => $result,
+                'table' => $table,
+                'rows' => $rows,
+            ];
         } finally {
             $this->requestTimeoutOverride = $previousTimeout;
             $this->requestDeadlineAt = $previousDeadline;
@@ -324,69 +342,69 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-        $sid = $this->getSessionId();
-        $this->cleanupReportResult($sid);
+            $sid = $this->getSessionId();
+            $this->cleanupReportResult($sid);
 
-        $payload = $this->reportExecutionPayload([
-            'reportResourceId' => (int) $resourceId,
-            'reportTemplateId' => (int) $templateId,
-            'reportTemplate' => null,
-            'reportObjectId' => (int) $objectId,
-            'reportObjectSecId' => 0,
-            'interval' => [
-                'from' => $from,
-                'to' => $to,
-                'flags' => $intervalFlags,
-            ],
-        ]);
+            $payload = $this->reportExecutionPayload([
+                'reportResourceId' => (int) $resourceId,
+                'reportTemplateId' => (int) $templateId,
+                'reportTemplate' => null,
+                'reportObjectId' => (int) $objectId,
+                'reportObjectSecId' => 0,
+                'interval' => [
+                    'from' => $from,
+                    'to' => $to,
+                    'flags' => $intervalFlags,
+                ],
+            ]);
 
-        if ($remoteExec) {
-            $payload['remoteExec'] = 1;
-            $payload['reportObjectIdList'] = [];
-        }
+            if ($remoteExec) {
+                $payload['remoteExec'] = 1;
+                $payload['reportObjectIdList'] = [];
+            }
 
-        $result = $this->request('report/exec_report', $payload, $sid);
+            $result = $this->request('report/exec_report', $payload, $sid);
 
-        if ($remoteExec) {
-            $result = $this->waitForRemoteReportResult($sid);
-        }
+            if ($remoteExec) {
+                $result = $this->waitForRemoteReportResult($sid);
+            }
 
-        $reportTables = [];
+            $reportTables = [];
 
-        foreach (($result['reportResult']['tables'] ?? []) as $tableIndex => $table) {
-            $rowCount = (int) ($table['rows'] ?? 0);
-            $rows = [];
+            foreach (($result['reportResult']['tables'] ?? []) as $tableIndex => $table) {
+                $rowCount = (int) ($table['rows'] ?? 0);
+                $rows = [];
 
-            if ($rowCount > 0) {
-                $rows = $this->getSelectedRowsForTable($sid, (int) $tableIndex, $table, $rowCount, $chunkSize);
+                if ($rowCount > 0) {
+                    $rows = $this->getSelectedRowsForTable($sid, (int) $tableIndex, $table, $rowCount, $chunkSize);
 
-                if ($rows === []) {
-                    for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
-                        $chunk = $this->getResultRowsChunk(
-                            $sid,
-                            (int) $tableIndex,
-                            $indexFrom,
-                            min($rowCount - 1, $indexFrom + $chunkSize - 1)
-                        );
+                    if ($rows === []) {
+                        for ($indexFrom = 0; $indexFrom < $rowCount; $indexFrom += $chunkSize) {
+                            $chunk = $this->getResultRowsChunk(
+                                $sid,
+                                (int) $tableIndex,
+                                $indexFrom,
+                                min($rowCount - 1, $indexFrom + $chunkSize - 1)
+                            );
 
-                        if (is_array($chunk)) {
-                            $rows = array_merge($rows, $chunk);
+                            if (is_array($chunk)) {
+                                $rows = array_merge($rows, $chunk);
+                            }
                         }
                     }
                 }
+
+                $reportTables[] = [
+                    'index' => (int) $tableIndex,
+                    'table' => $table,
+                    'rows' => $rows,
+                ];
             }
 
-            $reportTables[] = [
-                'index' => (int) $tableIndex,
-                'table' => $table,
-                'rows' => $rows,
+            return [
+                'result' => $result,
+                'tables' => $reportTables,
             ];
-        }
-
-        return [
-            'result' => $result,
-            'tables' => $reportTables,
-        ];
         } finally {
             $this->requestTimeoutOverride = $previousTimeout;
             $this->requestDeadlineAt = $previousDeadline;
@@ -530,28 +548,28 @@ class WialonService
         $this->requestDeadlineAt = $requestTimeout !== null ? microtime(true) + max(1, $requestTimeout) : null;
 
         try {
-        $payload = $this->reportExecutionPayload([
-            'reportResourceId' => (int) $resourceId,
-            'reportTemplateId' => (int) $templateId,
-            'reportTemplate' => null,
-            'reportObjectId' => (int) $objectId,
-            'reportObjectSecId' => 0,
-            'interval' => [
-                'from' => $from,
-                'to' => $to,
-                'flags' => $intervalFlags,
-            ],
-        ]);
+            $payload = $this->reportExecutionPayload([
+                'reportResourceId' => (int) $resourceId,
+                'reportTemplateId' => (int) $templateId,
+                'reportTemplate' => null,
+                'reportObjectId' => (int) $objectId,
+                'reportObjectSecId' => 0,
+                'interval' => [
+                    'from' => $from,
+                    'to' => $to,
+                    'flags' => $intervalFlags,
+                ],
+            ]);
 
-        if ($remoteExec) {
-            $payload['remoteExec'] = 1;
-            $payload['reportObjectIdList'] = [];
-        }
+            if ($remoteExec) {
+                $payload['remoteExec'] = 1;
+                $payload['reportObjectIdList'] = [];
+            }
 
-        $sessionId = $sid ?? $this->getSessionId();
-        $result = $this->request('report/exec_report', $payload, $sessionId);
+            $sessionId = $sid ?? $this->getSessionId();
+            $result = $this->request('report/exec_report', $payload, $sessionId);
 
-        return $remoteExec ? $this->waitForRemoteReportResult($sessionId) : $result;
+            return $remoteExec ? $this->waitForRemoteReportResult($sessionId) : $result;
         } finally {
             $this->requestTimeoutOverride = $previousTimeout;
             $this->requestDeadlineAt = $previousDeadline;

@@ -8,9 +8,7 @@ use Throwable;
 
 class WialonGeozonReportParser
 {
-    public function __construct(private GeofenceNameNormalizer $normalizer)
-    {
-    }
+    public function __construct(private GeofenceNameNormalizer $normalizer) {}
 
     /**
      * @return array{records: array<int, array<string, mixed>>, parent_rows: int, nested_rows: int, columns: array<int, string>, raw: array<string, mixed>}
@@ -107,6 +105,7 @@ class WialonGeozonReportParser
 
             if ($children !== []) {
                 $records = array_merge($records, $this->parseNestedUnitRows($children, $parent, $headers));
+
                 continue;
             }
 
@@ -134,6 +133,9 @@ class WialonGeozonReportParser
     public function parseTimestamp(mixed $value): ?CarbonInterface
     {
         if (is_array($value)) {
+            if (is_numeric($value['v'] ?? null) && (int) $value['v'] > 1000000000) {
+                return CarbonImmutable::createFromTimestamp((int) $value['v'], config('app.timezone'));
+            }
             $text = $this->normalizeCellValue($value['t'] ?? null);
 
             if ($text !== '') {
@@ -228,8 +230,10 @@ class WialonGeozonReportParser
             return null;
         }
 
-        $entryAt = $entryIndex !== null ? $this->parseTimestamp($cells[$entryIndex] ?? null) : null;
-        $exitAt = $exitIndex !== null ? $this->parseTimestamp($cells[$exitIndex] ?? null) : null;
+        $entryAt = $this->parseTimestamp($row['t1'] ?? null)
+            ?? ($entryIndex !== null ? $this->parseTimestamp($cells[$entryIndex] ?? null) : null);
+        $exitAt = $this->parseTimestamp($row['t2'] ?? null)
+            ?? ($exitIndex !== null ? $this->parseTimestamp($cells[$exitIndex] ?? null) : null);
         $durationSeconds = $durationIndex !== null ? $this->parseDuration($cells[$durationIndex] ?? null) : null;
 
         if ($durationSeconds === null && $entryAt !== null && $exitAt !== null && ! $exitAt->lessThan($entryAt)) {

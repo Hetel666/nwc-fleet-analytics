@@ -79,6 +79,11 @@ return [
         'geozon_report_chunk_size' => (int) env('WIALON_GEOZON_REPORT_CHUNK_SIZE', 500),
         'geozon_report_interval_flags' => (int) env('WIALON_GEOZON_REPORT_INTERVAL_FLAGS', 0),
         'geozon_report_sleep_ms' => (int) env('WIALON_GEOZON_REPORT_SLEEP_MS', 250),
+        'project_geofence_group_names' => collect(explode(',', (string) env('WIALON_PROJECT_GEOFENCE_GROUP_NAMES', 'projects')))
+            ->map(fn (string $name): string => trim($name))
+            ->filter()
+            ->values()
+            ->all(),
         'report_session_lock_store' => env('WIALON_REPORT_SESSION_LOCK_STORE', 'database'),
         'report_session_lock_key' => env('WIALON_REPORT_SESSION_LOCK_KEY', 'wialon-report-execution'),
         'report_session_lock_seconds' => (int) env('WIALON_REPORT_SESSION_LOCK_SECONDS', 300),
