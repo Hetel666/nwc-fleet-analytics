@@ -112,6 +112,10 @@ class GeofenceViolationReportImporter
                 continue;
             }
 
+            if ($expectedGroup !== null && $this->rowBelongsToExcludedUnit($row)) {
+                continue;
+            }
+
             $normalized = $this->normalize($row, $reportGeneratedAt, $expectedGroup);
 
             if ($normalized === null) {
@@ -297,6 +301,14 @@ class GeofenceViolationReportImporter
 
         return ($projectWialonGroupId > 0 && in_array($projectWialonGroupId, $this->excludedGroups->projectWialonGroupIds(), true))
             || ($projectId > 0 && in_array($projectId, $this->excludedGroups->projectIdsWithOnlyExcludedGroups(), true));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function rowBelongsToExcludedUnit(array $row): bool
+    {
+        return $this->excludedGroups->unitMatchesExcludedGroup($this->resolveEquipment($row));
     }
 
     private function timestamp(mixed $value): ?Carbon

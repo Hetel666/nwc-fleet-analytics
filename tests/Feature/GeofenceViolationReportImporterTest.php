@@ -6,6 +6,7 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\GeofenceViolationReportRow;
 use App\Models\Project;
+use App\Models\ProjectWialonGroup;
 use App\Services\GeofenceViolationReportImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -115,6 +116,84 @@ class GeofenceViolationReportImporterTest extends TestCase
             'equipment_id' => $equipment->id,
             'exited_at' => '2026-07-27 18:00:00',
             'outside_duration_seconds' => 14_400,
+        ]);
+    }
+
+    public function test_replace_snapshot_skips_excluded_repair_units_in_project_group_report(): void
+    {
+        $project = Project::create(['name' => 'Yuxarı Şirvan LOT3', 'active' => true]);
+        $repairProject = Project::create(['name' => 'Təmir', 'active' => true]);
+        $type = EquipmentType::create(['name' => 'Excavator']);
+        $group = ProjectWialonGroup::create([
+            'project_id' => $project->id,
+            'wialon_group_id' => '601701935',
+            'name' => 'Yuxarı Şirvan LOT3 - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+        $repairGroup = ProjectWialonGroup::create([
+            'project_id' => $repairProject->id,
+            'wialon_group_id' => '601746910',
+            'name' => 'Təmir - NWC',
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'is_active' => true,
+        ]);
+
+        $valid = Equipment::create([
+            'name' => '10-AF-100',
+            'wialon_unit_id' => '601700100',
+            'equipment_type_id' => $type->id,
+            'project_id' => $project->id,
+            'project_wialon_group_id' => $group->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+        Equipment::create([
+            'name' => '110-FF-432 (təmir)',
+            'wialon_unit_id' => '25392636',
+            'equipment_type_id' => $type->id,
+            'project_id' => $repairProject->id,
+            'project_wialon_group_id' => $repairGroup->id,
+            'ownership_type' => Equipment::OWNERSHIP_NWC,
+            'active' => true,
+        ]);
+
+        $result = app(GeofenceViolationReportImporter::class)->replaceGroupSnapshot(
+            $group,
+            now(config('app.timezone'))->parse('2026-09-23 00:00:00'),
+            now(config('app.timezone'))->parse('2026-09-23 23:59:59'),
+            [
+                [
+                    'wialon_unit_id' => $valid->wialon_unit_id,
+                    'equipment_name' => $valid->name,
+                    'equipment_type' => 'Excavator',
+                    'project_name' => $project->name,
+                    'exited_at' => '2026-09-23 08:00:00',
+                    'last_confirmed_at' => '2026-09-23 12:00:00',
+                    'outside_duration_seconds' => 14_400,
+                ],
+                [
+                    'wialon_unit_id' => '25392636',
+                    'equipment_name' => '110-FF-432',
+                    'equipment_type' => 'Excavator',
+                    'project_name' => $project->name,
+                    'exited_at' => '2026-09-23 08:20:35',
+                    'last_confirmed_at' => '2026-09-23 14:14:04',
+                    'outside_duration_seconds' => 21_209,
+                ],
+            ],
+            now(config('app.timezone')),
+            true
+        );
+
+        $this->assertSame(['imported' => 1, 'rejected' => 0], $result);
+        $this->assertDatabaseCount('geofence_violation_report_rows', 1);
+        $this->assertDatabaseHas('geofence_violation_report_rows', [
+            'wialon_unit_id' => '601700100',
+            'project_wialon_group_id' => $group->id,
+        ]);
+        $this->assertDatabaseMissing('geofence_violation_report_rows', [
+            'wialon_unit_id' => '25392636',
         ]);
     }
 
