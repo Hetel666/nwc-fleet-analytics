@@ -257,6 +257,27 @@ class NightDayEfficiencyModuleTest extends TestCase
             ->assertJsonCount(2, 'data')
             ->assertJsonPath('data.0.ownership', 'NWC')
             ->assertJsonMissing(['ownership' => 'İcarə']);
+
+        $projectExport = app(NightDayEfficiencyDashboardService::class)->exportList([
+            ...$period,
+            'ownership' => 'nwc',
+            'view' => 'projects',
+        ]);
+        $this->assertSame('qeyri-is-saatlarinda-isleyen-layiheler-2026-07-31-2026-07-31.xlsx', $projectExport['filename']);
+        $this->assertSame(['Layihələr'], array_column($projectExport['sheets'], 'name'));
+        $this->assertSame('NWC project', $projectExport['sheets'][0]['sections'][0]['rows'][0][0]);
+        $this->assertSame(2, $projectExport['sheets'][0]['sections'][0]['rows'][0][2]);
+
+        $unitExport = app(NightDayEfficiencyDashboardService::class)->exportList([
+            ...$period,
+            'ownership' => 'nwc',
+            'project_id' => $nwcProject->id,
+            'view' => 'units',
+        ]);
+        $this->assertSame('qeyri-is-saatlarinda-isleyen-texnika-2026-07-31-2026-07-31.xlsx', $unitExport['filename']);
+        $this->assertSame(['Texnika üzrə'], array_column($unitExport['sheets'], 'name'));
+        $this->assertCount(2, $unitExport['sheets'][0]['sections'][0]['rows']);
+        $this->assertSame('NWC project', $unitExport['sheets'][0]['sections'][0]['rows'][0][3]);
     }
 
     public function test_after_hours_dashboard_excludes_zero_hour_placeholder_rows_from_all_outputs(): void
@@ -314,6 +335,17 @@ class NightDayEfficiencyModuleTest extends TestCase
             ->assertOk()
             ->assertDownload('qeyri-is-saatlarinda-isleyen-2026-09-20-2026-09-20.xlsx')
             ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+        $this->actingAs($user)->get(route('api.dashboard.after-hours.export', [
+            'date_from' => '2026-09-20',
+            'date_to' => '2026-09-20',
+            'ownership' => 'nwc',
+            'project_id' => $project->id,
+            'view' => 'units',
+        ]))
+            ->assertOk()
+            ->assertDownload('qeyri-is-saatlarinda-isleyen-texnika-2026-09-20-2026-09-20.xlsx')
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     }
 
     public function test_dashboard_excludes_rows_from_the_removed_legacy_report(): void
@@ -369,6 +401,7 @@ class NightDayEfficiencyModuleTest extends TestCase
             ->assertSee('data-widget-key="after-hours-icare"', false)
             ->assertSee('data-count-only="1"', false)
             ->assertSee('afterHoursNwcTotal', false)
+            ->assertSee("drilldown_mode: 'after_hours_projects'", false)
             ->assertSee('Qeyri iş vaxtı: 00:00-07:59 və 18:01-23:59');
 
         $content = $response->getContent();

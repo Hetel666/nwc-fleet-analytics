@@ -128,6 +128,90 @@ class NightDayEfficiencyDashboardService
     }
 
     /** @return array<string, mixed> */
+    public function exportList(array $filters): array
+    {
+        $view = ($filters['view'] ?? null) === 'projects' ? 'projects' : 'units';
+        $filters = $this->normalizeFilters($filters, 'export');
+        $filterRows = [
+            ['Dövr', $filters['from'].' - '.$filters['to']],
+            ['Ownership', $filters['ownership_type'] ? $this->ownershipLabel($filters['ownership_type']) : 'Hamısı'],
+            ['Siyahı', $view === 'projects' ? 'Layihələr' : 'Texnika'],
+            ['Qeyri iş vaxtı', '00:00-07:59 və 18:01-23:59'],
+            ['Mənbə', $this->sourceReportName()],
+        ];
+
+        if ($view === 'projects') {
+            $rows = DB::query()
+                ->fromSub($this->unitRowsQuery([...$filters, 'search' => '']), 'final_units')
+                ->select('project_id', 'project', 'ownership')
+                ->selectRaw('COUNT(*) as unique_units_count')
+                ->selectRaw('MAX(synced_days_count) as synced_days_count')
+                ->selectRaw('ROUND(AVG(average_engine_hours), 2) as average_engine_hours')
+                ->when($filters['search'] !== '', fn (Builder $query): Builder => $query->where('project', 'like', '%'.$filters['search'].'%'))
+                ->groupBy('project_id', 'project', 'ownership')
+                ->orderByDesc('unique_units_count')
+                ->orderBy('project')
+                ->get()
+                ->map(fn (object $row): array => [
+                    $row->project,
+                    $this->ownershipLabel($row->ownership),
+                    (int) $row->unique_units_count,
+                    (int) $row->synced_days_count,
+                    number_format((float) $row->average_engine_hours, 2, '.', ''),
+                ])
+                ->all();
+            $section = [
+                'title' => 'Layihələr',
+                'columns' => ['Layihə', 'Ownership', 'Texnika sayı', 'Sinxronlaşdırılmış gün sayı', 'Orta Engine hours'],
+                'rows' => $rows,
+            ];
+
+            return [
+                'filename' => 'qeyri-is-saatlarinda-isleyen-layiheler-'.$filters['from'].'-'.$filters['to'].'.xlsx',
+                'title' => 'Qeyri iş saatlarında işləyən - Layihələr',
+                'filters' => $filterRows,
+                'sections' => [$section],
+                'sheets' => [
+                    ['name' => 'Layihələr', 'title' => 'Qeyri iş saatlarında işləyən - Layihələr', 'filters' => $filterRows, 'sections' => [$section]],
+                ],
+            ];
+        }
+
+        $rows = $this->unitRowsQuery($filters)
+            ->orderBy('project')
+            ->orderBy('unit_name')
+            ->get()
+            ->map(fn (object $row, int $index): array => [
+                $index + 1,
+                $row->period_from.' - '.$row->period_to,
+                $row->unit_name,
+                $row->project,
+                $row->vehicle_type,
+                $this->ownershipLabel($row->ownership),
+                number_format((float) $row->average_engine_hours, 2, '.', '').' saat',
+                $row->started_at,
+                $row->ended_at,
+                $row->total_mileage_km === null ? '-' : number_format((float) $row->total_mileage_km, 2, '.', '').' km',
+            ])
+            ->all();
+        $section = [
+            'title' => 'Texnika üzrə',
+            'columns' => ['№', 'Dövr', 'Maşın nömrəsi', 'Layihə', 'Texnika növü', 'Ownership', 'Motosaat', 'Başlama', 'Bitmə', 'Yürüş'],
+            'rows' => $rows,
+        ];
+
+        return [
+            'filename' => 'qeyri-is-saatlarinda-isleyen-texnika-'.$filters['from'].'-'.$filters['to'].'.xlsx',
+            'title' => 'Qeyri iş saatlarında işləyən - Texnika',
+            'filters' => $filterRows,
+            'sections' => [$section],
+            'sheets' => [
+                ['name' => 'Texnika üzrə', 'title' => 'Qeyri iş saatlarında işləyən - Texnika', 'filters' => $filterRows, 'sections' => [$section]],
+            ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
     public function export(array $filters): array
     {
         $filters = $this->normalizeFilters($filters, 'export');

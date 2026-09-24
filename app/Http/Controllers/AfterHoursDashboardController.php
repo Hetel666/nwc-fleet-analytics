@@ -58,7 +58,10 @@ class AfterHoursDashboardController extends Controller
         NightDayEfficiencyDashboardService $dashboard,
         XlsxExportService $xlsx
     ): Response {
-        $export = $dashboard->export($this->filters($request));
+        $filters = $this->filters($request);
+        $export = in_array(($filters['view'] ?? null), ['projects', 'units'], true)
+            ? $dashboard->exportList($filters)
+            : $dashboard->export($filters);
         $content = $xlsx->build($export);
 
         return response($content, 200, [
@@ -80,6 +83,7 @@ class AfterHoursDashboardController extends Controller
             'ownership' => ['nullable', Rule::in(['NWC', 'ICARE', 'nwc', 'icare'])],
             'ownership_type' => ['nullable', Rule::in(['NWC', 'ICARE'])],
             'project_id' => ['nullable', 'integer', 'exists:projects,id'],
+            'view' => ['nullable', Rule::in(['projects', 'units'])],
             'vehicle_type' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', Rule::in(['0_1', '1_7', '7_10', 'over_10', 'no_data'])],
             'search' => ['nullable', 'string', 'max:120'],

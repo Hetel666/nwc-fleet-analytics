@@ -2905,7 +2905,7 @@
                     'countOnly' => true,
                     'title' => $dashboardWidgetTitleFor('after-hours-nwc', 'Qeyri iş saatlarında işləyən: NWC'),
                     'drilldownView' => 'projects',
-                    'drilldownMode' => 'efficiency_projects',
+                    'drilldownMode' => 'after_hours_projects',
                     'drilldownEndpointUrl' => $afterHoursProjectsUrl,
                     'drilldownExportUrl' => $afterHoursExportUrl,
                 ])
@@ -2931,7 +2931,7 @@
                     'countOnly' => true,
                     'title' => $dashboardWidgetTitleFor('after-hours-icare', 'Qeyri iş saatlarında işləyən: İcarə'),
                     'drilldownView' => 'projects',
-                    'drilldownMode' => 'efficiency_projects',
+                    'drilldownMode' => 'after_hours_projects',
                     'drilldownEndpointUrl' => $afterHoursProjectsUrl,
                     'drilldownExportUrl' => $afterHoursExportUrl,
                 ])
@@ -4830,7 +4830,7 @@ const renderDrilldownRows = rows => {
             tr.title = `${row.vehicle_type || 'Texnika növü'} siyahısını aç`;
         }
 
-        if (['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
+        if (['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
             tr.className = 'dashboard-project-type-row';
             tr.setAttribute('role', 'button');
             tr.tabIndex = 0;
@@ -4866,17 +4866,17 @@ const renderDrilldownRows = rows => {
             const value = key === 'number'
                 ? rowNumber
                 : (formattedDurationKey && row[formattedDurationKey] !== undefined ? row[formattedDurationKey] : row[key]);
-            const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
+            const isSummaryNumber = ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
                 && ['nwc_count', 'icare_count', 'count'].includes(key);
             const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-                || (['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+                || (['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
                 || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
                 || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
             td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
             td.classList.toggle('dashboard-project-type-name', isSummaryName);
             td.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
+            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
             tr.appendChild(td);
         });
 
@@ -4911,7 +4911,7 @@ const renderDrilldownColumns = columns => {
     if (drilldownColgroup) {
         drilldownColgroup.textContent = '';
 
-        if (['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)) {
+        if (['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)) {
             Object.keys(drilldownState.columns).forEach(key => {
                 const col = document.createElement('col');
                 col.classList.toggle('dashboard-project-type-name', key === 'vehicle_type' || key === 'project' || key === 'registration_number' || key === 'geofence_name');
@@ -4923,18 +4923,18 @@ const renderDrilldownColumns = columns => {
 
     Object.entries(drilldownState.columns).forEach(([key, label]) => {
         const th = document.createElement('th');
-        const isSummaryNumber = ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
+        const isSummaryNumber = ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
             && ['nwc_count', 'icare_count', 'count'].includes(key);
         const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-            || (['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+            || (['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
             || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
             || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
         th.classList.toggle('dashboard-project-type-name', isSummaryName);
         th.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
+        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
 
-        if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode)) {
+        if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode)) {
             const button = document.createElement('button');
             const isActive = drilldownState.filters.sort === key;
             const direction = drilldownState.filters.direction === 'desc' ? 'descending' : 'ascending';
@@ -5144,9 +5144,9 @@ const loadDashboardDrilldown = async () => {
 
 const configureDrilldownMode = (mode, filters = {}) => {
     const isMetricDrilldown = Boolean(filters.metric);
-    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
+    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
 
-    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(mode));
+    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(mode));
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
     drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
 
@@ -5227,11 +5227,12 @@ const openDashboardDrilldown = (filters = {}) => {
 const openSummaryUnits = trigger => {
     const isProjectTypeSummary = drilldownState.mode === 'project_types' && trigger?.dataset.equipmentTypeId;
     const isEfficiencyProjectSummary = drilldownState.mode === 'efficiency_projects' && trigger?.dataset.projectId;
+    const isAfterHoursProjectSummary = drilldownState.mode === 'after_hours_projects' && trigger?.dataset.projectId;
     const isMonthlyEfficiencyProjectSummary = drilldownState.mode === 'monthly_efficiency_projects' && trigger?.dataset.projectId;
     const isMonthlyEfficiencyObjectSummary = drilldownState.mode === 'monthly_efficiency_objects' && trigger?.dataset.wialonUnitId;
     const isMonthlyEfficiencyGeofenceSummary = drilldownState.mode === 'monthly_efficiency_geofences' && trigger?.dataset.geofenceName;
 
-    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary) {
+    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isAfterHoursProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary) {
         return;
     }
 
@@ -5259,7 +5260,7 @@ const openSummaryUnits = trigger => {
     if (isProjectTypeSummary) {
         nextFilters.equipment_type_id = trigger.dataset.equipmentTypeId;
     }
-    if (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary) {
+    if (isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary) {
         nextFilters.project_id = trigger.dataset.projectId;
     }
     if (isMonthlyEfficiencyObjectSummary) {
@@ -5283,7 +5284,7 @@ const openSummaryUnits = trigger => {
     drilldownState.meta = null;
     drilldownState.columns = defaultDrilldownColumns();
     drilldownState.title = `${parent.title} - ${
-        (isEfficiencyProjectSummary || isMonthlyEfficiencyProjectSummary)
+        (isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary)
             ? (trigger.dataset.projectName || 'Layihə')
             : (trigger.dataset.equipmentTypeName || 'Texnika növü')
     }`;
@@ -5300,7 +5301,7 @@ const openSummaryUnits = trigger => {
     } else if (isMonthlyEfficiencyGeofenceSummary) {
         drilldownState.endpointUrl = drilldownState.daysEndpointUrl;
         drilldownState.exportEnabled = false;
-    } else if (isMonthlyEfficiencyProjectSummary || (isEfficiencyProjectSummary && drilldownState.unitsEndpointUrl)) {
+    } else if (isMonthlyEfficiencyProjectSummary || ((isEfficiencyProjectSummary || isAfterHoursProjectSummary) && drilldownState.unitsEndpointUrl)) {
         drilldownState.endpointUrl = drilldownState.unitsEndpointUrl;
     }
     drilldownState.mode = isMonthlyEfficiencyGeofenceSummary
@@ -5594,7 +5595,7 @@ const afterHoursNwcDrilldown = {
     title: 'Qeyri iş saatlarında işləyən: NWC',
     ownership: 'nwc',
     view: 'projects',
-    drilldown_mode: 'efficiency_projects',
+    drilldown_mode: 'after_hours_projects',
     endpoint_url: afterHoursEndpoints.projects,
     units_endpoint_url: afterHoursEndpoints.units,
     export_url: afterHoursEndpoints.export,
@@ -5603,7 +5604,7 @@ const afterHoursIcareDrilldown = {
     title: 'Qeyri iş saatlarında işləyən: İcarə',
     ownership: 'icare',
     view: 'projects',
-    drilldown_mode: 'efficiency_projects',
+    drilldown_mode: 'after_hours_projects',
     endpoint_url: afterHoursEndpoints.projects,
     units_endpoint_url: afterHoursEndpoints.units,
     export_url: afterHoursEndpoints.export,
