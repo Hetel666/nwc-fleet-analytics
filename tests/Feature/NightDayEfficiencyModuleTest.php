@@ -296,6 +296,26 @@ class NightDayEfficiencyModuleTest extends TestCase
         $this->assertSame('Unit 7401', $export['sheets'][2]['sections'][0]['rows'][0][1]);
     }
 
+    public function test_after_hours_export_downloads_xlsx_for_efficiency_viewer(): void
+    {
+        $user = User::factory()->create([
+            'active' => true,
+            'dashboard_sections' => [User::DASHBOARD_SECTION_EFFICIENCY],
+        ]);
+        $project = Project::query()->create(['name' => 'After-hours export', 'active' => true]);
+        $this->nightDayFact($project, '7501', '2026-09-20', 1.25, EfficiencyStatus::ONE_TO_SEVEN);
+
+        $this->actingAs($user)->get(route('api.dashboard.after-hours.export', [
+            'date_from' => '2026-09-20',
+            'date_to' => '2026-09-20',
+            'ownership' => 'nwc',
+            'project_id' => $project->id,
+        ]))
+            ->assertOk()
+            ->assertDownload('qeyri-is-saatlarinda-isleyen-2026-09-20-2026-09-20.xlsx')
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+
     public function test_dashboard_excludes_rows_from_the_removed_legacy_report(): void
     {
         $project = Project::query()->create(['name' => 'After-hours source filter', 'active' => true]);

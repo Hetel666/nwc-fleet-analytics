@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\GenerateDashboardExportJob;
-use App\Models\DashboardExport;
 use App\Services\NightDayEfficiencyDashboardService;
-use Illuminate\Http\JsonResponse;
+use App\Services\XlsxExportService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
 
 class AfterHoursDashboardController extends Controller
 {
@@ -54,22 +53,20 @@ class AfterHoursDashboardController extends Controller
         ];
     }
 
-    public function export(Request $request, NightDayEfficiencyDashboardService $dashboard): JsonResponse
-    {
-        $record = DashboardExport::query()->create([
-            'user_id' => $request->user()->id,
-            'block' => 'after_hours',
-            'filters' => $dashboard->normalizeFilters($this->filters($request), 'export'),
-            'status' => DashboardExport::STATUS_PENDING,
+    public function export(
+        Request $request,
+        NightDayEfficiencyDashboardService $dashboard,
+        XlsxExportService $xlsx
+    ): Response {
+        $export = $dashboard->export($this->filters($request));
+        $content = $xlsx->build($export);
+
+        return response($content, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$export['filename'].'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Content-Length' => (string) strlen($content),
         ]);
-
-        GenerateDashboardExportJob::dispatch($record->id)->onConnection('database')->onQueue('default');
-
-        return response()->json([
-            'id' => $record->id,
-            'status' => $record->status,
-            'status_url' => route('dashboard.exports.status', $record),
-        ], 202);
     }
 
     /** @return array<string, mixed> */
