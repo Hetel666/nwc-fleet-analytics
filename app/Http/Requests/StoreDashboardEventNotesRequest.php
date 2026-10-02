@@ -28,7 +28,7 @@ class StoreDashboardEventNotesRequest extends FormRequest
                 DashboardEventNoteService::DASHBOARD_GEOFENCE_VIOLATIONS,
             ])],
             'items.*.event_type' => ['required', 'string', 'max:80'],
-            'items.*.event_date' => ['nullable', 'date'],
+            'items.*.event_date' => ['required', 'date_format:Y-m-d'],
             'items.*.project_id' => ['nullable', 'integer', 'exists:projects,id'],
             'items.*.equipment_id' => ['nullable', 'integer', 'exists:equipments,id'],
             'items.*.wialon_unit_id' => ['nullable', 'string', 'max:80'],
