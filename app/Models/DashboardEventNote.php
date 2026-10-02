@@ -48,6 +48,21 @@ class DashboardEventNote extends Model
         ];
     }
 
+    public static function statusLabelsForDashboard(string $dashboard): array
+    {
+        if ($dashboard === 'geofence_violations') {
+            return self::investigationStatusLabels();
+        }
+
+        return [
+            self::STATUS_INVESTIGATING => 'Araşdırılır',
+            'repair' => 'Təmir',
+            'no_work' => 'İş yoxdur',
+            'gps_problem' => 'GPS problemi',
+            self::STATUS_JUSTIFIED => 'Əsaslandırıldı',
+        ];
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);

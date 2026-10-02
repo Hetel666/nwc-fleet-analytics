@@ -35,7 +35,13 @@ class StoreDashboardEventNotesRequest extends FormRequest
             'items.*.unit_name' => ['nullable', 'string', 'max:255'],
             'items.*.event_status' => ['nullable', 'string', 'max:80'],
             'items.*.note' => ['nullable', 'string', 'max:5000'],
-            'items.*.investigation_status' => ['nullable', Rule::in(array_keys(DashboardEventNote::investigationStatusLabels()))],
+            'items.*.investigation_status' => ['nullable', 'string', function (string $attribute, mixed $value, \Closure $fail): void {
+                $dashboardAttribute = str_replace('.investigation_status', '.dashboard_key', $attribute);
+
+                if (! array_key_exists($value, DashboardEventNote::statusLabelsForDashboard((string) $this->input($dashboardAttribute)))) {
+                    $fail('Seçilmiş araşdırma statusu yanlışdır.');
+                }
+            }],
         ];
     }
 

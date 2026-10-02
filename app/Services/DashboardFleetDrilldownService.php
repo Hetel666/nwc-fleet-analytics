@@ -286,7 +286,9 @@ class DashboardFleetDrilldownService
             : $row;
 
         return collect($visibleKeys)
-            ->map(fn (string $key): mixed => $assoc[$key] ?? null)
+            ->map(fn (string $key): mixed => $key === 'investigation_status'
+                ? ($assoc['investigation_status_label'] ?? $assoc[$key] ?? null)
+                : ($assoc[$key] ?? null))
             ->all();
     }
 
@@ -331,6 +333,7 @@ class DashboardFleetDrilldownService
 
             if (in_array($filters['work_category'], ['0_1', 'less_than_1_hour', 'no_data'], true)) {
                 $columns['note'] = 'Qeyd';
+                $columns['investigation_status'] = 'Araşdırma statusu';
             }
 
             return $columns;

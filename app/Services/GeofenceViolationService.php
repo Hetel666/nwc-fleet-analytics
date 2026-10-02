@@ -88,8 +88,10 @@ class GeofenceViolationService
      */
     private function visibleExportRow(array $row): array
     {
-        return collect($row)
-            ->except(self::HIDDEN_EXPORT_COLUMNS)
+        $row['investigation_status'] = $row['investigation_status_label'] ?? $row['investigation_status'] ?? '';
+
+        return collect(array_keys($this->columns()))
+            ->mapWithKeys(fn (string $key): array => [$key => $row[$key] ?? null])
             ->all();
     }
 
@@ -145,6 +147,7 @@ class GeofenceViolationService
             'left_at' => 'Geozonadan çıxış vaxtı',
             'duration' => 'Geozonada qalma müddəti',
             'note' => 'Qeyd',
+            'investigation_status' => 'Araşdırma statusu',
         ];
     }
 
@@ -608,7 +611,7 @@ class GeofenceViolationService
     {
         $row['event_key'] = $this->eventNotes->geofenceTransferEventKey($interval);
 
-        return $this->eventNotes->attachNotes([$row])[0];
+        return $this->eventNotes->attachNotes([$row], true)[0];
     }
 
     private function intervalPassesMinimumDuration(UnitForeignGeofenceInterval $interval): bool

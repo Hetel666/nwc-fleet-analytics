@@ -40,7 +40,8 @@ class DashboardEventNoteService
                 if ($includeInvestigationStatus) {
                     $row['investigation_status'] = $note?->investigation_status
                         ?: DashboardEventNote::STATUS_INVESTIGATING;
-                    $row['investigation_status_label'] = DashboardEventNote::investigationStatusLabels()[$row['investigation_status']]
+                    $row['investigation_status_options'] = DashboardEventNote::statusLabelsForDashboard((string) ($row['dashboard_key'] ?? ''));
+                    $row['investigation_status_label'] = $row['investigation_status_options'][$row['investigation_status']]
                         ?? $row['investigation_status'];
                 }
 

@@ -11,6 +11,33 @@ class DashboardEventNoteTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_bulk_save_preserves_note_status_and_separate_dates(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+        $items = collect(['2026-10-01', '2026-10-02'])->map(fn (string $date): array => [
+            'event_key' => sha1('unit-1|'.$date),
+            'dashboard_key' => DashboardEventNoteService::DASHBOARD_GENERAL_EFFICIENCY,
+            'event_type' => 'work_status',
+            'event_date' => $date,
+            'wialon_unit_id' => 'unit-1',
+            'note' => 'Service '.$date,
+            'investigation_status' => 'repair',
+        ])->all();
+
+        $this->actingAs($user)->postJson(route('dashboard.event-notes.store'), ['items' => $items])
+            ->assertOk()->assertJson(['saved' => 2]);
+        $this->assertDatabaseCount('dashboard_event_notes', 2);
+
+        $rows = app(DashboardEventNoteService::class)->attachNotes($items, true);
+        $this->assertSame('Service 2026-10-01', $rows[0]['note']);
+        $this->assertSame('Service 2026-10-02', $rows[1]['note']);
+        $this->assertSame('Təmir', $rows[0]['investigation_status_label']);
+
+        $this->actingAs($user)->postJson(route('dashboard.event-notes.store'), ['items' => [[
+            ...$items[0], 'dashboard_key' => DashboardEventNoteService::DASHBOARD_GEOFENCE_VIOLATIONS,
+        ]]])->assertUnprocessable()->assertJsonValidationErrors('items.0.investigation_status');
+    }
+
     public function test_user_can_save_and_update_dashboard_event_note(): void
     {
         $user = User::factory()->create(['active' => true]);

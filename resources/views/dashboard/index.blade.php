@@ -4843,7 +4843,7 @@ const noteContextForRow = row => ({
 });
 
 const rememberDrilldownNoteChange = (row, patch) => {
-    const context = { ...noteContextForRow(row), ...patch };
+    const context = { ...noteContextForRow(row), ...drilldownNoteChanges.get(row.event_key), ...patch };
 
     if (!context.event_key || !context.dashboard_key || !context.event_type) {
         return;
@@ -4858,7 +4858,7 @@ const renderDrilldownEditableCell = (td, row, key) => {
         const input = document.createElement('textarea');
         input.className = 'form-control form-control-sm';
         input.rows = 1;
-        input.value = row.note || '';
+        input.value = drilldownNoteChanges.get(row.event_key)?.note ?? row.note ?? '';
         input.placeholder = 'Qeyd';
         input.addEventListener('input', () => rememberDrilldownNoteChange(row, { note: input.value }));
         td.appendChild(input);
@@ -4868,11 +4868,11 @@ const renderDrilldownEditableCell = (td, row, key) => {
     if (key === 'investigation_status' && row.event_key) {
         const select = document.createElement('select');
         select.className = 'form-select form-select-sm';
-        Object.entries(investigationStatusLabels).forEach(([value, label]) => {
+        Object.entries(row.investigation_status_options || investigationStatusLabels).forEach(([value, label]) => {
             const option = document.createElement('option');
             option.value = value;
             option.textContent = label;
-            option.selected = String(row.investigation_status || 'investigating') === value;
+            option.selected = String(drilldownNoteChanges.get(row.event_key)?.investigation_status ?? row.investigation_status ?? 'investigating') === value;
             select.appendChild(option);
         });
         select.addEventListener('change', () => rememberDrilldownNoteChange(row, { investigation_status: select.value }));
@@ -4889,7 +4889,7 @@ const drilldownFilterValue = (row, key, index) => {
     }
 
     if (key === 'investigation_status') {
-        return investigationStatusLabels[row.investigation_status || 'investigating'] || row.investigation_status || '';
+        return (row.investigation_status_options || investigationStatusLabels)[row.investigation_status || 'investigating'] || row.investigation_status || '';
     }
 
     return String(row[key] ?? '');

@@ -316,7 +316,7 @@ class EfficiencyDashboardService
         $row['event_date'] = $source->business_date;
         $row['event_status'] = $source->efficiency_status;
 
-        return $this->eventNotes->attachNotes([$row])[0];
+        return $this->eventNotes->attachNotes([$row], true)[0];
     }
 
     private function statusCountSql(): string
