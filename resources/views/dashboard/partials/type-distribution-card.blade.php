@@ -22,6 +22,8 @@
                                     data-drilldown-title="{{ $ownershipLabel ?? '' }} — {{ $type['name'] }}"
                                     data-drilldown-ownership="{{ $ownership ?? 'all' }}"
                                     data-drilldown-ownership-scope="project_groups"
+                                    data-drilldown-view="projects"
+                                    data-drilldown-mode="inventory_projects"
                                     data-drilldown-equipment-type-id="{{ $type['id'] ?? '' }}"
                                 >
                                     <td>{{ $type['name'] }}</td>
