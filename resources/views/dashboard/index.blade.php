@@ -434,6 +434,16 @@
         z-index: 2;
         background: var(--fleet-card-soft);
     }
+    .dashboard-drilldown-filter-row th {
+        top: 34px;
+        padding: 5px 6px;
+        background: var(--fleet-card);
+    }
+    .dashboard-drilldown-column-filter {
+        min-width: 86px;
+        height: 28px;
+        font-size: .75rem;
+    }
     .dashboard-drilldown-table.dashboard-project-type-table {
         width: 100%;
         table-layout: fixed;
@@ -2421,6 +2431,7 @@
         data-dashboard-layout-reset-url="{{ route('dashboard.layout.destroy') }}"
         data-dashboard-drilldown-url="{{ route('dashboard.drilldown.units') }}"
         data-dashboard-drilldown-export-url="{{ route('dashboard.drilldown.units.export') }}"
+        data-dashboard-event-notes-url="{{ route('dashboard.event-notes.store') }}"
         data-geofence-violations-drilldown-url="{{ route('dashboard.geofence-violations.drilldown') }}"
         data-dashboard-date-from="{{ $filters['from'] }}"
         data-dashboard-date-to="{{ $filters['to'] }}"
@@ -3269,6 +3280,9 @@
                             <option value="day">Gün üzrə</option>
                             <option value="unit">Texnika üzrə</option>
                         </select>
+                        <button type="button" class="btn btn-primary btn-sm d-none" id="dashboardDrilldownSaveNotes">
+                            <i class="bi bi-check2"></i> Yadda saxla
+                        </button>
                         <label class="visually-hidden" for="dashboardDrilldownSearch">{{ __('app.search_equipment') }}</label>
                         <input type="search" class="form-control form-control-sm ms-auto" id="dashboardDrilldownSearch" placeholder="Axtarış..." aria-label="{{ __('app.search_equipment') }}" style="max-width: 260px;">
                     </div>
@@ -3286,6 +3300,7 @@
                                     <th>Layihə</th>
                                     <th>Wialon ID</th>
                                 </tr>
+                                <tr class="dashboard-drilldown-filter-row" id="dashboardDrilldownColumnFilters"></tr>
                             </thead>
                             <tbody id="dashboardDrilldownRows"></tbody>
                         </table>
@@ -4653,6 +4668,7 @@ const drilldownBack = document.getElementById('dashboardDrilldownBack');
 const drilldownStatus = document.getElementById('dashboardDrilldownStatus');
 const drilldownRows = document.getElementById('dashboardDrilldownRows');
 const drilldownHeader = document.getElementById('dashboardDrilldownHeader');
+const drilldownColumnFilters = document.getElementById('dashboardDrilldownColumnFilters');
 const drilldownTable = drilldownHeader?.closest('table');
 const drilldownColgroup = document.getElementById('dashboardDrilldownColgroup');
 const drilldownSearch = document.getElementById('dashboardDrilldownSearch');
@@ -4663,6 +4679,7 @@ const drilldownPageSize = document.getElementById('dashboardDrilldownPageSize');
 const drilldownPrev = document.getElementById('dashboardDrilldownPrev');
 const drilldownNext = document.getElementById('dashboardDrilldownNext');
 const drilldownExport = document.getElementById('dashboardDrilldownExport');
+const drilldownSaveNotes = document.getElementById('dashboardDrilldownSaveNotes');
 const drilldownRetry = document.getElementById('dashboardDrilldownRetry');
 const efficiencyDurationFormatKey = 'efficiency_duration_format';
 const efficiencyDurationFormats = new Set(['days_hms', 'hours_hms', 'decimal_hours']);
@@ -4681,6 +4698,13 @@ let drilldownController = null;
 let drilldownRequestId = 0;
 let drilldownReturnFocus = null;
 let drilldownLoading = false;
+const drilldownNoteChanges = new Map();
+const investigationStatusLabels = {
+    investigating: 'Araşdırılır',
+    justified: 'Əsaslandırıldı',
+    confirmed_violation: 'Təsdiqlənmiş pozuntu',
+    system_error: 'Sistem xətası',
+};
 let drilldownState = {
     title: '',
     filters: {},
@@ -4690,6 +4714,8 @@ let drilldownState = {
     page: 1,
     meta: null,
     columns: {},
+    currentRows: [],
+    columnFilters: {},
     endpointUrl: '',
     unitsEndpointUrl: '',
     exportUrl: '',
@@ -4798,13 +4824,103 @@ const renderDrilldownFilters = filters => {
     });
 };
 
-const renderDrilldownRows = rows => {
+const updateDrilldownSaveButton = () => {
+    drilldownSaveNotes?.classList.toggle('d-none', drilldownNoteChanges.size === 0);
+};
+
+const noteContextForRow = row => ({
+    event_key: row.event_key || '',
+    dashboard_key: row.dashboard_key || '',
+    event_type: row.event_type || '',
+    event_date: row.event_date || '',
+    project_id: row.project_id || null,
+    equipment_id: row.equipment_id || null,
+    wialon_unit_id: row.wialon_unit_id || row.wialon_id || '',
+    unit_name: row.unit_name || row.name || row.equipment || row.equipment_name || '',
+    event_status: row.event_status || row.status || '',
+    note: row.note || '',
+    investigation_status: row.investigation_status || null,
+});
+
+const rememberDrilldownNoteChange = (row, patch) => {
+    const context = { ...noteContextForRow(row), ...patch };
+
+    if (!context.event_key || !context.dashboard_key || !context.event_type) {
+        return;
+    }
+
+    drilldownNoteChanges.set(context.event_key, context);
+    updateDrilldownSaveButton();
+};
+
+const renderDrilldownEditableCell = (td, row, key) => {
+    if (key === 'note' && row.event_key) {
+        const input = document.createElement('textarea');
+        input.className = 'form-control form-control-sm';
+        input.rows = 1;
+        input.value = row.note || '';
+        input.placeholder = 'Qeyd';
+        input.addEventListener('input', () => rememberDrilldownNoteChange(row, { note: input.value }));
+        td.appendChild(input);
+        return true;
+    }
+
+    if (key === 'investigation_status' && row.event_key) {
+        const select = document.createElement('select');
+        select.className = 'form-select form-select-sm';
+        Object.entries(investigationStatusLabels).forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            option.selected = String(row.investigation_status || 'investigating') === value;
+            select.appendChild(option);
+        });
+        select.addEventListener('change', () => rememberDrilldownNoteChange(row, { investigation_status: select.value }));
+        td.appendChild(select);
+        return true;
+    }
+
+    return false;
+};
+
+const drilldownFilterValue = (row, key, index) => {
+    if (key === 'number') {
+        return String(index + 1);
+    }
+
+    if (key === 'investigation_status') {
+        return investigationStatusLabels[row.investigation_status || 'investigating'] || row.investigation_status || '';
+    }
+
+    return String(row[key] ?? '');
+};
+
+const applyDrilldownColumnFilters = rows => {
+    const filters = Object.entries(drilldownState.columnFilters || {})
+        .map(([key, value]) => [key, String(value || '').trim().toLocaleLowerCase()])
+        .filter(([, value]) => value !== '');
+
+    if (!filters.length) {
+        return rows;
+    }
+
+    return rows.filter((row, index) => filters.every(([key, value]) => (
+        drilldownFilterValue(row, key, index).toLocaleLowerCase().includes(value)
+    )));
+};
+
+const renderDrilldownRows = (rows, updateStoredRows = true) => {
     if (!drilldownRows) {
         return;
     }
 
+    if (updateStoredRows) {
+        drilldownState.currentRows = rows;
+    }
+
     drilldownRows.textContent = '';
     const columns = Object.keys(drilldownState.columns || {});
+    rows = applyDrilldownColumnFilters(rows);
 
     if (!rows.length) {
         const tr = document.createElement('tr');
@@ -4830,7 +4946,7 @@ const renderDrilldownRows = rows => {
             tr.title = `${row.vehicle_type || 'Texnika növü'} siyahısını aç`;
         }
 
-        if (['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
+        if (['inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && row.project_id) {
             tr.className = 'dashboard-project-type-row';
             tr.setAttribute('role', 'button');
             tr.tabIndex = 0;
@@ -4866,17 +4982,19 @@ const renderDrilldownRows = rows => {
             const value = key === 'number'
                 ? rowNumber
                 : (formattedDurationKey && row[formattedDurationKey] !== undefined ? row[formattedDurationKey] : row[key]);
-            const isSummaryNumber = ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
+            const isSummaryNumber = ['project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
                 && ['nwc_count', 'icare_count', 'count'].includes(key);
             const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-                || (['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+                || (['inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
                 || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
                 || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
-            td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
+            if (!renderDrilldownEditableCell(td, row, key)) {
+                td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
+            }
             td.classList.toggle('dashboard-project-type-name', isSummaryName);
             td.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-            td.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
+            td.classList.toggle('dashboard-project-type-total', ['project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
             tr.appendChild(td);
         });
 
@@ -4908,10 +5026,13 @@ const renderDrilldownColumns = columns => {
     drilldownState.columns = columns && Object.keys(columns).length ? columns : defaultDrilldownColumns();
 
     drilldownHeader.textContent = '';
+    if (drilldownColumnFilters) {
+        drilldownColumnFilters.textContent = '';
+    }
     if (drilldownColgroup) {
         drilldownColgroup.textContent = '';
 
-        if (['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)) {
+        if (['project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)) {
             Object.keys(drilldownState.columns).forEach(key => {
                 const col = document.createElement('col');
                 col.classList.toggle('dashboard-project-type-name', key === 'vehicle_type' || key === 'project' || key === 'registration_number' || key === 'geofence_name');
@@ -4923,16 +5044,16 @@ const renderDrilldownColumns = columns => {
 
     Object.entries(drilldownState.columns).forEach(([key, label]) => {
         const th = document.createElement('th');
-        const isSummaryNumber = ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
+        const isSummaryNumber = ['project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode)
             && ['nwc_count', 'icare_count', 'count'].includes(key);
         const isSummaryName = (drilldownState.mode === 'project_types' && key === 'vehicle_type')
-            || (['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
+            || (['inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode) && key === 'project')
             || (drilldownState.mode === 'monthly_efficiency_objects' && ['registration_number', 'name'].includes(key))
             || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
         th.classList.toggle('dashboard-project-type-name', isSummaryName);
         th.classList.toggle('dashboard-project-type-number', isSummaryNumber);
-        th.classList.toggle('dashboard-project-type-total', ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
+        th.classList.toggle('dashboard-project-type-total', ['project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(drilldownState.mode) && key === 'count');
 
         if (drilldownSortableColumns.has(key) && !['efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects'].includes(drilldownState.mode)) {
             const button = document.createElement('button');
@@ -4954,6 +5075,25 @@ const renderDrilldownColumns = columns => {
         }
 
         drilldownHeader.appendChild(th);
+
+        if (drilldownColumnFilters) {
+            const filterTh = document.createElement('th');
+            const input = document.createElement('input');
+            input.type = 'search';
+            input.className = 'form-control form-control-sm dashboard-drilldown-column-filter';
+            input.value = drilldownState.columnFilters?.[key] || '';
+            input.placeholder = String(label);
+            input.setAttribute('aria-label', `${label}: filtr`);
+            input.addEventListener('input', () => {
+                drilldownState.columnFilters = {
+                    ...(drilldownState.columnFilters || {}),
+                    [key]: input.value,
+                };
+                renderDrilldownRows(drilldownState.currentRows || [], false);
+            });
+            filterTh.appendChild(input);
+            drilldownColumnFilters.appendChild(filterTh);
+        }
     });
 };
 
@@ -5014,6 +5154,8 @@ const resetDashboardDrilldownState = (options = {}) => {
 
     drilldownLoading = false;
     drilldownRequestId += 1;
+    drilldownNoteChanges.clear();
+    updateDrilldownSaveButton();
     drilldownState = {
         title: '',
         filters: {},
@@ -5023,6 +5165,8 @@ const resetDashboardDrilldownState = (options = {}) => {
         page: 1,
         meta: null,
         columns: defaultDrilldownColumns(),
+        currentRows: [],
+        columnFilters: {},
         endpointUrl: dashboardPage?.dataset.dashboardDrilldownUrl || '',
         unitsEndpointUrl: '',
         daysEndpointUrl: '',
@@ -5144,9 +5288,9 @@ const loadDashboardDrilldown = async () => {
 
 const configureDrilldownMode = (mode, filters = {}) => {
     const isMetricDrilldown = Boolean(filters.metric);
-    const isRestrictedMode = ['geofence_violations', 'project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
+    const isRestrictedMode = ['geofence_violations', 'project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
 
-    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(mode));
+    drilldownTable?.classList.toggle('dashboard-project-type-table', ['project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences'].includes(mode));
     drilldownDataStatusGroup?.classList.toggle('d-none', isRestrictedMode);
     drilldownGroupMode?.classList.toggle('d-none', !isMetricDrilldown);
 
@@ -5165,7 +5309,7 @@ const openDashboardDrilldown = (filters = {}) => {
     const exportUrl = nextFilters.export_url || '';
     const mode = nextFilters.drilldown_mode
         || (nextFilters.view === 'equipment_types' ? 'project_types' : (nextFilters.view === 'projects' ? 'efficiency_projects' : 'fleet'));
-    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
+    const exportEnabled = nextFilters.export_enabled !== false && !['project_types', 'inventory_projects', 'efficiency_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
 
     delete nextFilters.endpoint_url;
     delete nextFilters.units_endpoint_url;
@@ -5226,13 +5370,14 @@ const openDashboardDrilldown = (filters = {}) => {
 
 const openSummaryUnits = trigger => {
     const isProjectTypeSummary = drilldownState.mode === 'project_types' && trigger?.dataset.equipmentTypeId;
+    const isInventoryProjectSummary = drilldownState.mode === 'inventory_projects' && trigger?.dataset.projectId;
     const isEfficiencyProjectSummary = drilldownState.mode === 'efficiency_projects' && trigger?.dataset.projectId;
     const isAfterHoursProjectSummary = drilldownState.mode === 'after_hours_projects' && trigger?.dataset.projectId;
     const isMonthlyEfficiencyProjectSummary = drilldownState.mode === 'monthly_efficiency_projects' && trigger?.dataset.projectId;
     const isMonthlyEfficiencyObjectSummary = drilldownState.mode === 'monthly_efficiency_objects' && trigger?.dataset.wialonUnitId;
     const isMonthlyEfficiencyGeofenceSummary = drilldownState.mode === 'monthly_efficiency_geofences' && trigger?.dataset.geofenceName;
 
-    if (!isProjectTypeSummary && !isEfficiencyProjectSummary && !isAfterHoursProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary) {
+    if (!isProjectTypeSummary && !isInventoryProjectSummary && !isEfficiencyProjectSummary && !isAfterHoursProjectSummary && !isMonthlyEfficiencyProjectSummary && !isMonthlyEfficiencyObjectSummary && !isMonthlyEfficiencyGeofenceSummary) {
         return;
     }
 
@@ -5260,7 +5405,7 @@ const openSummaryUnits = trigger => {
     if (isProjectTypeSummary) {
         nextFilters.equipment_type_id = trigger.dataset.equipmentTypeId;
     }
-    if (isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary) {
+    if (isInventoryProjectSummary || isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary) {
         nextFilters.project_id = trigger.dataset.projectId;
     }
     if (isMonthlyEfficiencyObjectSummary) {
@@ -5282,9 +5427,11 @@ const openSummaryUnits = trigger => {
     drilldownState.baseTotal = null;
     drilldownState.initialized = false;
     drilldownState.meta = null;
+    drilldownState.currentRows = [];
+    drilldownState.columnFilters = {};
     drilldownState.columns = defaultDrilldownColumns();
     drilldownState.title = `${parent.title} - ${
-        (isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary)
+        (isInventoryProjectSummary || isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary)
             ? (trigger.dataset.projectName || 'Layihə')
             : (trigger.dataset.equipmentTypeName || 'Texnika növü')
     }`;
@@ -5333,6 +5480,8 @@ const restoreDrilldownSummary = () => {
     drilldownState.baseTotal = null;
     drilldownState.initialized = false;
     drilldownState.meta = null;
+    drilldownState.currentRows = [];
+    drilldownState.columnFilters = {};
     drilldownState.title = parent.title;
     drilldownState.endpointUrl = parent.endpointUrl;
     drilldownState.unitsEndpointUrl = parent.unitsEndpointUrl;
@@ -5525,6 +5674,41 @@ drilldownNext?.addEventListener('click', () => {
 
 drilldownRetry?.addEventListener('click', loadDashboardDrilldown);
 
+drilldownSaveNotes?.addEventListener('click', async () => {
+    if (drilldownNoteChanges.size === 0 || !dashboardPage?.dataset.dashboardEventNotesUrl) {
+        return;
+    }
+
+    const items = Array.from(drilldownNoteChanges.values());
+    drilldownSaveNotes.disabled = true;
+    setDrilldownStatus('Qeydlər yadda saxlanılır...', 'muted');
+
+    try {
+        const response = await fetch(dashboardPage.dataset.dashboardEventNotesUrl, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+            },
+            body: JSON.stringify({ items }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        drilldownNoteChanges.clear();
+        updateDrilldownSaveButton();
+        setDrilldownStatus('Qeydlər yadda saxlanıldı.', 'success');
+        loadDashboardDrilldown();
+    } catch (error) {
+        setDrilldownStatus('Qeydləri yadda saxlamaq mümkün olmadı.', 'danger');
+    } finally {
+        drilldownSaveNotes.disabled = false;
+    }
+});
+
 drilldownHeader?.addEventListener('click', event => {
     const button = event.target.closest('.dashboard-drilldown-sort');
 
@@ -5612,11 +5796,11 @@ const afterHoursIcareDrilldown = {
 const monthlyEfficiencyNwcDrilldownItems = monthlyEfficiencyKeys.map((key, index) => ({
     title: `${labels.nwc} üzrə — ${monthlyEfficiencyLabels[index]}`,
     ownership: 'nwc',
-    view: 'objects',
-    drilldown_mode: 'monthly_efficiency_objects',
+    view: 'projects',
+    drilldown_mode: 'monthly_efficiency_projects',
     status: key,
-    endpoint_url: monthlyEfficiencyEndpoints.objects,
-    units_endpoint_url: monthlyEfficiencyEndpoints.objectGeofences,
+    endpoint_url: monthlyEfficiencyEndpoints.projects,
+    units_endpoint_url: monthlyEfficiencyEndpoints.units,
     days_endpoint_url: monthlyEfficiencyEndpoints.objectGeofenceDays,
     export_url: monthlyEfficiencyEndpoints.export,
     export_enabled: false,
@@ -5624,11 +5808,11 @@ const monthlyEfficiencyNwcDrilldownItems = monthlyEfficiencyKeys.map((key, index
 const monthlyEfficiencyIcareDrilldownItems = monthlyEfficiencyKeys.map((key, index) => ({
     title: `${labels.icare} üzrə — ${monthlyEfficiencyLabels[index]}`,
     ownership: 'icare',
-    view: 'objects',
-    drilldown_mode: 'monthly_efficiency_objects',
+    view: 'projects',
+    drilldown_mode: 'monthly_efficiency_projects',
     status: key,
-    endpoint_url: monthlyEfficiencyEndpoints.objects,
-    units_endpoint_url: monthlyEfficiencyEndpoints.objectGeofences,
+    endpoint_url: monthlyEfficiencyEndpoints.projects,
+    units_endpoint_url: monthlyEfficiencyEndpoints.units,
     days_endpoint_url: monthlyEfficiencyEndpoints.objectGeofenceDays,
     export_url: monthlyEfficiencyEndpoints.export,
     export_enabled: false,
@@ -5636,12 +5820,16 @@ const monthlyEfficiencyIcareDrilldownItems = monthlyEfficiencyKeys.map((key, ind
 const typeNwcDrilldownItems = () => typeNwcIds.map((id, index) => ({
     title: `${labels.nwc} - ${typeNwcLabels[index]}`,
     ownership: 'nwc',
+    view: 'projects',
+    drilldown_mode: 'inventory_projects',
     equipment_type_id: id,
     ownership_scope: 'project_groups',
 }));
 const typeIcareDrilldownItems = () => typeIcareIds.map((id, index) => ({
     title: `${labels.icare} - ${typeIcareLabels[index]}`,
     ownership: 'icare',
+    view: 'projects',
+    drilldown_mode: 'inventory_projects',
     equipment_type_id: id,
     ownership_scope: 'project_groups',
 }));

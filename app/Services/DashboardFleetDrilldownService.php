@@ -23,6 +23,14 @@ class DashboardFleetDrilldownService
         'wialon_group',
         'home_geofence',
         'wialon_id',
+        'event_key',
+        'dashboard_key',
+        'event_type',
+        'event_date',
+        'event_status',
+        'project_id',
+        'wialon_unit_id',
+        'investigation_status_label',
     ];
 
     public function __construct(
@@ -95,8 +103,10 @@ class DashboardFleetDrilldownService
      */
     public function getUnits(array $filters): LengthAwarePaginator
     {
-        if ($filters['view'] === 'projects' && ($filters['work_category'] || $filters['day_status'])) {
-            return $this->efficiency->paginateProjects($this->efficiencyFilters($filters));
+        if ($filters['view'] === 'projects') {
+            return ($filters['work_category'] || $filters['day_status'])
+                ? $this->efficiency->paginateProjects($this->efficiencyFilters($filters))
+                : $this->projectInventoryPaginator($filters);
         }
 
         if ($filters['view'] === 'equipment_types') {
@@ -297,8 +307,16 @@ class DashboardFleetDrilldownService
             ];
         }
 
-        if ($filters['work_category'] || $filters['day_status']) {
+        if ($filters['view'] === 'projects') {
             return [
+                'project' => 'Layihə',
+                'ownership' => 'Ownership',
+                'count' => 'Say',
+            ];
+        }
+
+        if ($filters['work_category'] || $filters['day_status']) {
+            $columns = [
                 'date' => 'Tarix',
                 'name' => 'Texnika',
                 'project' => 'Layihə',
@@ -310,6 +328,12 @@ class DashboardFleetDrilldownService
                 'mileage' => 'Yürüş',
                 'status_label' => 'Status',
             ];
+
+            if (in_array($filters['work_category'], ['0_1', 'less_than_1_hour', 'no_data'], true)) {
+                $columns['note'] = 'Qeyd';
+            }
+
+            return $columns;
         }
 
         if ($filters['view'] === 'equipment_types') {
@@ -506,6 +530,33 @@ class DashboardFleetDrilldownService
                 'vehicle_type' => (string) $row->vehicle_type,
                 'nwc_count' => (int) $row->nwc_count,
                 'icare_count' => (int) $row->icare_count,
+                'count' => (int) $row->count,
+            ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function projectInventoryPaginator(array $filters): LengthAwarePaginator
+    {
+        return $this->query($filters)
+            ->reorder()
+            ->join('projects as drilldown_projects', 'drilldown_projects.id', '=', 'equipments.project_id')
+            ->select([
+                'drilldown_projects.id as project_id',
+                'drilldown_projects.name as project',
+                'equipments.ownership_type as ownership',
+            ])
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('drilldown_projects.id', 'drilldown_projects.name', 'equipments.ownership_type')
+            ->orderByDesc('count')
+            ->orderBy('drilldown_projects.name')
+            ->paginate($filters['per_page'], ['*'], 'page', $filters['page'])
+            ->withQueryString()
+            ->through(fn (object $row): array => [
+                'project_id' => (int) $row->project_id,
+                'project' => (string) $row->project,
+                'ownership' => $this->ownershipLabel($this->ownershipCode((string) $row->ownership)),
                 'count' => (int) $row->count,
             ]);
     }

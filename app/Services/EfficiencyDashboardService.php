@@ -13,7 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class EfficiencyDashboardService
 {
-    public function __construct(private DashboardDateRangePolicy $dateRangePolicy) {}
+    public function __construct(
+        private DashboardDateRangePolicy $dateRangePolicy,
+        private DashboardEventNoteService $eventNotes,
+    ) {}
 
     /** @return array<string, int> */
     public function summaryForOwnership(array $filters, string $ownership): array
@@ -117,7 +120,7 @@ class EfficiencyDashboardService
 
         return $query->orderBy($sort, $filters['direction'])->orderBy('efficiency_daily_facts.unit_name')
             ->paginate($filters['per_page'], ['*'], 'page', $filters['page'])
-            ->through(fn (object $row): array => $this->detailRow($row));
+            ->through(fn (object $row): array => $this->withEfficiencyNote($this->detailRow($row), $row));
     }
 
     public function paginate(array $filters): LengthAwarePaginator
@@ -134,7 +137,7 @@ class EfficiencyDashboardService
             ->orderBy('efficiency_daily_facts.business_date')
             ->orderBy('efficiency_daily_facts.unit_name')
             ->get()
-            ->map(fn (object $row): array => $this->detailRow($row))
+            ->map(fn (object $row): array => $this->withEfficiencyNote($this->detailRow($row), $row))
             ->all();
     }
 
@@ -283,6 +286,7 @@ class EfficiencyDashboardService
     {
         return [
             'date' => $row->business_date,
+            'project_id' => (int) $row->project_id,
             'name' => $row->unit_name,
             'project' => $row->project,
             'vehicle_type' => $row->vehicle_type,
@@ -298,6 +302,21 @@ class EfficiencyDashboardService
             'status_label' => EfficiencyStatus::labels()[$row->efficiency_status] ?? $row->efficiency_status,
             'wialon_unit_id' => $row->wialon_unit_id,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function withEfficiencyNote(array $row, object $source): array
+    {
+        $row['event_key'] = $this->eventNotes->efficiencyEventKey($source);
+        $row['dashboard_key'] = DashboardEventNoteService::DASHBOARD_GENERAL_EFFICIENCY;
+        $row['event_type'] = 'work_status';
+        $row['event_date'] = $source->business_date;
+        $row['event_status'] = $source->efficiency_status;
+
+        return $this->eventNotes->attachNotes([$row])[0];
     }
 
     private function statusCountSql(): string

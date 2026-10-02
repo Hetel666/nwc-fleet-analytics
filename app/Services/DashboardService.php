@@ -869,6 +869,22 @@ class DashboardService
             'title' => $title,
             'filters' => $this->dashboardExportFilters($filters),
             'sections' => $sections,
+            ...($block === 'project-comparison' ? [
+                'sheets' => [
+                    [
+                        'name' => 'Layihələr üzrə',
+                        'title' => $title,
+                        'filters' => $this->dashboardExportFilters($filters),
+                        'sections' => [$sections[0]],
+                    ],
+                    [
+                        'name' => 'Detallar',
+                        'title' => $title,
+                        'filters' => $this->dashboardExportFilters($filters),
+                        'sections' => [$sections[1]],
+                    ],
+                ],
+            ] : []),
         ];
     }
 

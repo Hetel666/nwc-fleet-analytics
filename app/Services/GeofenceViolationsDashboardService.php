@@ -15,7 +15,10 @@ use Illuminate\Support\Facades\DB;
 
 class GeofenceViolationsDashboardService
 {
-    public function __construct(private GeofenceExcludedGroups $excludedGroups) {}
+    public function __construct(
+        private GeofenceExcludedGroups $excludedGroups,
+        private DashboardEventNoteService $eventNotes,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $filters
@@ -126,7 +129,8 @@ class GeofenceViolationsDashboardService
             ->orderByDesc('outside_duration_seconds')
             ->orderBy('equipment_name')
             ->paginate(max(1, min(100, $perPage)))
-            ->withQueryString();
+            ->withQueryString()
+            ->through(fn (GeofenceViolationReportRow $row): array => $this->drilldownRow($row));
     }
 
     public function formatDuration(int $seconds): string
@@ -191,22 +195,12 @@ class GeofenceViolationsDashboardService
                         'Geozonalardan kənarda müddət',
                         'Son məkan',
                         'Pozuntu statusu',
+                        'Araşdırma statusu',
+                        'Qeyd',
                     ],
                     'rows' => $rows
                         ->values()
-                        ->map(fn (GeofenceViolationReportRow $row, int $index): array => [
-                            $index + 1,
-                            $row->equipment_name,
-                            $row->equipment_type,
-                            $row->ownership_type === 'ICARE' ? 'İCARƏ' : ($row->ownership_type ?: '-'),
-                            $row->project_name ?: 'Layihə göstərilməyib',
-                            $row->last_project_geofence ?: 'Hesabat təqdim etmir',
-                            $this->formatExportDateTime($row->exited_at),
-                            $this->formatExportDateTime($row->last_confirmed_at),
-                            $row->duration_label,
-                            $row->last_location ?: '-',
-                            $row->status_label,
-                        ])
+                        ->map(fn (GeofenceViolationReportRow $row, int $index): array => $this->exportViolationRow($row, $index + 1))
                         ->all(),
                 ],
             ],
@@ -266,22 +260,12 @@ class GeofenceViolationsDashboardService
                                 'Geozonalardan kənarda müddət',
                                 'Son məkan',
                                 'Pozuntu statusu',
+                                'Araşdırma statusu',
+                                'Qeyd',
                             ],
                             'rows' => $rows
                                 ->values()
-                                ->map(fn (GeofenceViolationReportRow $row, int $index): array => [
-                                    $index + 1,
-                                    $row->equipment_name,
-                                    $row->equipment_type,
-                                    $row->ownership_type === 'ICARE' ? 'İCARƏ' : ($row->ownership_type ?: '-'),
-                                    $row->project_name ?: 'Layihə göstərilməyib',
-                                    $row->last_project_geofence ?: 'Hesabat təqdim etmir',
-                                    $this->formatExportDateTime($row->exited_at),
-                                    $this->formatExportDateTime($row->last_confirmed_at),
-                                    $row->duration_label,
-                                    $row->last_location ?: '-',
-                                    $row->status_label,
-                                ])
+                                ->map(fn (GeofenceViolationReportRow $row, int $index): array => $this->exportViolationRow($row, $index + 1))
                                 ->all(),
                         ],
                     ],
@@ -325,6 +309,63 @@ class GeofenceViolationsDashboardService
         return $value
             ? Carbon::parse($value)->timezone(config('app.timezone', 'Asia/Baku'))->format('Y-m-d H:i:s')
             : '-';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function drilldownRow(GeofenceViolationReportRow $row): array
+    {
+        $event = [
+            'event_key' => $this->eventNotes->geofenceViolationEventKey($row),
+            'dashboard_key' => DashboardEventNoteService::DASHBOARD_GEOFENCE_VIOLATIONS,
+            'event_type' => 'outside_project_geofence',
+            'event_date' => $row->exited_at?->toDateString(),
+            'project_id' => $row->project_id,
+            'equipment_id' => $row->equipment_id,
+            'wialon_unit_id' => $row->wialon_unit_id,
+            'unit_name' => $row->equipment_name,
+            'event_status' => $row->is_active ? 'active' : 'completed',
+        ];
+
+        return $this->eventNotes->attachNotes([[
+            ...$event,
+            'equipment_name' => $row->equipment_name,
+            'equipment_type' => $row->equipment_type,
+            'ownership_type' => $row->ownership_type,
+            'home_project' => $row->project_name ?: 'Məlumatsız',
+            'current_project' => 'Layihədən kənarda / Məlumatsız',
+            'last_project_geofence' => $row->last_project_geofence ?: 'Məlumatsız',
+            'exited_at' => $row->exited_at?->format('Y-m-d H:i'),
+            'last_confirmed_at' => $row->last_confirmed_at?->format('Y-m-d H:i'),
+            'outside_duration' => $row->duration_label,
+            'last_location' => $row->last_location ?: 'Məlumatsız',
+            'status' => $row->status_label,
+        ]], true)[0];
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function exportViolationRow(GeofenceViolationReportRow $row, int $number): array
+    {
+        $annotated = $this->drilldownRow($row);
+
+        return [
+            $number,
+            $row->equipment_name,
+            $row->equipment_type,
+            $row->ownership_type === 'ICARE' ? 'İCARƏ' : ($row->ownership_type ?: '-'),
+            $row->project_name ?: 'Layihə göstərilməyib',
+            $row->last_project_geofence ?: 'Hesabat təqdim etmir',
+            $this->formatExportDateTime($row->exited_at),
+            $this->formatExportDateTime($row->last_confirmed_at),
+            $row->duration_label,
+            $row->last_location ?: '-',
+            $row->status_label,
+            $annotated['investigation_status_label'] ?? 'Araşdırılır',
+            $annotated['note'] ?? '',
+        ];
     }
 
     private function facetQuery(): Builder

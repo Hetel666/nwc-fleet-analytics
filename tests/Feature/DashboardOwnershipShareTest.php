@@ -6,7 +6,9 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\Project;
 use App\Models\ProjectWialonGroup;
+use App\Models\WialonUnit;
 use App\Services\DashboardService;
+use App\Services\FleetOwnershipStatsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -79,14 +81,50 @@ class DashboardOwnershipShareTest extends TestCase
         $this->equipment($project, $type, $nwcGroup, 'NWC Unit 2', 'export-nwc-2');
         $this->equipment($project, $type, $icareGroup, 'ICARE Unit', 'export-icare-1');
 
-        $rows = app(DashboardService::class)->getDashboardExport([
+        $export = app(DashboardService::class)->getDashboardExport([
             'project_id' => $project->id,
             'from' => '2026-07-31',
             'to' => '2026-07-31',
-        ], 'project-comparison')['sections'][0]['rows'];
+        ], 'project-comparison');
+        $rows = $export['sections'][0]['rows'];
 
         $this->assertSame(['Cəmi', 2.0, 1.0, 3.0], $rows[0]);
         $this->assertSame(['Export totals project', 2.0, 1.0, 3.0], $rows[1]);
+        $this->assertCount(2, $export['sheets']);
+        $this->assertSame('Layihələr üzrə', $export['sheets'][0]['name']);
+        $this->assertSame('Detallar', $export['sheets'][1]['name']);
+        $this->assertSame($export['sections'][1]['columns'], $export['sheets'][1]['sections'][0]['columns']);
+    }
+
+    public function test_ownership_share_export_includes_make_and_model_from_wialon_catalog(): void
+    {
+        $project = Project::create(['name' => 'Catalog export project', 'active' => true]);
+        $type = EquipmentType::create(['name' => 'Dump Truck']);
+        $group = $this->projectGroup($project, '601709901', Equipment::OWNERSHIP_NWC, 'Catalog export - NWC');
+        $equipment = $this->equipment($project, $type, $group, '77-AA-001', 'catalog-unit-1');
+
+        WialonUnit::create([
+            'wialon_unit_id' => $equipment->wialon_unit_id,
+            'name' => $equipment->name,
+            'local_equipment_id' => $equipment->id,
+            'raw_metadata_json' => [
+                'pflds' => [
+                    ['n' => 'marka', 'v' => 'HOWO'],
+                    ['n' => 'model', 'v' => 'A7'],
+                ],
+            ],
+        ]);
+
+        $export = app(FleetOwnershipStatsService::class)->export([
+            'project_id' => $project->id,
+        ], 'nwc');
+
+        $this->assertSame(
+            ['№', 'Texnikanın adı', 'Texnika növü', 'Marka', 'Model', 'Mənsubiyyət', 'Wialon qrupu', 'Layihə', 'Wialon ID'],
+            $export['sections'][0]['columns']
+        );
+        $this->assertSame('HOWO', $export['sections'][0]['rows'][0][3]);
+        $this->assertSame('A7', $export['sections'][0]['rows'][0][4]);
     }
 
     private function projectGroup(Project $project, string $groupId, string $ownershipType, string $name): ProjectWialonGroup

@@ -30,11 +30,20 @@ class GeofenceViolationService
         'home_geofence',
         'current_geofence',
         'wialon_id',
+        'event_key',
+        'dashboard_key',
+        'event_type',
+        'event_date',
+        'event_status',
+        'project_id',
+        'equipment_id',
+        'wialon_unit_id',
     ];
 
     public function __construct(
         private ForeignProjectGeofenceMonitoringService $monitoring,
         private GeofenceExcludedGroups $excludedGroups,
+        private DashboardEventNoteService $eventNotes,
     ) {}
 
     /**
@@ -96,7 +105,7 @@ class GeofenceViolationService
             $pageIds
                 ->map(fn (int $id): ?UnitForeignGeofenceInterval => $intervals->get($id))
                 ->filter()
-                ->map(fn (UnitForeignGeofenceInterval $interval): array => $this->row($interval))
+                ->map(fn (UnitForeignGeofenceInterval $interval): array => $this->withTransferNote($this->row($interval), $interval))
                 ->all(),
             $ids->count(),
             $perPage,
@@ -116,7 +125,7 @@ class GeofenceViolationService
         return $ids
             ->map(fn (int $id): ?UnitForeignGeofenceInterval => $intervals->get($id))
             ->filter()
-            ->map(fn (UnitForeignGeofenceInterval $interval, int $index): array => array_values($this->visibleExportRow($this->row($interval, $index + 1))))
+            ->map(fn (UnitForeignGeofenceInterval $interval, int $index): array => array_values($this->visibleExportRow($this->withTransferNote($this->row($interval, $index + 1), $interval))))
             ->all();
     }
 
@@ -135,6 +144,7 @@ class GeofenceViolationService
             'entered_at' => 'Geozonaya giriş vaxtı',
             'left_at' => 'Geozonadan çıxış vaxtı',
             'duration' => 'Geozonada qalma müddəti',
+            'note' => 'Qeyd',
         ];
     }
 
@@ -565,6 +575,13 @@ class GeofenceViolationService
 
         return [
             'number' => $number,
+            'event_key' => $this->eventNotes->geofenceTransferEventKey($interval),
+            'dashboard_key' => DashboardEventNoteService::DASHBOARD_GEOFENCE_TRANSFERS,
+            'event_type' => 'foreign_geofence_interval',
+            'event_date' => $interval->entered_at?->toDateString(),
+            'event_status' => $interval->status,
+            'project_id' => $interval->home_project_id,
+            'equipment_id' => $unit?->id,
             'equipment' => $unit?->name ?? '',
             'registration_number' => $unit?->registration_number ?: '-',
             'vehicle_type' => $this->monitoring->normalizedVehicleTypeName($unit?->type?->name),
@@ -578,7 +595,20 @@ class GeofenceViolationService
             'left_at' => $this->formatDateTime($interval->left_at),
             'duration' => $this->durationLabel($durationSeconds),
             'wialon_id' => $interval->wialon_unit_id ?: ($unit?->wialon_unit_id ?? ''),
+            'wialon_unit_id' => $interval->wialon_unit_id ?: ($unit?->wialon_unit_id ?? ''),
+            'note' => '',
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function withTransferNote(array $row, UnitForeignGeofenceInterval $interval): array
+    {
+        $row['event_key'] = $this->eventNotes->geofenceTransferEventKey($interval);
+
+        return $this->eventNotes->attachNotes([$row])[0];
     }
 
     private function intervalPassesMinimumDuration(UnitForeignGeofenceInterval $interval): bool

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Equipment;
+use App\Models\WialonUnit;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -35,8 +36,9 @@ class FleetOwnershipStatsService
     public function export(array $filters = [], ?string $type = null): array
     {
         $ownershipType = $this->exportOwnershipType($type);
-        $rows = $this->baseQuery($filters, $ownershipType)
+        $equipment = $this->baseQuery($filters, $ownershipType)
             ->with([
+                'type:id,name',
                 'project:id,name',
                 'projectWialonGroup:id,name,wialon_group_id,ownership_type',
             ])
@@ -48,15 +50,36 @@ class FleetOwnershipStatsService
                 'equipments.wialon_unit_id',
                 'equipments.project_id',
                 'equipments.project_wialon_group_id',
+                'equipments.equipment_type_id',
                 'equipments.matched_wialon_group_id',
                 'equipments.matched_wialon_group_name',
                 'equipments.ownership_type',
             ])
             ->unique('wialon_unit_id')
-            ->values()
+            ->values();
+
+        $wialonUnits = WialonUnit::query()
+            ->whereIn('wialon_unit_id', $equipment->pluck('wialon_unit_id')->filter()->values())
+            ->get(['wialon_unit_id', 'raw_metadata_json'])
+            ->keyBy('wialon_unit_id');
+
+        $rows = $equipment
             ->map(fn (Equipment $equipment, int $index): array => [
                 $index + 1,
                 $equipment->name,
+                $equipment->type?->name ?? '',
+                $this->metadataField($wialonUnits->get($equipment->wialon_unit_id)?->raw_metadata_json, [
+                    'marka',
+                    'brand',
+                    'make',
+                    'manufacturer',
+                    'vendor',
+                ]),
+                $this->metadataField($wialonUnits->get($equipment->wialon_unit_id)?->raw_metadata_json, [
+                    'model',
+                    'vehicle model',
+                    'device model',
+                ]),
                 $this->ownershipLabel($equipment->ownership_type),
                 $equipment->projectWialonGroup?->name ?? $equipment->matched_wialon_group_name ?? '',
                 $equipment->project?->name ?? 'Layihəsiz',
@@ -74,7 +97,7 @@ class FleetOwnershipStatsService
             'sections' => [
                 [
                     'title' => 'Texnika siyahısı',
-                    'columns' => ['№', 'Texnikanın adı', 'Mənsubiyyət', 'Wialon qrupu', 'Layihə', 'Wialon ID'],
+                    'columns' => ['№', 'Texnikanın adı', 'Texnika növü', 'Marka', 'Model', 'Mənsubiyyət', 'Wialon qrupu', 'Layihə', 'Wialon ID'],
                     'rows' => $rows,
                 ],
             ],
@@ -107,5 +130,42 @@ class FleetOwnershipStatsService
     private function ownershipLabel(?string $ownershipType): string
     {
         return $ownershipType === Equipment::OWNERSHIP_ICARE ? 'İCARƏ' : 'NWC';
+    }
+
+    private function metadataField(?array $metadata, array $names): string
+    {
+        if (! $metadata) {
+            return '';
+        }
+
+        $lookup = array_flip(array_map(fn (string $name): string => mb_strtolower($name), $names));
+
+        foreach ($metadata as $key => $value) {
+            $key = mb_strtolower((string) $key);
+
+            if (isset($lookup[$key]) && is_scalar($value)) {
+                return trim((string) $value);
+            }
+        }
+
+        foreach (['pflds', 'flds', 'aflds'] as $fieldSet) {
+            foreach (($metadata[$fieldSet] ?? []) as $field) {
+                if (! is_array($field)) {
+                    continue;
+                }
+
+                $name = mb_strtolower((string) ($field['n'] ?? ''));
+
+                if (isset($lookup[$name])) {
+                    $value = trim((string) ($field['v'] ?? ''));
+
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+            }
+        }
+
+        return '';
     }
 }

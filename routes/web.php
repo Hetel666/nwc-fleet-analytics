@@ -11,6 +11,7 @@ use App\Http\Controllers\AfterHoursDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardDisplayConfigurationController;
+use App\Http\Controllers\DashboardEventNoteController;
 use App\Http\Controllers\DashboardDrilldownController;
 use App\Http\Controllers\DashboardExportController;
 use App\Http\Controllers\DashboardLayoutController;
@@ -60,6 +61,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/dashboard/tabs/{tab}', [DashboardController::class, 'tab'])->middleware('dashboard.section:tab')->name('dashboard.tabs.show');
     Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units');
     Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units.export');
+    Route::post('/dashboard/event-notes', [DashboardEventNoteController::class, 'store'])->name('dashboard.event-notes.store');
     Route::put('/dashboard/layout', [DashboardLayoutController::class, 'update'])->middleware('admin')->name('dashboard.layout.update');
     Route::delete('/dashboard/layout', [DashboardLayoutController::class, 'destroy'])->middleware('admin')->name('dashboard.layout.destroy');
     Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->middleware('dashboard.section:overview')->name('dashboard.ownership.export');
