@@ -2698,6 +2698,9 @@
                                                 data-drilldown-title="{{ $ownershipLabelFor($code) }} texnikaları"
                                                 data-drilldown-ownership="{{ $code === $nwc ? 'nwc' : 'icare' }}"
                                                 data-drilldown-ownership-scope="project_groups"
+                                                data-drilldown-view="equipment_types"
+                                                data-drilldown-mode="project_types"
+                                                data-drilldown-type-project-chain="1"
                                             @else
                                                 aria-disabled="true"
                                             @endif
@@ -5287,6 +5290,11 @@ const loadDashboardDrilldown = async () => {
 };
 
 const configureDrilldownMode = (mode, filters = {}) => {
+    if (drilldownBack) {
+        const backLabel = drilldownState.parent?.mode === 'inventory_projects' ? 'Layihələrə qayıt' : 'Texnika növlərinə qayıt';
+        drilldownBack.title = backLabel;
+        drilldownBack.setAttribute('aria-label', backLabel);
+    }
     const isMetricDrilldown = Boolean(filters.metric);
     const isRestrictedMode = ['geofence_violations', 'project_types', 'inventory_projects', 'efficiency_projects', 'after_hours_projects', 'monthly_efficiency_projects', 'monthly_efficiency_objects', 'monthly_efficiency_geofences', 'monthly_efficiency_geofence_days'].includes(mode);
 
@@ -5391,6 +5399,7 @@ const openSummaryUnits = trigger => {
         exportUrl: drilldownState.exportUrl,
         exportEnabled: drilldownState.exportEnabled,
         mode: drilldownState.mode,
+        parent: drilldownState.parent,
     };
     const nextFilters = {
         ...drilldownState.filters,
@@ -5404,6 +5413,9 @@ const openSummaryUnits = trigger => {
     };
     if (isProjectTypeSummary) {
         nextFilters.equipment_type_id = trigger.dataset.equipmentTypeId;
+        if (drilldownState.filters.type_project_chain) {
+            nextFilters.view = 'projects';
+        }
     }
     if (isInventoryProjectSummary || isEfficiencyProjectSummary || isAfterHoursProjectSummary || isMonthlyEfficiencyProjectSummary) {
         nextFilters.project_id = trigger.dataset.projectId;
@@ -5454,6 +5466,10 @@ const openSummaryUnits = trigger => {
     drilldownState.mode = isMonthlyEfficiencyGeofenceSummary
         ? 'monthly_efficiency_geofence_days'
         : (isMonthlyEfficiencyObjectSummary ? 'monthly_efficiency_geofences' : (isMonthlyEfficiencyProjectSummary ? 'monthly_efficiency_units' : 'fleet'));
+    if (isProjectTypeSummary && nextFilters.type_project_chain) {
+        drilldownState.mode = 'inventory_projects';
+        drilldownState.exportEnabled = false;
+    }
     drilldownState.parent = parent;
     drilldownBack?.classList.remove('d-none');
     if (drilldownSearch) {
@@ -5489,8 +5505,8 @@ const restoreDrilldownSummary = () => {
     drilldownState.exportUrl = parent.exportUrl;
     drilldownState.exportEnabled = parent.exportEnabled;
     drilldownState.mode = parent.mode;
-    drilldownState.parent = null;
-    drilldownBack?.classList.add('d-none');
+    drilldownState.parent = parent.parent || null;
+    drilldownBack?.classList.toggle('d-none', !drilldownState.parent);
     if (drilldownSearch) {
         drilldownSearch.value = drilldownState.filters.search || '';
     }
@@ -5552,6 +5568,7 @@ document.addEventListener('click', event => {
         title: trigger.dataset.drilldownTitle || '',
         ownership: trigger.dataset.drilldownOwnership || undefined,
         ownership_scope: trigger.dataset.drilldownOwnershipScope || undefined,
+        type_project_chain: trigger.dataset.drilldownTypeProjectChain || undefined,
         view: trigger.dataset.drilldownView || undefined,
         drilldown_mode: trigger.dataset.drilldownMode || undefined,
         project_id: trigger.dataset.drilldownProjectId || undefined,
@@ -5727,8 +5744,8 @@ drilldownHeader?.addEventListener('click', event => {
 });
 
 const ownershipDrilldownItems = [
-    { title: `${labels.nwc} texnikaları`, ownership: 'nwc', ownership_scope: 'project_groups' },
-    { title: `${labels.icare} texnikaları`, ownership: 'icare', ownership_scope: 'project_groups' },
+    { title: `Texnika növü üzrə: ${labels.nwc}`, ownership: 'nwc', ownership_scope: 'project_groups', view: 'equipment_types', drilldown_mode: 'project_types', type_project_chain: 1 },
+    { title: `Texnika növü üzrə: ${labels.icare}`, ownership: 'icare', ownership_scope: 'project_groups', view: 'equipment_types', drilldown_mode: 'project_types', type_project_chain: 1 },
 ];
 const projectWorkCategoryNwcDrilldownItems = workCategoryKeys.map((key, index) => ({
     title: `${labels.nwc} - ${workCategoryLabels[index]}`,
