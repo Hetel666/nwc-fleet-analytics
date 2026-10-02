@@ -40,6 +40,9 @@
                         data-drilldown-title="{{ $ownershipLabel ?? '' }}"
                         data-drilldown-ownership="{{ $ownership ?? 'all' }}"
                         data-drilldown-ownership-scope="project_groups"
+                        data-drilldown-view="equipment_types"
+                        data-drilldown-mode="project_types"
+                        data-drilldown-type-project-chain="1"
                     >Hamısını göstər</button>
                 @endif
             </div>
