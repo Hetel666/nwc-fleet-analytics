@@ -314,7 +314,7 @@ class GeofenceViolationsDashboardService
     /**
      * @return array<string, mixed>
      */
-    private function drilldownRow(GeofenceViolationReportRow $row): array
+    public function drilldownRow(GeofenceViolationReportRow $row, bool $attach = true): array
     {
         $event = [
             'event_key' => $this->eventNotes->geofenceViolationEventKey($row),
@@ -328,7 +328,7 @@ class GeofenceViolationsDashboardService
             'event_status' => $row->is_active ? 'active' : 'completed',
         ];
 
-        return $this->eventNotes->attachNotes([[
+        $result = [
             ...$event,
             'equipment_name' => $row->equipment_name,
             'equipment_type' => $row->equipment_type,
@@ -341,7 +341,9 @@ class GeofenceViolationsDashboardService
             'outside_duration' => $row->duration_label,
             'last_location' => $row->last_location ?: 'Məlumatsız',
             'status' => $row->status_label,
-        ]], true)[0];
+        ];
+
+        return $attach ? $this->eventNotes->attachNotes([$result], true)[0] : $result;
     }
 
     /**

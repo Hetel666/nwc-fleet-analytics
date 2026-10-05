@@ -129,6 +129,15 @@ class EfficiencyDashboardService
     }
 
     /** @return array<int, array<string, mixed>> */
+    public function journalRows(array $filters): array
+    {
+        $rows = $this->detailQuery($this->normalizeFilters($filters, 'export'))
+            ->orderBy('efficiency_daily_facts.business_date')->get()
+            ->map(fn (object $row): array => $this->withEfficiencyNote($this->detailRow($row), $row, false))->all();
+
+        return $this->eventNotes->attachNotes($rows, true);
+    }
+
     public function exportRows(array $filters): array
     {
         $filters = $this->normalizeFilters($filters, 'export');
@@ -308,7 +317,7 @@ class EfficiencyDashboardService
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
-    private function withEfficiencyNote(array $row, object $source): array
+    private function withEfficiencyNote(array $row, object $source, bool $attach = true): array
     {
         $row['event_key'] = $this->eventNotes->efficiencyEventKey($source);
         $row['dashboard_key'] = DashboardEventNoteService::DASHBOARD_GENERAL_EFFICIENCY;
@@ -316,7 +325,7 @@ class EfficiencyDashboardService
         $row['event_date'] = $source->business_date;
         $row['event_status'] = $source->efficiency_status;
 
-        return $this->eventNotes->attachNotes([$row], true)[0];
+        return $attach ? $this->eventNotes->attachNotes([$row], true)[0] : $row;
     }
 
     private function statusCountSql(): string

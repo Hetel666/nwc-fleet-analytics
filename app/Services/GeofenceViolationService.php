@@ -119,6 +119,17 @@ class GeofenceViolationService
     /**
      * @return array<int, array<int, mixed>>
      */
+    public function journalRows(array $filters): array
+    {
+        $ids = $this->detailIntervalIds($filters);
+        $intervals = $this->loadIntervalsByIds($ids->all());
+
+        $rows = $ids->map(fn (int $id) => $intervals->get($id))->filter()
+            ->map(fn ($interval): array => $this->row($interval))->values()->all();
+
+        return $this->eventNotes->attachNotes($rows, true);
+    }
+
     public function exportRows(array $filters): array
     {
         $ids = $this->detailIntervalIds($filters);

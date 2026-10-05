@@ -428,6 +428,29 @@
         max-height: 65vh;
         overflow: auto;
     }
+    #dashboardDrilldownModal .modal-dialog {
+        width: calc(100% - 32px);
+        max-width: 1800px;
+    }
+    @media (min-width: 768px) {
+        #dashboardDrilldownModal .dashboard-drilldown-table {
+            width: 100%;
+            table-layout: fixed;
+        }
+        #dashboardDrilldownModal .dashboard-drilldown-table th,
+        #dashboardDrilldownModal .dashboard-drilldown-table td {
+            min-width: 0;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+        #dashboardDrilldownModal .dashboard-drilldown-column-filter,
+        #dashboardDrilldownModal textarea,
+        #dashboardDrilldownModal select {
+            min-width: 0;
+            max-width: 100%;
+            width: 100%;
+        }
+    }
     .dashboard-drilldown-table thead th {
         position: sticky;
         top: 0;
@@ -3250,6 +3273,12 @@
         </div>
     </div>
 
+    @if (in_array($selectedDashboardTab, ['efficiency', 'geozones'], true))
+    <details class="mt-4" data-status-journal>
+        <summary class="fw-semibold py-3">Statuslar jurnalı</summary>
+        <iframe title="Statuslar jurnalı" loading="lazy" style="width:100%;height:720px;border:0" data-src="{{ route('dashboard.status-journal', ['section' => $selectedDashboardTab, 'date_from' => $filters['from'], 'date_to' => $filters['to'], 'project_id' => $filters['project_id'], 'equipment_type_id' => $filters['equipment_type_id'] ?? null, 'ownership_type' => $filters['ownership_type']]) }}"></iframe>
+    </details>
+    @endif
     @unless ($dashboardTabFragment ?? false)
     <div class="modal fade" id="dashboardDrilldownModal" tabindex="-1" aria-hidden="true" aria-labelledby="dashboardDrilldownTitle" aria-describedby="dashboardDrilldownStatus">
         <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -4663,6 +4692,12 @@ dashboardResetButton?.addEventListener('click', () => {
 });
 
 const drilldownModalElement = document.getElementById('dashboardDrilldownModal');
+document.addEventListener('toggle', event => {
+    if (event.target.matches?.('[data-status-journal]') && event.target.open) {
+        const frame = event.target.querySelector('iframe');
+        if (frame) frame.src = frame.dataset.src;
+    }
+}, true);
 const drilldownModal = drilldownModalElement && window.bootstrap ? new bootstrap.Modal(drilldownModalElement) : null;
 const drilldownBody = document.getElementById('dashboardDrilldownBody');
 const drilldownTitle = document.getElementById('dashboardDrilldownTitle');

@@ -62,6 +62,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units');
     Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units.export');
     Route::post('/dashboard/event-notes', [DashboardEventNoteController::class, 'store'])->name('dashboard.event-notes.store');
+    Route::get('/dashboard/status-journal', \App\Http\Controllers\DashboardJournalController::class)->name('dashboard.status-journal');
     Route::put('/dashboard/layout', [DashboardLayoutController::class, 'update'])->middleware('admin')->name('dashboard.layout.update');
     Route::delete('/dashboard/layout', [DashboardLayoutController::class, 'destroy'])->middleware('admin')->name('dashboard.layout.destroy');
     Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->middleware('dashboard.section:overview')->name('dashboard.ownership.export');
