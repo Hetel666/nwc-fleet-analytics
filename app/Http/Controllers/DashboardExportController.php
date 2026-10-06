@@ -139,6 +139,11 @@ class DashboardExportController extends Controller
     {
         $user = $request->user();
 
+        if ($user?->hasRestrictedProjects()) {
+            $projectId = (int) ($export->filters['project_id'] ?? 0);
+            abort_unless($projectId > 0 && $user->canAccessProject($projectId), 403);
+        }
+
         abort_unless(
             $user?->id === $export->user_id || $user?->isAdmin(),
             403

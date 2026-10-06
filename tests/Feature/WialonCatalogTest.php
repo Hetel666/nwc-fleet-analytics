@@ -78,7 +78,7 @@ class WialonCatalogTest extends TestCase
             'permissions' => [User::PERMISSION_WIALON_CATALOG_VIEW],
         ]);
         $syncUser = User::factory()->create([
-            'role' => User::ROLE_VIEWER,
+            'role' => User::ROLE_ADMIN,
             'active' => true,
             'permissions' => [
                 User::PERMISSION_WIALON_CATALOG_VIEW,
@@ -252,7 +252,7 @@ class WialonCatalogTest extends TestCase
             ->assertExitCode(1);
     }
 
-    public function test_projects_manage_permission_allows_project_index_without_full_admin(): void
+    public function test_legacy_projects_manage_permission_does_not_allow_viewer_to_edit_projects(): void
     {
         $viewer = User::factory()->create([
             'role' => User::ROLE_VIEWER,
@@ -262,7 +262,7 @@ class WialonCatalogTest extends TestCase
 
         $this->actingAs($viewer)
             ->get(route('projects.index'))
-            ->assertOk();
+            ->assertForbidden();
     }
 
     private function seedMonthlyEfficiencyWialonDependencies(bool $includeGeofenceTemplate = true): void

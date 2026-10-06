@@ -95,13 +95,13 @@
                     <div class="d-flex flex-column flex-lg-row gap-2 justify-content-between mb-3">
                         <div>
                             <div class="fw-semibold">Əlavə giriş hüquqları</div>
-                            <div class="form-text">Viewer istifadəçiyə yalnız lazım olan inzibati imkanları seçin.</div>
+                            <div class="form-text">Viewer yalnız baxış hüququna malikdir.</div>
                         </div>
                         <span class="badge text-bg-light align-self-start">Permissions</span>
                     </div>
                     <input type="hidden" name="permissions_present" value="1">
                     <div class="row g-2">
-                        @foreach ($permissions as $value => $label)
+                        @foreach (array_intersect_key($permissions, array_flip([\App\Models\User::PERMISSION_WIALON_CATALOG_VIEW])) as $value => $label)
                             <div class="col-md-4">
                                 <label class="form-check">
                                     <input
@@ -137,6 +137,21 @@
             </div>
         </div>
 
+        <fieldset class="mt-4 border p-3">
+            <legend class="float-none w-auto fs-6 px-2">Layihələrə giriş</legend>
+            @php($projectAccess = old('project_access', $user->project_ids === null ? 'all' : 'selected'))
+            <div class="d-flex gap-4 mb-3">
+                <label class="form-check"><input class="form-check-input" type="radio" name="project_access" value="all" @checked($projectAccess === 'all')> Bütün layihələr</label>
+                <label class="form-check"><input class="form-check-input" type="radio" name="project_access" value="selected" @checked($projectAccess === 'selected')> Seçilmiş layihələr</label>
+            </div>
+            <div class="row g-2">
+                @foreach($projects as $project)
+                    <label class="col-md-4"><input type="checkbox" class="form-check-input me-2" name="project_ids[]" value="{{ $project->id }}" @checked(in_array($project->id, array_map('intval', old('project_ids', $user->project_ids ?? [])), true))> {{ $project->name }}</label>
+                @endforeach
+            </div>
+            @error('project_ids')<div class="text-danger">{{ $message }}</div>@enderror
+            @error('project_ids.*')<div class="text-danger">{{ $message }}</div>@enderror
+        </fieldset>
         <div class="mt-4 d-flex gap-2">
             <button class="btn btn-primary btn-icon"><i class="bi bi-check2"></i><span>{{ __('app.save') }}</span></button>
             <a href="{{ route('users.index') }}" class="btn btn-outline-secondary">{{ __('app.cancel') }}</a>

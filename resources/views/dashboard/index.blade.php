@@ -2502,7 +2502,9 @@
                     <div class="col-12 col-xl-3 col-lg-4">
                         <label class="form-label">{{ __('app.project') }}</label>
                         <select name="project_id" class="form-select">
-                            <option value="">{{ __('app.all_projects') }}</option>
+                            @unless(auth()->user()?->hasRestrictedProjects())
+                                <option value="">{{ __('app.all_projects') }}</option>
+                            @endunless
                             @foreach ($projects as $project)
                                 <option value="{{ $project->id }}" @selected((string) $filters['project_id'] === (string) $project->id)>{{ $project->name }}</option>
                             @endforeach
@@ -2633,6 +2635,7 @@
                     <i data-lucide="history"></i><span>Tarixi yenilə</span>
                 </a>
             @endcan
+            @if(auth()->user()?->isAdmin())
             <form method="POST" action="{{ route('settings.sync-units') }}" data-dashboard-object-sync-form>
                 @csrf
                 <button
@@ -2644,12 +2647,15 @@
                     <i class="bi bi-arrow-repeat"></i><span>Obyekt siyahısını yenilə</span>
                 </button>
             </form>
+            @endif
             <a href="{{ $exportUrl('overview') }}" class="btn btn-outline-secondary btn-sm btn-icon" title="Excel" aria-label="Excel">
                 <i class="bi bi-download"></i><span>Excel</span>
             </a>
+            @if(auth()->user()?->isAdmin())
             <button type="button" class="btn btn-outline-primary btn-sm btn-icon" id="openDashboardDesign">
                 <i data-lucide="sliders-horizontal"></i><span>Düzülüşü dəyiş</span>
             </button>
+            @endif
             @if ($canManageDashboardLayout)
                 <button type="button" class="btn btn-outline-primary btn-sm btn-icon" id="editDashboardLayout">
                     <i class="bi bi-layout-three-columns"></i><span>Kartları düzənlə</span>
@@ -4892,7 +4898,7 @@ const rememberDrilldownNoteChange = (row, patch) => {
 };
 
 const renderDrilldownEditableCell = (td, row, key) => {
-    if (key === 'note' && row.event_key) {
+    if (key === 'note' && row.event_key && @json(auth()->user()?->isAdmin() ?? false)) {
         const input = document.createElement('textarea');
         input.className = 'form-control form-control-sm';
         input.rows = 1;
@@ -4903,7 +4909,7 @@ const renderDrilldownEditableCell = (td, row, key) => {
         return true;
     }
 
-    if (key === 'investigation_status' && row.event_key) {
+    if (key === 'investigation_status' && row.event_key && @json(auth()->user()?->isAdmin() ?? false)) {
         const select = document.createElement('select');
         select.className = 'form-select form-select-sm';
         Object.entries(row.investigation_status_options || investigationStatusLabels).forEach(([value, label]) => {

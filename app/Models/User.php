@@ -47,6 +47,7 @@ class User extends Authenticatable
         'active',
         'dashboard_sections',
         'permissions',
+        'project_ids',
     ];
 
     /**
@@ -70,6 +71,7 @@ class User extends Authenticatable
             'active' => 'boolean',
             'dashboard_sections' => 'array',
             'permissions' => 'array',
+            'project_ids' => 'array',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
@@ -136,7 +138,7 @@ class User extends Authenticatable
 
         return collect($this->permissions ?? [])
             ->map(fn ($permission): string => (string) $permission)
-            ->intersect(self::permissionKeys())
+            ->intersect([self::PERMISSION_WIALON_CATALOG_VIEW])
             ->values()
             ->all();
     }
@@ -144,6 +146,16 @@ class User extends Authenticatable
     public function hasPermission(string $permission): bool
     {
         return in_array($permission, $this->allowedPermissions(), true);
+    }
+
+    public function hasRestrictedProjects(): bool
+    {
+        return ! $this->isAdmin() && $this->project_ids !== null;
+    }
+
+    public function canAccessProject(int $id): bool
+    {
+        return ! $this->hasRestrictedProjects() || in_array($id, array_map('intval', $this->project_ids ?? []), true);
     }
 
     /** @return array<string> */

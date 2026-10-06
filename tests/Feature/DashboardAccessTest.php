@@ -361,7 +361,7 @@ class DashboardAccessTest extends TestCase
         $this->actingAs($viewer)
             ->get('/dashboard')
             ->assertOk()
-            ->assertSee('Obyekt siyahısını yenilə');
+            ->assertDontSee('Obyekt siyahısını yenilə');
     }
 
     public function test_dashboard_renders_azerbaijani_text_without_mojibake(): void

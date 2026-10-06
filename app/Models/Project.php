@@ -8,6 +8,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
+    protected static function booted(): void
+    {
+        static::addGlobalScope('user-project-access', function (Builder $query): void {
+            $user = auth()->user();
+            if ($user?->hasRestrictedProjects()) {
+                $query->whereIn($query->getModel()->qualifyColumn('id'), $user->project_ids ?? []);
+            }
+        });
+    }
+
     public const DASHBOARD_UNASSIGNED_NAMES = [
         'Layihəsiz',
         'Layihesiz',

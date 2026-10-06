@@ -32,8 +32,7 @@ class DashboardVisibilityTest extends TestCase
 
         $this->actingAs($manager)
             ->get(route('admin.dashboard-visibility.index'))
-            ->assertOk()
-            ->assertSee('Dashboard idaretmesi');
+            ->assertForbidden();
     }
 
     public function test_admin_can_hide_dashboard_without_removing_it_from_registry(): void

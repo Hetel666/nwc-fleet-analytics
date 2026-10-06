@@ -11,9 +11,10 @@ use App\Http\Controllers\AfterHoursDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DashboardDisplayConfigurationController;
-use App\Http\Controllers\DashboardEventNoteController;
 use App\Http\Controllers\DashboardDrilldownController;
+use App\Http\Controllers\DashboardEventNoteController;
 use App\Http\Controllers\DashboardExportController;
+use App\Http\Controllers\DashboardJournalController;
 use App\Http\Controllers\DashboardLayoutController;
 use App\Http\Controllers\DashboardOwnershipExportController;
 use App\Http\Controllers\DashboardPreferencesController;
@@ -41,7 +42,7 @@ Route::middleware('guest')->group(function (): void {
 
 Route::post('/logout', [AuthController::class, 'destroy'])->middleware('auth')->name('logout');
 
-Route::middleware(['auth', 'active'])->group(function (): void {
+Route::middleware(['auth', 'active', 'viewer.access'])->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/language/{locale}', [LanguageController::class, 'update'])->name('language.update');
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -62,7 +63,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/dashboard/drilldown/units', [DashboardDrilldownController::class, 'index'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units');
     Route::get('/dashboard/drilldown/units/export', [DashboardDrilldownController::class, 'export'])->middleware('dashboard.section:drilldown')->name('dashboard.drilldown.units.export');
     Route::post('/dashboard/event-notes', [DashboardEventNoteController::class, 'store'])->name('dashboard.event-notes.store');
-    Route::get('/dashboard/status-journal', \App\Http\Controllers\DashboardJournalController::class)->name('dashboard.status-journal');
+    Route::get('/dashboard/status-journal', DashboardJournalController::class)->name('dashboard.status-journal');
     Route::put('/dashboard/layout', [DashboardLayoutController::class, 'update'])->middleware('admin')->name('dashboard.layout.update');
     Route::delete('/dashboard/layout', [DashboardLayoutController::class, 'destroy'])->middleware('admin')->name('dashboard.layout.destroy');
     Route::get('/dashboard/ownership/export', DashboardOwnershipExportController::class)->middleware('dashboard.section:overview')->name('dashboard.ownership.export');

@@ -13,7 +13,7 @@ class DashboardEventNoteTest extends TestCase
 
     public function test_reopening_business_date_restores_only_its_concrete_event(): void
     {
-        $user = User::factory()->create(['active' => true]);
+        $user = User::factory()->create(['active' => true, 'role' => User::ROLE_ADMIN]);
         $service = app(DashboardEventNoteService::class);
         $source = (object) [
             'business_date' => '2026-09-10',
@@ -60,7 +60,7 @@ class DashboardEventNoteTest extends TestCase
 
     public function test_bulk_save_preserves_note_status_and_separate_dates(): void
     {
-        $user = User::factory()->create(['active' => true]);
+        $user = User::factory()->create(['active' => true, 'role' => User::ROLE_ADMIN]);
         $items = collect(['2026-10-01', '2026-10-02'])->map(fn (string $date): array => [
             'event_key' => sha1('unit-1|'.$date),
             'dashboard_key' => DashboardEventNoteService::DASHBOARD_GENERAL_EFFICIENCY,
@@ -87,7 +87,7 @@ class DashboardEventNoteTest extends TestCase
 
     public function test_user_can_save_and_update_dashboard_event_note(): void
     {
-        $user = User::factory()->create(['active' => true]);
+        $user = User::factory()->create(['active' => true, 'role' => User::ROLE_ADMIN]);
         $payload = [
             'items' => [
                 [
@@ -132,7 +132,7 @@ class DashboardEventNoteTest extends TestCase
 
     public function test_geofence_violation_investigation_status_is_validated(): void
     {
-        $user = User::factory()->create(['active' => true]);
+        $user = User::factory()->create(['active' => true, 'role' => User::ROLE_ADMIN]);
 
         $this->actingAs($user)
             ->postJson(route('dashboard.event-notes.store'), [

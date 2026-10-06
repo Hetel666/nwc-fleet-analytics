@@ -1,5 +1,13 @@
 <?php
 
+use App\Http\Middleware\EnsureActiveUser;
+use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureDashboardSectionAccess;
+use App\Http\Middleware\EnsureViewerAccess;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SetLocale;
+use App\Http\Middleware\ValidateCsrfToken;
+use App\Support\DashboardFilterState;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -22,23 +30,24 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_AWS_ELB
         );
         $middleware->encryptCookies(except: [
-            App\Support\DashboardFilterState::COOKIE_NAME,
+            DashboardFilterState::COOKIE_NAME,
         ]);
 
         $middleware->web(
             append: [
-                App\Http\Middleware\SecurityHeaders::class,
-                App\Http\Middleware\SetLocale::class,
+                SecurityHeaders::class,
+                SetLocale::class,
             ],
             replace: [
-                Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class => App\Http\Middleware\ValidateCsrfToken::class,
+                Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class => ValidateCsrfToken::class,
             ],
         );
 
         $middleware->alias([
-            'active' => App\Http\Middleware\EnsureActiveUser::class,
-            'admin' => App\Http\Middleware\EnsureAdmin::class,
-            'dashboard.section' => App\Http\Middleware\EnsureDashboardSectionAccess::class,
+            'active' => EnsureActiveUser::class,
+            'admin' => EnsureAdmin::class,
+            'dashboard.section' => EnsureDashboardSectionAccess::class,
+            'viewer.access' => EnsureViewerAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

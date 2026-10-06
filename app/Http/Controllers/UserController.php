@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ class UserController extends Controller
             'roles' => $this->roles(),
             'dashboardSections' => User::dashboardSectionOptions(),
             'permissions' => User::permissionOptions(),
+            'projects' => Project::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -42,6 +44,7 @@ class UserController extends Controller
             'roles' => $this->roles(),
             'dashboardSections' => User::dashboardSectionOptions(),
             'permissions' => User::permissionOptions(),
+            'projects' => Project::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -100,10 +103,20 @@ class UserController extends Controller
             'dashboard_sections.*' => [Rule::in(User::dashboardSectionKeys())],
             'permissions' => ['nullable', 'array'],
             'permissions.*' => [Rule::in(User::permissionKeys())],
+            'project_access' => ['nullable', Rule::in(['all', 'selected'])],
+            'project_ids' => ['required_if:project_access,selected', 'nullable', 'array', 'min:1'],
+            'project_ids.*' => ['integer', 'distinct', 'exists:projects,id'],
             'password' => $passwordRules,
         ]);
 
         $data['active'] = $request->boolean('active');
+        $data['project_ids'] = match (true) {
+            $data['role'] === User::ROLE_ADMIN => null,
+            ! $request->has('project_access') => $user?->project_ids,
+            $request->input('project_access') === 'all' => null,
+            default => array_values(array_map('intval', $data['project_ids'] ?? [])),
+        };
+        unset($data['project_access']);
         $data['dashboard_sections'] = match (true) {
             $data['role'] === User::ROLE_ADMIN => null,
             $request->has('dashboard_sections_present') => array_values($request->input('dashboard_sections', [])),
@@ -111,7 +124,7 @@ class UserController extends Controller
         };
         $data['permissions'] = match (true) {
             $data['role'] === User::ROLE_ADMIN => null,
-            $request->has('permissions_present') => array_values($request->input('permissions', [])),
+            $request->has('permissions_present') => array_values(array_intersect($request->input('permissions', []), [User::PERMISSION_WIALON_CATALOG_VIEW])),
             default => [],
         };
 
