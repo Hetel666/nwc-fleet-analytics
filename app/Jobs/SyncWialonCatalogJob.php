@@ -24,6 +24,10 @@ class SyncWialonCatalogJob implements ShouldQueue
     {
         $run = WialonCatalogSyncRun::query()->findOrFail($this->runId);
 
+        if (in_array($run->status, [WialonCatalogSyncRun::STATUS_COMPLETED, WialonCatalogSyncRun::STATUS_COMPLETED_WITH_ERRORS, WialonCatalogSyncRun::STATUS_CANCELLED], true)) {
+            return;
+        }
+
         $sync->sync($run);
     }
 }

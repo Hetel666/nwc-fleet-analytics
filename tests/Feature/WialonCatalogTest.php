@@ -10,15 +10,40 @@ use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Models\WialonCatalogSyncRun;
+use App\Models\WialonGeofence;
+use App\Models\WialonResource;
 use App\Services\WialonCatalogSyncService;
 use App\Services\WialonService;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class WialonCatalogTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_duplicate_catalog_jobs_do_not_repeat_completed_or_cancelled_runs(): void
+    {
+        foreach (['completed', 'completed_with_errors', 'cancelled'] as $status) {
+            $run = WialonCatalogSyncRun::create(['uuid' => (string) Str::uuid(), 'sync_type' => 'manual', 'sections_json' => ['unit_groups'], 'status' => $status]);
+            $sync = \Mockery::mock(WialonCatalogSyncService::class);
+            $sync->shouldNotReceive('sync');
+            (new SyncWialonCatalogJob($run->id))->handle($sync);
+            $this->assertSame($status, $run->refresh()->status);
+        }
+    }
+
+    public function test_catalog_queue_has_a_scheduled_consumer_even_when_auto_sync_is_off(): void
+    {
+        $schedule = app(Schedule::class);
+        $consumer = collect($schedule->events())->first(fn ($event) => str_contains($event->command ?? '', '--queue=') && str_contains($event->command ?? '', 'wialon-catalog'));
+        $this->assertNotNull($consumer);
+        $this->assertSame('* * * * *', $consumer->expression);
+        $this->assertTrue($consumer->withoutOverlapping);
+    }
 
     public function test_wialon_catalog_requires_view_permission(): void
     {
@@ -203,9 +228,9 @@ class WialonCatalogTest extends TestCase
             'error_count' => 0,
         ]);
 
-        $resource = \App\Models\WialonResource::query()->firstOrFail();
+        $resource = WialonResource::query()->firstOrFail();
         $this->assertSame('[masked]', $resource->raw_metadata_json['token']);
-        $geofence = \App\Models\WialonGeofence::query()->firstOrFail();
+        $geofence = WialonGeofence::query()->firstOrFail();
         $this->assertSame('[masked]', $geofence->raw_metadata_json['sid']);
     }
 
@@ -242,7 +267,7 @@ class WialonCatalogTest extends TestCase
 
     private function seedMonthlyEfficiencyWialonDependencies(bool $includeGeofenceTemplate = true): void
     {
-        \Illuminate\Support\Facades\DB::table('wialon_resources')->insert([
+        DB::table('wialon_resources')->insert([
             'wialon_resource_id' => '601701680',
             'name' => 'Main report resource',
             'report_templates_count' => 2,
@@ -253,7 +278,7 @@ class WialonCatalogTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        \Illuminate\Support\Facades\DB::table('wialon_report_templates')->insert([
+        DB::table('wialon_report_templates')->insert([
             [
                 'resource_id' => '601701680',
                 'wialon_template_id' => '19',
@@ -276,7 +301,7 @@ class WialonCatalogTest extends TestCase
             ]] : []),
         ]);
 
-        \Illuminate\Support\Facades\DB::table('wialon_geofence_groups')->insert([
+        DB::table('wialon_geofence_groups')->insert([
             'resource_id' => '601701680',
             'wialon_geofence_group_id' => '31',
             'name' => 'Aylıq effektivlik üçün',

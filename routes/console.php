@@ -2,6 +2,10 @@
 
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('queue:work '.escapeshellarg((string) config('wialon_catalog.connection', 'database')).' --queue='.escapeshellarg((string) config('wialon_catalog.queue', 'wialon-catalog')).' --stop-when-empty --sleep=1 --tries=3 --timeout=900 --max-time=900')
+    ->everyMinute()
+    ->withoutOverlapping(30);
+
 Schedule::command('dashboard-reports:sync-daily')
     ->dailyAt('00:00')
     ->timezone(config('app.timezone', 'Asia/Baku'))

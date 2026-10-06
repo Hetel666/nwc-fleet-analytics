@@ -64,7 +64,7 @@ start_managed_process() {
 
 if [ "${RUN_INTERNAL_WORKERS:-true}" = "true" ]; then
     start_managed_process "scheduler" php artisan schedule:work
-    start_managed_process "default-worker" php artisan queue:work database --queue=analytics,maintenance,default --sleep=3 --tries=3 --timeout=900 --max-time=3600
+    start_managed_process "default-worker" php artisan queue:work database --queue=analytics,maintenance,default,wialon-catalog --sleep=3 --tries=3 --timeout=900 --max-time=3600
     start_managed_process "historical-worker" php artisan queue:work database --queue=historical-recalculations --sleep=3 --tries=6 --timeout=900 --max-time=3600
     start_managed_process "historical-monthly-worker" php artisan queue:work database --queue=historical-monthly-efficiency --sleep=3 --tries=6 --timeout=900 --max-time=3600
 fi
