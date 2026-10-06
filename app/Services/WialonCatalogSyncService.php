@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Jobs\SyncWialonCatalogJob;
 use App\Models\Equipment;
 use App\Models\Geofence;
-use App\Models\Project;
 use App\Models\ProjectWialonGroup;
 use App\Models\User;
 use App\Models\WialonCatalogSyncItem;
@@ -22,7 +21,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -657,8 +655,8 @@ class WialonCatalogSyncService
     {
         $stableId = $resourceId.':'.$zoneId;
 
-        return $geofences->first(function (Geofence $geofence) use ($stableId, $zoneId): bool {
-            return in_array((string) $geofence->wialon_geofence_id, [$stableId, $zoneId], true);
+        return $geofences->first(function (Geofence $geofence) use ($stableId): bool {
+            return $geofence->active && (string) $geofence->wialon_geofence_id === $stableId;
         });
     }
 

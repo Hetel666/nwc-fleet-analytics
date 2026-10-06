@@ -19,7 +19,7 @@ class GeofenceController extends Controller
 
     public function create(): View
     {
-        return view('geofences.form', $this->formData(new Geofence()));
+        return view('geofences.form', $this->formData(new Geofence));
     }
 
     public function store(Request $request): RedirectResponse
@@ -61,7 +61,7 @@ class GeofenceController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'project_id' => ['required', 'exists:projects,id'],
-            'wialon_geofence_id' => ['nullable', 'string', 'max:100'],
+            'wialon_geofence_id' => ['nullable', 'string', 'max:100', 'regex:/^\d+:\d+$/'],
             'geometry_json' => ['nullable', 'json'],
             'active' => ['nullable', 'boolean'],
         ]);

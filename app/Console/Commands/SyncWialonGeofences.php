@@ -19,11 +19,12 @@ class SyncWialonGeofences extends Command
 
     public function handle(WialonService $wialon, GeofenceNameNormalizer $normalizer): int
     {
-        $projects = Project::query()->get()->keyBy('name');
+        $projects = Project::query()->where('active', true)->get()->keyBy('name');
         $configuredGeofences = config('wialon_projects.project_geofence_ids', []);
 
         if (! is_array($configuredGeofences) || $configuredGeofences === []) {
             $this->warn('No Wialon geofence IDs configured.');
+
             return self::SUCCESS;
         }
 
@@ -91,7 +92,7 @@ class SyncWialonGeofences extends Command
                 }
 
                 Geofence::updateOrCreate(
-                    ['wialon_geofence_id' => $wialonGeofenceId],
+                    ['wialon_geofence_id' => $wialonGeofenceId, 'project_id' => $project->id],
                     [
                         'project_id' => $project->id,
                         'name' => $zone['n'] ?? 'Geofence '.$zoneId,

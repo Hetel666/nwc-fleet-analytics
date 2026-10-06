@@ -466,6 +466,12 @@ class WialonCatalogController extends Controller
             if (! $geofence) {
                 return ['valid' => false, 'message' => 'Seçilmiş ev geozonası tapılmadı və ya aktiv deyil.'];
             }
+
+            $stableId = $geofence->resource_id.':'.$geofence->wialon_geofence_id;
+            $owners = Geofence::query()->where('active', true)->where('wialon_geofence_id', $stableId)->pluck('project_id');
+            if ($owners->isNotEmpty() && (! $project || ! $owners->contains($project->id))) {
+                return ['valid' => false, 'message' => 'Bu geozona artıq başqa layihəyə bağlıdır.'];
+            }
         }
 
         return [
@@ -497,7 +503,8 @@ class WialonCatalogController extends Controller
             $catalogGeofence = WialonGeofence::query()->findOrFail($data['home_geofence_id']);
             $stableGeofenceId = $catalogGeofence->resource_id.':'.$catalogGeofence->wialon_geofence_id;
             $localGeofence = Geofence::query()
-                ->whereIn('wialon_geofence_id', [$stableGeofenceId, $catalogGeofence->wialon_geofence_id])
+                ->where('project_id', $project->id)
+                ->where('wialon_geofence_id', $stableGeofenceId)
                 ->first() ?? new Geofence(['wialon_geofence_id' => $stableGeofenceId]);
             $localGeofence->fill([
                 'name' => $catalogGeofence->name,
