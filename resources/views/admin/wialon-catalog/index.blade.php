@@ -396,6 +396,7 @@
                     try {
                         const response = await fetch(syncUrl, {
                             method: 'POST',
+                            signal: AbortSignal.timeout(20000),
                             headers: {
                                 'Accept': 'application/json',
                                 'Content-Type': 'application/json',
@@ -580,7 +581,7 @@
                 window.clearTimeout(syncPollTimer);
 
                 try {
-                    const response = await fetch(`${syncRunBaseUrl}/${encodeURIComponent(runId)}`, {headers: {'Accept': 'application/json'}});
+                    const response = await fetch(`${syncRunBaseUrl}/${encodeURIComponent(runId)}`, {headers: {'Accept': 'application/json'}, cache: 'no-store', signal: AbortSignal.timeout(20000)});
                     const payload = await parseJsonResponse(response);
 
                     if (!response.ok) {
@@ -601,9 +602,7 @@
                     if (terminalSyncStatuses.includes(status)) {
                         setSyncButtonsDisabled(false);
 
-                        if (activeTab === 'sync-runs') {
-                            loadTable();
-                        }
+                        loadTable();
 
                         return;
                     }
@@ -621,7 +620,7 @@
                 }
 
                 try {
-                    const response = await fetch(`${endpoints['sync-runs']}?per_page=10`, {headers: {'Accept': 'application/json'}});
+                    const response = await fetch(`${endpoints['sync-runs']}?per_page=10`, {headers: {'Accept': 'application/json'}, cache: 'no-store', signal: AbortSignal.timeout(20000)});
                     const payload = await parseJsonResponse(response);
 
                     if (!response.ok) {
