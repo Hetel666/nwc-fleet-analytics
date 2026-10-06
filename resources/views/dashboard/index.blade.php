@@ -2494,23 +2494,26 @@
             </div>
         </div>
 
-        <form method="GET" action="{{ $selectedProject ? route('projects.dashboard', $selectedProject) : route('dashboard') }}" class="panel p-3 mb-4" id="dashboardFilterForm">
+        <form method="GET" action="{{ route('dashboard') }}" class="panel p-3 mb-4" id="dashboardFilterForm">
             <input type="hidden" name="period" id="dashboardPeriodInput" value="{{ $selectedPeriod }}">
             <input type="hidden" name="tab" id="dashboardSelectedTabInput" value="{{ $selectedDashboardTab }}">
             <div class="row g-3 align-items-end">
-                @unless($selectedProject)
+                @php
+                    $projectFilterOptions = auth()->user()?->hasRestrictedProjects()
+                        ? \App\Models\Project::query()->where('active', true)->orderBy('name')->get()
+                        : $projects;
+                @endphp
                     <div class="col-12 col-xl-3 col-lg-4">
                         <label class="form-label">{{ __('app.project') }}</label>
                         <select name="project_id" class="form-select">
                             @unless(auth()->user()?->hasRestrictedProjects())
                                 <option value="">{{ __('app.all_projects') }}</option>
                             @endunless
-                            @foreach ($projects as $project)
+                            @foreach ($projectFilterOptions as $project)
                                 <option value="{{ $project->id }}" @selected((string) $filters['project_id'] === (string) $project->id)>{{ $project->name }}</option>
                             @endforeach
                         </select>
                     </div>
-                @endunless
                 <div class="col-6 col-lg-2">
                     <label class="form-label">{{ __('app.from') }}</label>
                     <input type="date" name="date_from" value="{{ $filters['from'] }}" class="form-control" id="dashboardDateFrom">

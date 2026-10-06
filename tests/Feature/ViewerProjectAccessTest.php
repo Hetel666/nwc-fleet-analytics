@@ -86,4 +86,20 @@ class ViewerProjectAccessTest extends TestCase
             return response('ok');
         });
     }
+
+    public function test_viewer_can_switch_between_multiple_projects_from_project_page(): void
+    {
+        $this->seed(\Database\Seeders\DemoSeeder::class);
+        $projects = Project::where('active', true)->orderBy('id')->get();
+        $first = $projects[0];
+        $second = $projects[1];
+        $viewer = User::factory()->create(['role' => 'viewer', 'active' => true, 'project_ids' => [$first->id, $second->id]]);
+        $response = $this->actingAs($viewer)->get(route('projects.dashboard', $first))->assertOk();
+        $response->assertSee('select name="project_id"', false)
+            ->assertSee('value="'.$second->id.'"', false)
+            ->assertSee('action="'.route('dashboard').'"', false);
+        $response = $this->get('/dashboard?project_id='.$second->id)->assertOk();
+        $this->assertSame($second->id, $response->viewData('filters')['project_id']);
+        $response->assertSee('select name="project_id"', false);
+    }
 }
