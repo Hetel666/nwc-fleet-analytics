@@ -14,7 +14,11 @@ class EnsureViewerAccess
         if (! $user || $user->isAdmin()) {
             return $next($request);
         }
-        abort_unless($request->isMethodSafe() || $request->routeIs('logout'), 403);
+        abort_unless($request->isMethodSafe() || $request->routeIs(
+            'logout',
+            'api.user.dashboard-preferences.update',
+            'api.user.dashboard-preferences.destroy',
+        ), 403);
         if ($user->hasRestrictedProjects()) {
             abort_if($request->is('admin/*', 'api/wialon-catalog/*'), 403);
             $project = $request->route('project');

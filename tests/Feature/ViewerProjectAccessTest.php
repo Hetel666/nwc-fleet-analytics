@@ -15,6 +15,19 @@ class ViewerProjectAccessTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_viewer_can_save_own_theme_without_changing_another_users_preferences(): void
+    {
+        $viewer = User::factory()->create(['role' => 'viewer', 'active' => true, 'project_ids' => []]);
+        $other = User::factory()->create(['role' => 'viewer', 'active' => true]);
+        $this->actingAs($viewer)->putJson(route('api.user.dashboard-preferences.update'), [
+            'theme' => 'light', 'user_id' => $other->id,
+        ])->assertOk()->assertJsonPath('theme', 'light');
+        $this->assertDatabaseHas('user_dashboard_preferences', ['user_id' => $viewer->id, 'theme' => 'light']);
+        $this->assertDatabaseMissing('user_dashboard_preferences', ['user_id' => $other->id]);
+        $this->getJson(route('api.user.dashboard-preferences.show'))->assertOk()->assertJsonPath('theme', 'light');
+        $this->postJson(route('dashboard.event-notes.store'), [])->assertForbidden();
+    }
+
     public function test_viewer_cannot_mutate_even_with_legacy_permissions(): void
     {
         $viewer = User::factory()->create(['role' => 'viewer', 'active' => true, 'permissions' => User::permissionKeys()]);
