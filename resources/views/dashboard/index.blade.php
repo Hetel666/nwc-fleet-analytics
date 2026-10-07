@@ -5037,7 +5037,9 @@ const renderDrilldownRows = (rows, updateStoredRows = true) => {
                 || (drilldownState.mode === 'monthly_efficiency_geofences' && key === 'geofence_name');
 
             if (!renderDrilldownEditableCell(td, row, key)) {
-                td.textContent = isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-');
+                td.textContent = key === 'investigation_status'
+                    ? drilldownFilterValue(row, key, index)
+                    : (isSummaryNumber && Number(value) === 0 ? '–' : (value ?? '-'));
             }
             td.classList.toggle('dashboard-project-type-name', isSummaryName);
             td.classList.toggle('dashboard-project-type-number', isSummaryNumber);
