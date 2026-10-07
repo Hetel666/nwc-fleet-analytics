@@ -331,10 +331,8 @@ class DashboardFleetDrilldownService
                 'status_label' => 'Status',
             ];
 
-            if (in_array($filters['work_category'], ['0_1', 'less_than_1_hour', 'no_data'], true)) {
-                $columns['note'] = 'Qeyd';
-                $columns['investigation_status'] = 'Araşdırma statusu';
-            }
+            $columns['note'] = 'Qeyd';
+            $columns['investigation_status'] = 'Araşdırma statusu';
 
             return $columns;
         }

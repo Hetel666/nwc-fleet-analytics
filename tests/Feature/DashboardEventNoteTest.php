@@ -11,6 +11,20 @@ class DashboardEventNoteTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_all_daily_efficiency_categories_have_annotation_columns(): void
+    {
+        $this->actingAs(User::factory()->create(['active' => true, 'role' => User::ROLE_ADMIN]));
+        $service = app(\App\Services\DashboardFleetDrilldownService::class);
+        foreach (['0_1', '1_7', '7_10', 'over_10', 'no_data'] as $category) {
+            foreach (['NWC', 'ICARE'] as $ownership) {
+                $filters = $service->filters(['work_category' => $category, 'ownership' => $ownership]);
+                $columns = $service->columns($filters);
+                $this->assertSame('Qeyd', $columns['note']);
+                $this->assertSame('Araşdırma statusu', $columns['investigation_status']);
+            }
+        }
+    }
+
     public function test_reopening_business_date_restores_only_its_concrete_event(): void
     {
         $user = User::factory()->create(['active' => true, 'role' => User::ROLE_ADMIN]);
