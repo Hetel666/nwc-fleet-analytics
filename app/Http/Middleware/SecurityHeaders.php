@@ -14,9 +14,10 @@ class SecurityHeaders
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
+        $allowJournalFrame = $request->routeIs('dashboard.status-journal');
 
         $headers = [
-            'X-Frame-Options' => 'DENY',
+            'X-Frame-Options' => $allowJournalFrame ? 'SAMEORIGIN' : 'DENY',
             'X-Content-Type-Options' => 'nosniff',
             'Referrer-Policy' => 'strict-origin-when-cross-origin',
             'Permissions-Policy' => 'camera=(), microphone=(), geolocation=(), payment=()',
@@ -24,7 +25,7 @@ class SecurityHeaders
                 "default-src 'self'",
                 "base-uri 'self'",
                 "object-src 'none'",
-                "frame-ancestors 'none'",
+                $allowJournalFrame ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
                 "form-action 'self'",
                 "img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com",
                 "font-src 'self' data: https://cdn.jsdelivr.net",

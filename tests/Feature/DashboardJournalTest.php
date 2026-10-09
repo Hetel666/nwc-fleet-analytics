@@ -33,7 +33,13 @@ class DashboardJournalTest extends TestCase
         $this->source();
         $this->actingAs(User::factory()->create(['active' => true]))
             ->get(route('dashboard.status-journal', ['section' => 'efficiency', 'date_from' => '2026-09-15', 'date_to' => '2026-09-30']))
-            ->assertOk()->assertViewHas('rows', fn ($rows) => $rows->count() === 6
+            ->assertOk()->assertHeader('X-Frame-Options', 'SAMEORIGIN')
+            ->assertHeader('Content-Security-Policy', implode('; ', [
+                "default-src 'self'", "base-uri 'self'", "object-src 'none'", "frame-ancestors 'self'", "form-action 'self'",
+                "img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com", "font-src 'self' data: https://cdn.jsdelivr.net",
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com", "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com", "connect-src 'self'",
+            ]))
+            ->assertViewHas('rows', fn ($rows) => $rows->count() === 6
                 && $rows[0]['note'] === 'Təmirdə olub' && $rows[1]['note'] === ''
                 && $rows->pluck('event')->unique()->count() === 5
                 && $rows[1]['status'] === 'Araşdırılır');
