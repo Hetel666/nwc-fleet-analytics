@@ -22,7 +22,7 @@ class DashboardJournalController extends Controller
         abort_unless(array_key_exists($section, $request->user()->visibleDashboardTabs()), 403);
         $filters = $dashboard->normalizeFilters($request->only(['date_from', 'date_to', 'project_id', 'equipment_type_id', 'ownership_type']), 'export');
         if ($section === 'efficiency') {
-            $rows = $efficiency->journalRows([...$filters, 'visible_statuses' => [EfficiencyStatus::ZERO_TO_ONE, EfficiencyStatus::NO_DATA]]);
+            $rows = $efficiency->journalRows([...$filters, 'visible_statuses' => array_keys(EfficiencyStatus::labels())]);
         } else {
             $rows = $transfers->journalRows($filters);
             $violationFilters = [
